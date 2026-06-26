@@ -41,49 +41,37 @@ function setupWindow() {
   console.log("🪟 [Agent] Window opened");
 }
 
-// ─── Shortcuts ──────────────────────────────────────────────
-function setupShortcuts() {
-  const shortcuts = [
-    {
-      name: "🟢 Open Agent",
-      message: "/agent open",
-      autoSend: true,
-      insertionType: "replace" as const,
-      clearAfterSend: true,
-    },
-    {
-      name: "🔴 Close Agent",
-      message: "/agent close",
-      autoSend: true,
-      insertionType: "replace" as const,
-      clearAfterSend: true,
-    },
-  ];
+// ─── Command Handler ────────────────────────────────────────
+const AGENT_PREFIX = "/agent";
 
-  // Set shortcuts on the current thread
-  oc.thread.shortcutButtons = shortcuts;
-  console.log("🔘 [Agent] Shortcuts registered:", shortcuts.map((s) => s.name));
+function isAgentCommand(content: string): boolean {
+  return content.trim().startsWith(AGENT_PREFIX);
 }
 
-// ─── Command Handler ────────────────────────────────────────
-function handleCommand(message: OcMessage): boolean {
-  const content = message.content.trim();
+function handleCommand(content: string): void {
+  const cmd = content.trim();
 
-  // /agent open
-  if (content === "/agent open") {
+  if (cmd === "/agent open") {
     oc.window.show();
-    console.log("🪟 [Agent] Window opened via command");
-    return true; // handled (suppress message)
+    console.log("🪟 [Agent] Window opened");
+    return;
   }
 
-  // /agent close
-  if (content === "/agent close") {
+  if (cmd === "/agent close") {
     oc.window.hide();
-    console.log("🪟 [Agent] Window closed via command");
-    return true; // handled (suppress message)
+    console.log("🪟 [Agent] Window closed");
+    return;
   }
+}
 
-  return false; // not a command
+// ─── Message Pipeline (intercepts BEFORE AI sees) ───────────
+function setupPipeline() {
+  // Hide agent commands from the AI so it doesn't respond
+  oc.messageRenderingPipeline.push(({ message, reader }: { message: OcMessage; reader: string }) => {
+    if (reader === "ai" && isAgentCommand(message.content)) {
+      message.content = ""; // AI sees nothing → no response
+    }
+  });
 }
 
 // ─── Bootstrap ──────────────────────────────────────────────
@@ -93,21 +81,25 @@ function bootstrap() {
   console.log("   generateText:", typeof oc.generateText);
   console.log("   thread.messages:", oc.thread?.messages?.length ?? "N/A");
 
-  // Setup window and shortcuts
+  // Setup pipeline first (intercepts commands before AI sees them)
+  setupPipeline();
+
+  // Setup window
   setupWindow();
-  setupShortcuts();
 
   // Listen for new messages
   oc.thread.on("MessageAdded", async ({ message }: { message: OcMessage }) => {
     console.log("📨 [Agent] MessageAdded:", message.author, "→", message.content.slice(0, 80));
 
     // Handle commands
-    if (message.author === "user") {
-      if (handleCommand(message)) {
-        // Remove the command message from chat
-        oc.thread.messages.pop();
-        return;
+    if (message.author === "user" && isAgentCommand(message.content)) {
+      handleCommand(message.content);
+      // Remove the command message from chat
+      const idx = oc.thread.messages.indexOf(message);
+      if (idx !== -1) {
+        oc.thread.messages.splice(idx, 1);
       }
+      return;
     }
   });
 
