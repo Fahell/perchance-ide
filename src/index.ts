@@ -27,7 +27,6 @@ function validateEnvironment(): boolean {
 
 // ─── Window Management ──────────────────────────────────────
 function setupWindow() {
-  // Render initial content in the iframe window
   document.body.innerHTML = `
     <div style="font-family: system-ui; padding: 20px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0;">
       <h2 style="margin: 0 0 10px 0; color: #00d4ff;">🤖 Agent Panel</h2>
@@ -35,72 +34,54 @@ function setupWindow() {
       <div id="agent-output" style="margin-top: 20px;"></div>
     </div>
   `;
-
-  // Open the window
   oc.window.show();
   console.log("🪟 [Agent] Window opened");
 }
 
 // ─── Command Handler ────────────────────────────────────────
-const AGENT_PREFIX = "/agent";
-
 function isAgentCommand(content: string): boolean {
-  return content.trim().startsWith(AGENT_PREFIX);
+  return content.trim().startsWith("/agent");
 }
 
 function handleCommand(content: string): void {
   const cmd = content.trim();
-
   if (cmd === "/agent open") {
     oc.window.show();
     console.log("🪟 [Agent] Window opened");
-    return;
-  }
-
-  if (cmd === "/agent close") {
+  } else if (cmd === "/agent close") {
     oc.window.hide();
     console.log("🪟 [Agent] Window closed");
-    return;
   }
-}
-
-// ─── Message Pipeline (intercepts BEFORE AI sees) ───────────
-function setupPipeline() {
-  // Hide agent commands from the AI so it doesn't respond
-  oc.messageRenderingPipeline.push(({ message, reader }: { message: OcMessage; reader: string }) => {
-    if (reader === "ai" && isAgentCommand(message.content)) {
-      message.content = ""; // AI sees nothing → no response
-    }
-  });
 }
 
 // ─── Bootstrap ──────────────────────────────────────────────
 function bootstrap() {
   console.log("🚀 [Agent] Loading...");
-  console.log("   oc:", typeof oc);
-  console.log("   generateText:", typeof oc.generateText);
-  console.log("   thread.messages:", oc.thread?.messages?.length ?? "N/A");
 
-  // Setup pipeline first (intercepts commands before AI sees them)
-  setupPipeline();
-
-  // Setup window
+  // Setup window (iframe content)
   setupWindow();
 
-  // Listen for new messages
-  oc.thread.on("MessageAdded", async ({ message }: { message: OcMessage }) => {
-    console.log("📨 [Agent] MessageAdded:", message.author, "→", message.content.slice(0, 80));
+  // SYNCHRONOUS handler — critical to prevent race condition with AI
+  oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
+    if (message.author !== "user") return;
+    if (!isAgentCommand(message.content)) return;
 
-    // Handle commands
-    if (message.author === "user" && isAgentCommand(message.content)) {
-      handleCommand(message.content);
-      // Remove the command message from chat
+    console.log("📨 [Agent] Command:", message.content);
+
+    // 1) Prevent AI from replying to this message
+    message.expectsReply = false;
+
+    // 2) Hide from AI entirely
+    message.hiddenFrom = ["ai"];
+
+    // 3) Execute the command
+    handleCommand(message.content);
+
+    // 4) Delete the message from chat after a tick (so AI has already skipped it)
+    setTimeout(() => {
       const idx = oc.thread.messages.indexOf(message);
-      if (idx !== -1) {
-        oc.thread.messages.splice(idx, 1);
-      }
-      return;
-    }
+      if (idx !== -1) oc.thread.messages.splice(idx, 1);
+    }, 100);
   });
 
   console.log("✅ [Agent] Ready!");
