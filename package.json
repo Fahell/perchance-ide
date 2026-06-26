@@ -1,0 +1,21 @@
+{
+  "name": "agent-perchance",
+  "version": "0.1.0",
+  "description": "Agent framework for Perchance AI Character Chat",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "build:watch": "node esbuild.config.mjs --watch",
+    "dev": "node esbuild.config.mjs --watch"
+  },
+  "keywords": [
+    "perchance",
+    "ai-agent",
+    "custom-code"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "typescript": "^6.0.3"
+  }
+}
