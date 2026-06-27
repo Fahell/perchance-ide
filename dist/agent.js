@@ -37,13 +37,13 @@ Now respond to the user based on this information. Do NOT use any more tools \u2
 
 [Tool Error - ${c.name}]: ${u}
 
-The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var i=window.oc,f=!1,B=10,C="agent_jina_key";function N(){console.log("\u{1F916} Agent v0.1.0+dev"),console.log("   Build: 2026-06-27 21:00:25"),console.log("   https://github.com/Fahell/agent-perchance")}function U(){try{return localStorage.getItem(C)}catch{return null}}function M(e){try{localStorage.setItem(C,e)}catch(t){console.warn("[Agent] Could not save API key to localStorage:",t)}}function K(){return i?i.thread?typeof i.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function H(){document.body.innerHTML=`
+The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var i=window.oc,f=!1,B=10,C="agent_jina_key";function N(){console.log("\u{1F916} Agent v0.1.0+a18022c"),console.log("   Build: 2026-06-27 21:10:55"),console.log("   https://github.com/Fahell/agent-perchance")}function U(){try{return localStorage.getItem(C)}catch{return null}}function M(e){try{localStorage.setItem(C,e)}catch(t){console.warn("[Agent] Could not save API key to localStorage:",t)}}function K(){return i?i.thread?typeof i.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function H(){document.body.innerHTML=`
     <div style="font-family: system-ui; padding: 24px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;">
       <div style="max-width: 480px; width: 100%;">
         <div style="text-align: center; margin-bottom: 24px;">
           <div style="font-size: 48px; margin-bottom: 8px;">\u{1F916}</div>
           <h2 style="margin: 0; color: #00d4ff; font-size: 20px;">Agent for Perchance</h2>
-          <span style="font-size: 11px; color: #666;">v0.1.0+dev</span>
+          <span style="font-size: 11px; color: #666;">v0.1.0+a18022c</span>
         </div>
         <div style="background: #16213e; border-radius: 12px; padding: 20px; border: 1px solid #2a3a5e;">
           <h3 style="margin: 0 0 12px 0; color: #eee; font-size: 15px;">\u26A1 Setup \u2014 Chave de API da Jina</h3>
@@ -80,7 +80,7 @@ The tool failed. Respond to the user explaining the issue.`}}}}return"I apologiz
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="margin: 0; color: #00d4ff; font-size: 16px;">\u{1F916} Agent Panel</h2>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; color: #666;">v0.1.0+dev</span>
+          <span style="font-size: 11px; color: #666;">v0.1.0+a18022c</span>
           <button id="settings-btn" style="background: none; border: 1px solid #2a3a5e; color: #666; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">\u2699\uFE0F</button>
         </div>
       </div>

@@ -3,5 +3,5 @@
 Copy-paste this into Perchance Custom Code:
 
 ```
-import("https://cdn.jsdelivr.net/gh/Fahell/agent-perchance@2908042/dist/agent.js");
+import("https://cdn.jsdelivr.net/gh/Fahell/agent-perchance@65b9716/dist/agent.js");
 ```
