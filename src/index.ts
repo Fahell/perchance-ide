@@ -220,7 +220,8 @@ function openSettings() {
 
 // ─── Command Handler ────────────────────────────────────────
 function isAgentCommand(content: string): boolean {
-  return content.trim().startsWith("/agent");
+  const cmd = content.trim();
+  return cmd.startsWith("/agent") || cmd.startsWith("/test-storage");
 }
 
 function handleCommand(content: string): void {
@@ -231,7 +232,129 @@ function handleCommand(content: string): void {
   } else if (cmd === "/agent close") {
     oc.window.hide();
     console.log("🪟 [Agent] Window closed");
+  } else if (cmd === "/test-storage" || cmd === "/test-storage run") {
+    runStorageTest();
+  } else if (cmd === "/test-storage check") {
+    checkStoragePersistence();
+  } else if (cmd === "/test-storage clean") {
+    cleanTestKeys();
+    appendToOutput(`<div style="margin:8px 0;padding:8px;background:#16213e;border-radius:6px;border-left:3px solid #4ade80;">
+      <div style="color:#4ade80;">🧹 Dados de teste limpos</div>
+    </div>`);
   }
+}
+
+// ─── Storage Limit Test ─────────────────────────────────────
+function runStorageTest(): void {
+  const KEY_PREFIX = "__test_";
+  const fmt = (b: number) => b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB" : (b / 1048576).toFixed(0) + " MB";
+
+  appendToOutput(`<div style="margin:8px 0;padding:8px;background:#1a1a2e;border-radius:6px;border-left:3px solid #f59e0b;">
+    <div style="color:#f59e0b;font-weight:bold;">🔬 Iniciando teste de storage...</div>
+  </div>`);
+
+  const TEST_SIZES = [
+    { label: "1KB",   bytes: 1024 },
+    { label: "5KB",   bytes: 5 * 1024 },
+    { label: "10KB",  bytes: 10 * 1024 },
+    { label: "50KB",  bytes: 50 * 1024 },
+    { label: "100KB", bytes: 100 * 1024 },
+    { label: "500KB", bytes: 500 * 1024 },
+    { label: "1MB",   bytes: 1048576 },
+    { label: "5MB",   bytes: 5 * 1048576 },
+    { label: "10MB",  bytes: 10 * 1048576 },
+    { label: "25MB",  bytes: 25 * 1048576 },
+    { label: "50MB",  bytes: 50 * 1048576 },
+    { label: "100MB", bytes: 100 * 1048576 },
+  ];
+
+  // Clean previous
+  cleanTestKeys();
+
+  const results: string[] = [];
+  let lastOkLabel = "";
+
+  for (const { label, bytes } of TEST_SIZES) {
+    appendToOutput(`<div style="margin:2px 0 2px 12px;padding:4px 8px;color:#aaa;font-size:12px;">⏳ ${label} (${fmt(bytes)})...</div>`);
+
+    // Generate payload
+    const chunk = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let payload = "";
+    while (payload.length < bytes) payload += chunk;
+    payload = payload.slice(0, bytes);
+
+    let writeOk = false, writeMs = 0, verifyOk = false, readMs = 0;
+
+    try {
+      const t0 = performance.now();
+      (oc.thread.customData as Record<string, unknown>)[KEY_PREFIX + label] = payload;
+      writeMs = Math.round(performance.now() - t0);
+      writeOk = true;
+    } catch (e) {
+      appendToOutput(`<div style="margin:1px 0 1px 16px;padding:2px 8px;font-size:11px;color:#f87171;">
+        ❌ WRITE FAILED: ${e instanceof Error ? e.message : e}
+      </div>`);
+      results.push(`${label}❌`);
+      break;
+    }
+
+    try {
+      const t0 = performance.now();
+      const readBack = (oc.thread.customData as Record<string, unknown>)[KEY_PREFIX + label];
+      readMs = Math.round(performance.now() - t0);
+      verifyOk = readBack === payload;
+    } catch {
+      verifyOk = false;
+    }
+
+    const ok = writeOk && verifyOk;
+    appendToOutput(`<div style="margin:1px 0 1px 16px;padding:2px 8px;font-size:11px;color:${ok ? "#4ade80" : "#f87171"};">
+      ${ok ? "✅" : "❌"} Write: ${writeMs}ms | Read: ${readMs}ms
+    </div>`);
+
+    results.push(`${label}${ok ? "✅" : "❌"}`);
+    if (ok) lastOkLabel = label;
+    if (!ok) break;
+  }
+
+  appendToOutput(`<div style="margin:8px 0;padding:8px;background:#16213e;border-radius:6px;border-left:3px solid #4ade80;">
+    <div style="color:#4ade80;font-weight:bold;">🎯 Máximo: ${lastOkLabel || "nenhum"}</div>
+    <div style="color:#aaa;font-size:11px;margin-top:4px;">${results.join(" → ")}</div>
+    <div style="color:#666;font-size:11px;margin-top:4px;">Recarregue e envie /test-storage check para testar persistência</div>
+  </div>`);
+}
+
+function checkStoragePersistence(): void {
+  const KEY_PREFIX = "__test_";
+  const sizes = ["1KB","5KB","10KB","50KB","100KB","500KB","1MB","5MB","10MB","25MB","50MB","100MB"];
+  const data = (oc.thread.customData || {}) as Record<string, unknown>;
+  let survived = 0;
+
+  appendToOutput(`<div style="margin:8px 0;padding:8px;background:#1a1a2e;border-radius:6px;border-left:3px solid #f59e0b;">
+    <div style="color:#f59e0b;font-weight:bold;">🔍 Verificando persistência...</div>
+  </div>`);
+
+  for (const label of sizes) {
+    const exists = data[KEY_PREFIX + label] !== undefined;
+    if (exists) survived++;
+    appendToOutput(`<div style="margin:1px 0 1px 16px;padding:2px 8px;font-size:11px;color:${exists ? "#4ade80" : "#f87171"};">
+      ${exists ? "✅" : "❌"} ${label}
+    </div>`);
+  }
+
+  appendToOutput(`<div style="margin:8px 0;padding:8px;background:#16213e;border-radius:6px;border-left:3px solid #4ade80;">
+    <div style="color:#4ade80;font-weight:bold;">📊 ${survived}/${sizes.length} sobreviveram ao reload</div>
+  </div>`);
+}
+
+function cleanTestKeys(): void {
+  try {
+    const data = oc.thread.customData as Record<string, unknown>;
+    if (!data) return;
+    for (const key of Object.keys(data)) {
+      if (key.startsWith("__test_")) delete data[key];
+    }
+  } catch { /* ignore */ }
 }
 
 // ─── Window Helpers ─────────────────────────────────────────

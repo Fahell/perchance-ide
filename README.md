@@ -34,13 +34,13 @@ pnpm dev
 
 ```
 src/
-├── index.ts         # Entry point — pipeline, MessageAdded handler, bootstrap
+├── index.ts         # Entry point — MessageAdded handler, bootstrap, window
 ├── agent-loop.ts    # Core agent loop with tool call detection + execution
+├── storage.ts       # Persistent storage via oc.thread.customData
 ├── types.ts         # Perchance API types (oc.*)
 └── tools/
     ├── index.ts     # Tool registry with descriptions
-    ├── web-search.ts # Jina API integration (search + scrape)
-    └── ...
+    └── web-search.ts # Jina API integration (search + scrape)
 ```
 
 ### Message Flow
@@ -64,14 +64,15 @@ User sends message
 | API | Purpose | Notes |
 |-----|---------|-------|
 | `oc.thread.on("MessageAdded")` | Intercept messages | SYNCHRONOUS handler required |
-| `oc.messageRenderingPipeline.push()` | Rendering filter only | Does NOT control generation |
 | `oc.thread.messages.push()` | Add messages to chat | Triggers MessageAdded |
 | `oc.generateText({instruction})` | Call LLM programmatically | Standalone, no MessageAdded |
 | `oc.window.show() / .hide()` | Control iframe window | UI lives in iframe |
+| `oc.thread.customData` | Persistent key-value storage | ~1-2KB limit, persists across sessions |
 
 ### Critical Patterns
 
 - **Generator suppression**: Set `expectsReply = false` and `hiddenFrom = ["ai"]` on user messages in the `MessageAdded` handler (NOT in the pipeline — pipeline is rendering-only)
+- **Storage**: Use `oc.thread.customData` for persistence — `localStorage` and `IndexedDB` are blocked in Perchance sandboxed iframes
 - **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back
 - **Window**: All UI goes in the iframe (`document.body.innerHTML`), not in the chat
 - **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main`
