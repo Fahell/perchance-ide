@@ -18,8 +18,5 @@
   "devDependencies": {
     "esbuild": "^0.28.1",
     "typescript": "^6.0.3"
-  },
-  "dependencies": {
-    "idb-keyval": "^6.2.5"
   }
 }

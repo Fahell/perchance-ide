@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      idb-keyval:
-        specifier: ^6.2.5
-        version: 6.2.5
     devDependencies:
       esbuild:
         specifier: ^0.28.1
@@ -182,9 +178,6 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  idb-keyval@6.2.5:
-    resolution: {integrity: sha512-eKQkTnS0relYsSOYomx8ozIbmdsQCKUdhyuIaQ2DZgKuaxtyQQMkyD/wlnQN32pO3yutN1b1L8uqwcDKaJd7/Q==}
-
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
@@ -298,7 +291,5 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.1
       '@esbuild/win32-ia32': 0.28.1
       '@esbuild/win32-x64': 0.28.1
-
-  idb-keyval@6.2.5: {}
 
   typescript@6.0.3: {}

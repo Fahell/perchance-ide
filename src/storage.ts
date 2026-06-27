@@ -1,86 +1,79 @@
 /**
- * Persistent storage layer using IndexedDB (via idb-keyval).
- * Replaces localStorage which is blocked in Perchance sandboxed iframes.
+ * Persistent storage layer using oc.thread.customData (Perchance native API).
  *
- * Uses separate stores for different data categories:
- *   - "config"  → API keys, settings, preferences
- *   - "history" → conversation history, message cache
- *   - "state"   → agent runtime state (flags, counters, etc.)
+ * localStorage and IndexedDB are BLOCKED in Perchance sandboxed iframes.
+ * oc.thread.customData persists via the parent frame's IndexedDB.
+ *
+ * Limitation: ~1-2KB recommended. Use prefix conventions:
+ *   "agent:key" -> API keys, "agent:state" -> runtime state, etc.
  */
 
-import { createStore, get, set, del, update, clear, keys, entries } from "idb-keyval";
+import type { Oc } from "./types.js";
 
-// ─── Named Stores ───────────────────────────────────────────
-const configStore = createStore("agent-config", "config");
-const historyStore = createStore("agent-history", "messages");
-const stateStore = createStore("agent-state", "runtime");
+let _oc: Oc | null = null;
 
-export type StoreName = "config" | "history" | "state";
-
-function getStore(name: StoreName) {
-  switch (name) {
-    case "config": return configStore;
-    case "history": return historyStore;
-    case "state": return stateStore;
-  }
+/** Must be called once after oc is available (in bootstrap). */
+export function initStorage(oc: Oc): void {
+  _oc = oc;
 }
 
-// ─── Generic API ────────────────────────────────────────────
-export async function storageGet<T = unknown>(key: string, store: StoreName = "config"): Promise<T | undefined> {
+function getData(): Record<string, unknown> {
+  if (!_oc?.thread?.customData) return {};
+  return _oc.thread.customData as Record<string, unknown>;
+}
+
+// --- API ---
+
+export function storageGet<T = unknown>(key: string): T | undefined {
   try {
-    return await get<T>(key, getStore(store));
+    const data = getData();
+    return (data[key] as T) ?? undefined;
   } catch (e) {
-    console.warn(`[Storage] get("${key}") failed:`, e);
+    console.warn('[Storage] get(' + key + ') failed:', e);
     return undefined;
   }
 }
 
-export async function storageSet<T = unknown>(key: string, value: T, store: StoreName = "config"): Promise<void> {
+export function storageSet<T = unknown>(key: string, value: T): void {
   try {
-    await set(key, value, getStore(store));
+    if (!_oc?.thread?.customData) {
+      console.warn('[Storage] set: oc.thread.customData not available');
+      return;
+    }
+    (_oc.thread.customData as Record<string, unknown>)[key] = value;
   } catch (e) {
-    console.warn(`[Storage] set("${key}") failed:`, e);
+    console.warn('[Storage] set(' + key + ') failed:', e);
   }
 }
 
-export async function storageDel(key: string, store: StoreName = "config"): Promise<void> {
+export function storageDel(key: string): void {
   try {
-    await del(key, getStore(store));
+    const data = getData();
+    delete data[key];
   } catch (e) {
-    console.warn(`[Storage] del("${key}") failed:`, e);
+    console.warn('[Storage] del(' + key + ') failed:', e);
   }
 }
 
-export async function storageUpdate<T = unknown>(key: string, fn: (prev: T | undefined) => T, store: StoreName = "config"): Promise<void> {
-  try {
-    await update(key, fn, getStore(store));
-  } catch (e) {
-    console.warn(`[Storage] update("${key}") failed:`, e);
-  }
+export function storageHas(key: string): boolean {
+  return storageGet(key) !== undefined;
 }
 
-export async function storageClear(store: StoreName = "config"): Promise<void> {
+export function storageKeys(): string[] {
   try {
-    await clear(getStore(store));
-  } catch (e) {
-    console.warn(`[Storage] clear() failed:`, e);
-  }
-}
-
-export async function storageKeys(store: StoreName = "config"): Promise<IDBValidKey[]> {
-  try {
-    return await keys(getStore(store));
-  } catch (e) {
-    console.warn(`[Storage] keys() failed:`, e);
+    return Object.keys(getData());
+  } catch {
     return [];
   }
 }
 
-export async function storageEntries<T = unknown>(store: StoreName = "config"): Promise<[IDBValidKey, T][]> {
+export function storageClear(): void {
   try {
-    return await entries<T>(getStore(store));
+    const data = getData();
+    for (const key of Object.keys(data)) {
+      delete data[key];
+    }
   } catch (e) {
-    console.warn(`[Storage] entries() failed:`, e);
-    return [];
+    console.warn('[Storage] clear() failed:', e);
   }
 }
