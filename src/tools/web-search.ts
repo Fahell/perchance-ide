@@ -1,9 +1,22 @@
 /**
- * Web search tool using Jina API (CORS-friendly, no auth required)
+ * Web search tool using Jina API (CORS-friendly)
  *
- * Search: https://s.jina.ai/{query}
- * Scrape: https://r.jina.ai/{URL}
+ * Search: POST https://s.jina.ai/ with {"q": "query"}
+ * Scrape: POST https://r.jina.ai/ with {"url": "url"}
+ * Auth: Bearer token required
  */
+
+// Get your Jina AI API key for free: https://jina.ai/?sui=apikey
+const JINA_API_KEY = "jina_4cefc39c7f9c4e5e99ffabf239a709b4J1Z5UwXFlX-iw5hg3csfGGruBTo7";
+
+function jinaHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    Authorization: `Bearer ${JINA_API_KEY}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...extra,
+  };
+}
 
 // ─── Types ──────────────────────────────────────────────────
 export interface SearchResult {
@@ -27,13 +40,10 @@ export interface ScrapeResponse {
 
 // ─── Search ─────────────────────────────────────────────────
 export async function webSearch(query: string, limit = 5): Promise<SearchResponse> {
-  const url = `https://s.jina.ai/${encodeURIComponent(query)}`;
-
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Return-Format": "json",
-    },
+  const res = await fetch("https://s.jina.ai/", {
+    method: "POST",
+    headers: jinaHeaders({ "X-Return-Format": "json" }),
+    body: JSON.stringify({ q: query, num: limit }),
   });
 
   if (!res.ok) {
@@ -60,12 +70,10 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
 
 // ─── Scrape URL ─────────────────────────────────────────────
 export async function scrapeUrl(url: string, maxChars = 5000): Promise<ScrapeResponse> {
-  const jinaUrl = `https://r.jina.ai/${url}`;
-
-  const res = await fetch(jinaUrl, {
-    headers: {
-      Accept: "text/markdown",
-    },
+  const res = await fetch("https://r.jina.ai/", {
+    method: "POST",
+    headers: jinaHeaders({ Accept: "text/markdown" }),
+    body: JSON.stringify({ url }),
   });
 
   if (!res.ok) {
