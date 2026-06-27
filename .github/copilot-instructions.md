@@ -17,22 +17,40 @@ Agent framework for Perchance AI Character Chat. TypeScript project bundled with
 
 ## Key APIs (Perchance)
 - `oc.thread.on("MessageAdded")` — intercept messages (SYNCHRONOUS handler required)
-- `oc.messageRenderingPipeline.push()` — process messages BEFORE AI sees them
-- `oc.thread.messages.push()` — add messages to chat
-- `oc.generateText({instruction})` — call LLM programmatically
+- `oc.messageRenderingPipeline.push()` — rendering filter ONLY (does NOT control generation)
+- `oc.thread.messages.push()` — add messages to chat (triggers MessageAdded)
+- `oc.generateText({instruction})` — call LLM programmatically (standalone, no MessageAdded)
 - `oc.window.show() / .hide()` — control iframe window
-- `message.expectsReply = false` — prevent AI from responding to a message
-- `message.hiddenFrom = ["ai"]` — hide message from AI
+- `message.expectsReply = false` — prevent internal generator from responding
+- `message.hiddenFrom = ["ai"]` — hide message from internal generator
 
 ## Critical Patterns
-- **Message interception**: Use `messageRenderingPipeline` to set `expectsReply: false` BEFORE AI sees message
+
+### Generator Suppression (IMPORTANT)
+Perchance has TWO independent AI systems:
+1. **Internal generator** (`ai-character-chat` plugin) — uses character persona, respects `expectsReply`/`hiddenFrom`
+2. **Our custom agent** — reads `message.content` directly, ignores those flags
+
+To suppress the internal generator, set flags **directly on the message object** in the `MessageAdded` handler:
+```typescript
+if (message.author === "user") {
+  message.expectsReply = false;
+  if (!message.hiddenFrom) message.hiddenFrom = [];
+  if (!message.hiddenFrom.includes("ai")) message.hiddenFrom.push("ai");
+}
+```
+
+**WARNING**: `messageRenderingPipeline` is for RENDERING ONLY. Setting `expectsReply`/`hiddenFrom` there does NOT prevent the internal generator from firing.
+
+### Other Patterns
 - **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back
 - **Window**: All UI goes in the iframe (`document.body.innerHTML`), not in the chat
+- **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main?v=hash`
 - **Jina API**: POST with Bearer auth (free tier key in web-search.ts)
 
 ## Commands
 - `pnpm build` — bundle to dist/agent.js
-- `pnpm deploy` — build + push + purge jsDelivr cache
+- `pnpm deploy` — build + push + generate IMPORT.md with @commit URL
 - `pnpm dev` — watch mode
 
 ## Conventions
