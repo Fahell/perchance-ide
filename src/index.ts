@@ -5,6 +5,7 @@
 
 import type { Oc, OcMessage } from "./types.js";
 import { agentLoop } from "./agent-loop.js";
+import { setApiKey, getApiKey, validateApiKey } from "./tools/web-search.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -15,6 +16,7 @@ declare const __BUILD_TIME__: string;
 const oc: Oc = window.oc;
 let agentProcessing = false;
 const MAX_HISTORY_MESSAGES = 10;
+const STORAGE_KEY = "agent_jina_key";
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -23,7 +25,24 @@ function printBanner() {
   console.log("   https://github.com/Fahell/agent-perchance");
 }
 
-// ─── Validation ─────────────────────────────────────────────
+// ─── API Key Storage ────────────────────────────────────────
+function loadApiKey(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveApiKey(key: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, key);
+  } catch (e) {
+    console.warn("[Agent] Could not save API key to localStorage:", e);
+  }
+}
+
+// ─── Environment Validation ──────────────────────────────────
 function validateEnvironment(): boolean {
   if (!oc) {
     console.error("❌ [Agent] window.oc not found — are you running inside Perchance?");
@@ -40,19 +59,169 @@ function validateEnvironment(): boolean {
   return true;
 }
 
+// ─── Setup Screen ───────────────────────────────────────────
+function renderSetupScreen(): void {
+  document.body.innerHTML = `
+    <div style="font-family: system-ui; padding: 24px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;">
+      <div style="max-width: 480px; width: 100%;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="font-size: 48px; margin-bottom: 8px;">🤖</div>
+          <h2 style="margin: 0; color: #00d4ff; font-size: 20px;">Agent for Perchance</h2>
+          <span style="font-size: 11px; color: #666;">v${__VERSION__}+${__COMMIT__}</span>
+        </div>
+        <div style="background: #16213e; border-radius: 12px; padding: 20px; border: 1px solid #2a3a5e;">
+          <h3 style="margin: 0 0 12px 0; color: #eee; font-size: 15px;">⚡ Setup — Chave de API da Jina</h3>
+          <p style="color: #aaa; font-size: 13px; margin: 0 0 12px 0; line-height: 1.5;">
+            Para usar busca na web, você precisa de uma chave de API <strong style="color: #4ade80;">gratuita</strong> da Jina AI.
+          </p>
+          <ol style="color: #aaa; font-size: 13px; margin: 0 0 16px 0; padding-left: 20px; line-height: 1.8;">
+            <li>Acesse <a href="https://jina.ai/?sui=apikey" target="_blank" style="color: #00d4ff; text-decoration: none;">jina.ai/?sui=apikey</a></li>
+            <li>Crie uma conta gratuita (ou faça login)</li>
+            <li>Copie sua chave de API</li>
+            <li>Cole no campo abaixo</li>
+          </ol>
+          <div style="margin-bottom: 12px;">
+            <input id="api-key-input" type="password" placeholder="jina_xxxxxxxxxxxx..."
+              style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a3a5e; background: #0f3460; color: #eee; font-size: 14px; font-family: monospace; box-sizing: border-box; outline: none;"
+            />
+          </div>
+          <div id="api-key-error" style="display: none; color: #f87171; font-size: 12px; margin-bottom: 8px;"></div>
+          <div id="api-key-success" style="display: none; color: #4ade80; font-size: 12px; margin-bottom: 8px;"></div>
+          <button id="api-key-save" style="width: 100%; padding: 10px; border-radius: 8px; border: none; background: #00d4ff; color: #1a1a2e; font-size: 14px; font-weight: bold; cursor: pointer;">
+            Salvar e Iniciar
+          </button>
+          <button id="api-key-skip" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #2a3a5e; background: transparent; color: #666; font-size: 12px; cursor: pointer; margin-top: 8px;">
+            Pular (sem busca na web)
+          </button>
+        </div>
+        <p style="color: #555; font-size: 11px; text-align: center; margin-top: 16px;">
+          ℹ️ Sua chave é salva localmente neste navegador e nunca é compartilhada.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById("api-key-input") as HTMLInputElement;
+  const saveBtn = document.getElementById("api-key-save")!;
+  const skipBtn = document.getElementById("api-key-skip")!;
+  const errorDiv = document.getElementById("api-key-error")!;
+  const successDiv = document.getElementById("api-key-success")!;
+
+  async function handleSave() {
+    const key = input.value.trim();
+    if (!key) {
+      errorDiv.textContent = "Por favor, insira uma chave de API.";
+      errorDiv.style.display = "block";
+      successDiv.style.display = "none";
+      return;
+    }
+
+    saveBtn.textContent = "Validando...";
+    (saveBtn as HTMLButtonElement).disabled = true;
+    errorDiv.style.display = "none";
+    successDiv.style.display = "none";
+
+    const valid = await validateApiKey(key);
+    if (valid) {
+      saveApiKey(key);
+      setApiKey(key);
+      successDiv.textContent = "✅ Chave válida! Iniciando...";
+      successDiv.style.display = "block";
+      console.log("🔑 [Agent] API key saved");
+      setTimeout(() => startAgent(), 800);
+    } else {
+      errorDiv.textContent = "❌ Chave inválida. Verifique e tente novamente.";
+      errorDiv.style.display = "block";
+      saveBtn.textContent = "Salvar e Iniciar";
+      (saveBtn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  saveBtn.addEventListener("click", handleSave);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSave(); });
+
+  skipBtn.addEventListener("click", () => {
+    console.log("⏭️ [Agent] Setup skipped (no API key)");
+    startAgent();
+  });
+
+  oc.window.show();
+}
+
 // ─── Window Management ──────────────────────────────────────
 function setupWindow() {
   document.body.innerHTML = `
     <div style="font-family: system-ui; padding: 16px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="margin: 0; color: #00d4ff; font-size: 16px;">🤖 Agent Panel</h2>
-        <span style="font-size: 11px; color: #666;">v${__VERSION__}+${__COMMIT__} · ${__BUILD_TIME__}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: #666;">v${__VERSION__}+${__COMMIT__}</span>
+          <button id="settings-btn" style="background: none; border: 1px solid #2a3a5e; color: #666; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">⚙️</button>
+        </div>
       </div>
       <div id="agent-output" style="flex: 1; overflow-y: auto; font-size: 13px;"></div>
     </div>
   `;
+  document.getElementById("settings-btn")!.addEventListener("click", openSettings);
   oc.window.show();
   console.log("🪟 [Agent] Window opened");
+}
+
+// ─── Settings Screen ────────────────────────────────────────
+function openSettings() {
+  const currentKey = getApiKey();
+  const maskedKey = currentKey ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4) : "Nenhuma";
+
+  const overlay = document.createElement("div");
+  overlay.id = "settings-overlay";
+  overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;font-family:system-ui;";
+
+  overlay.innerHTML = `
+    <div style="background:#16213e;border-radius:12px;padding:20px;max-width:400px;width:90%;border:1px solid #2a3a5e;">
+      <h3 style="margin:0 0 12px;color:#eee;font-size:15px;">⚙️ Configurações</h3>
+      <div style="margin-bottom:12px;">
+        <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Chave de API da Jina:</label>
+        <div style="display:flex;gap:8px;">
+          <input id="settings-key-input" type="password" value="${currentKey}" placeholder="jina_xxx..."
+            style="flex:1;padding:8px;border-radius:6px;border:1px solid #2a3a5e;background:#0f3460;color:#eee;font-size:13px;font-family:monospace;box-sizing:border-box;outline:none;" />
+        </div>
+        <div style="color:#666;font-size:11px;margin-top:4px;">Atual: ${maskedKey}</div>
+      </div>
+      <div id="settings-msg" style="display:none;font-size:12px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;">
+        <button id="settings-save" style="flex:1;padding:8px;border-radius:6px;border:none;background:#00d4ff;color:#1a1a2e;font-size:13px;font-weight:bold;cursor:pointer;">Salvar</button>
+        <button id="settings-close" style="flex:1;padding:8px;border-radius:6px;border:1px solid #2a3a5e;background:transparent;color:#aaa;font-size:13px;cursor:pointer;">Fechar</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById("settings-close")!.addEventListener("click", () => overlay.remove());
+  document.getElementById("settings-save")!.addEventListener("click", async () => {
+    const newKey = (document.getElementById("settings-key-input") as HTMLInputElement).value.trim();
+    const msg = document.getElementById("settings-msg")!;
+    if (!newKey) {
+      msg.textContent = "Insira uma chave.";
+      msg.style.color = "#f87171";
+      msg.style.display = "block";
+      return;
+    }
+    msg.textContent = "Validando...";
+      msg.style.color = "#aaa";
+    msg.style.display = "block";
+    const valid = await validateApiKey(newKey);
+    if (valid) {
+      saveApiKey(newKey);
+      setApiKey(newKey);
+      msg.textContent = "✅ Chave salva!";
+      msg.style.color = "#4ade80";
+      setTimeout(() => overlay.remove(), 1000);
+    } else {
+      msg.textContent = "❌ Chave inválida.";
+      msg.style.color = "#f87171";
+    }
+  });
 }
 
 // ─── Command Handler ────────────────────────────────────────
@@ -129,16 +298,11 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
   </div>`);
 }
 
-// ─── Bootstrap ──────────────────────────────────────────────
-function bootstrap() {
-  printBanner();
-  console.log("🚀 [Agent] Loading...");
-
-  // Setup window (iframe content)
+// ─── Start Agent (registers pipeline + handlers) ─────────────
+function startAgent() {
   setupWindow();
 
   // CRITICAL: Pipeline runs BEFORE AI sees the message
-  // Block ALL readers (ai, ai-character-chat, etc.) — only our agent handles user messages
   oc.messageRenderingPipeline.push(({ message, reader }: { message: OcMessage; reader: string }) => {
     if (message.author === "user") {
       message.expectsReply = false;
@@ -152,8 +316,6 @@ function bootstrap() {
 
   oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
     // STRATEGY 1: Suppress internal generator by setting flags directly on the message object
-    // The pipeline can't prevent generation, but maybe the generator checks these properties
-    // when it reads the message (which happens AFTER our handler runs)
     if (message.author === "user") {
       message.expectsReply = false;
       if (!message.hiddenFrom) message.hiddenFrom = [];
@@ -199,6 +361,23 @@ function bootstrap() {
   });
 
   console.log("✅ [Agent] Ready!");
+}
+
+// ─── Bootstrap ──────────────────────────────────────────────
+function bootstrap() {
+  printBanner();
+  console.log("🚀 [Agent] Loading...");
+
+  // Load saved API key
+  const savedKey = loadApiKey();
+  if (savedKey) {
+    setApiKey(savedKey);
+    console.log("🔑 [Agent] API key loaded from storage");
+    startAgent();
+  } else {
+    console.log("🔑 [Agent] No API key found — showing setup screen");
+    renderSetupScreen();
+  }
 }
 
 // ─── Run ────────────────────────────────────────────────────

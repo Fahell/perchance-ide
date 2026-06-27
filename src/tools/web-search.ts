@@ -6,12 +6,41 @@
  * Auth: Bearer token required
  */
 
-// Get your Jina AI API key for free: https://jina.ai/?sui=apikey
-const JINA_API_KEY = "jina_4cefc39c7f9c4e5e99ffabf239a709b4J1Z5UwXFlX-iw5hg3csfGGruBTo7";
+// ─── API Key Management ─────────────────────────────────────
+let currentApiKey = "";
+
+export function setApiKey(key: string): void {
+  currentApiKey = key;
+}
+
+export function getApiKey(): string {
+  return currentApiKey;
+}
+
+export function hasApiKey(): boolean {
+  return currentApiKey.length > 0;
+}
+
+export async function validateApiKey(key: string): Promise<boolean> {
+  try {
+    const res = await fetch("https://s.jina.ai/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ q: "test" }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 function jinaHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
-    Authorization: `Bearer ${JINA_API_KEY}`,
+    Authorization: `Bearer ${currentApiKey}`,
     "Content-Type": "application/json",
     Accept: "application/json",
     ...extra,
