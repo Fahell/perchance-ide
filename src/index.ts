@@ -14,6 +14,7 @@ declare const __BUILD_TIME__: string;
 // ─── Globals ────────────────────────────────────────────────
 const oc: Oc = window.oc;
 let agentProcessing = false;
+const MAX_HISTORY_MESSAGES = 10;
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -87,10 +88,17 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
     <div style="color: #00d4ff; font-weight: bold;">📨 ${message.content.slice(0, 80)}</div>
   </div>`);
 
+  // Extract conversation history from thread (last N messages before this one)
+  const history = oc.thread.messages
+    .filter((m) => (m.author === "user" || m.author === "ai") && m !== message)
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map((m) => ({ role: m.author === "user" ? "user" as const : "assistant" as const, content: m.content }));
+
   // Run the agent loop
   const response = await agentLoop(
     oc,
     message.content,
+    history,
     (status) => {
       console.log("🤖 [Agent]", status);
     },

@@ -13,6 +13,7 @@ import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 5;
+const MAX_HISTORY_MESSAGES = 10;
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
 // ─── System Prompt for Tools ────────────────────────────────
@@ -33,6 +34,12 @@ To use a tool, output EXACTLY this format on its own line:
 You may output ONE tool_call per response, followed by a brief note.
 After receiving tool results, give your FINAL answer — do NOT output more tool_calls.
 Never make up data — if the search fails, tell the user.`;
+}
+
+// ─── Conversation History ────────────────────────────────────
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
 // ─── Parse Tool Calls ───────────────────────────────────────
@@ -72,13 +79,25 @@ function cleanResponse(text: string): string {
 export async function agentLoop(
   oc: Oc,
   userMessage: string,
+  history: HistoryMessage[] = [],
   onStatus?: (status: string) => void,
   onToolResult?: (toolName: string, args: Record<string, any>, result: string) => void
 ): Promise<string> {
   const toolPrompt = buildToolPrompt();
 
-  // Build the instruction for the LLM
-  let instruction = `${toolPrompt}\n\nUser message: ${userMessage}`;
+  // Build the instruction for the LLM with conversation history
+  let instruction = toolPrompt + "\n\n";
+
+  if (history.length > 0) {
+    instruction += "Recent conversation:\n";
+    for (const msg of history) {
+      const role = msg.role === "user" ? "User" : "Assistant";
+      instruction += `${role}: ${msg.content}\n`;
+    }
+    instruction += "\n";
+  }
+
+  instruction += `User message: ${userMessage}`;
 
   let iteration = 0;
 
