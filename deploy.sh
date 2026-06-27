@@ -12,6 +12,19 @@ echo "🕐 Build: ${BUILD_TIME}"
 echo "🔨 Building..."
 COMMIT=$COMMIT pnpm build
 
+# Generate IMPORT.md with cache-busted URL
+IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/agent-perchance@main/dist/agent.js?v=${COMMIT}"
+cat > IMPORT.md << EOF
+# Import URL
+
+Copy-paste this into Perchance Custom Code:
+
+\`\`\`
+import("${IMPORT_URL}");
+\`\`\`
+EOF
+echo "📄 Generated IMPORT.md"
+
 echo "📦 Committing..."
 git add -A
 git commit -m "deploy: v${VERSION}+${COMMIT}" || echo "Nothing to commit"
