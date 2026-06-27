@@ -16,14 +16,9 @@ const oc: Oc = window.oc;
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
-  console.log(
-    "%c🤖 Agent %cv" + __VERSION__ + "+" + __COMMIT__ + "%c\n" +
-    "   Build: " + __BUILD_TIME__ + "\n" +
-    "   https://github.com/Fahell/agent-perchance",
-    "color: #00d4ff; font-weight: bold; font-size: 14px;",
-    "color: #4ade80; font-weight: bold; font-size: 14px;",
-    "color: #888; font-size: 11px;"
-  );
+  console.log("🤖 Agent v" + __VERSION__ + "+" + __COMMIT__);
+  console.log("   Build: " + __BUILD_TIME__);
+  console.log("   https://github.com/Fahell/agent-perchance");
 }
 
 // ─── Validation ─────────────────────────────────────────────
