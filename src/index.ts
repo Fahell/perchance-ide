@@ -401,10 +401,8 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
 
   console.log("🤖 [Agent] Response:", response.slice(0, 100));
 
-  // Mark processing done BEFORE pushing — so our MessageAdded handler allows it through
-  agentProcessing = false;
-
   // Push ONLY the final AI response to the chat (no tool calls, no search results)
+  // Note: agentProcessing is cleared in the handler's finally block, AFTER this push
   oc.thread.messages.push({
     author: "ai",
     content: response,
@@ -419,7 +417,7 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
 function startAgent() {
   setupWindow();
 
-  oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
+  oc.thread.on("MessageAdded", async function({ message }: { message: OcMessage }) {
     // Suppress internal generator by setting flags directly on the message object.
     // hiddenFrom: ["ai"] hides from AI only — user still sees the message in chat.
     if (message.author === "user") {
@@ -451,19 +449,21 @@ function startAgent() {
       return;
     }
 
-    // Handle regular messages — run agent loop
+    // Handle regular messages — run agent loop (awaited for spinner feedback)
     console.log("📨 [Agent] Processing:", message.content.slice(0, 80));
 
     agentProcessing = true;
-
-    handleUserMessage(message).catch((err) => {
-      agentProcessing = false;
+    try {
+      await handleUserMessage(message);
+    } catch (err) {
       console.error("❌ [Agent] Error:", err);
       oc.thread.messages.push({
         author: "ai",
         content: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
       });
-    });
+    } finally {
+      agentProcessing = false;
+    }
   });
 
   console.log("✅ [Agent] Ready!");
