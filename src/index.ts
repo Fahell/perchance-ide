@@ -13,6 +13,7 @@ declare const __BUILD_TIME__: string;
 
 // ─── Globals ────────────────────────────────────────────────
 const oc: Oc = window.oc;
+let agentProcessing = false;
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -106,6 +107,9 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
 
   console.log("🤖 [Agent] Response:", response.slice(0, 100));
 
+  // Mark processing done BEFORE pushing — so our MessageAdded handler allows it through
+  agentProcessing = false;
+
   // Push ONLY the final AI response to the chat (no tool calls, no search results)
   oc.thread.messages.push({
     author: "ai",
@@ -139,6 +143,16 @@ function bootstrap() {
   });
 
   oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
+    // Remove messages from Perchance's internal generator while our agent is running
+    if (message.author === "ai" && agentProcessing) {
+      const idx = oc.thread.messages.indexOf(message);
+      if (idx !== -1) {
+        oc.thread.messages.splice(idx, 1);
+        console.log("🗑️ [Agent] Removed internal generator message");
+      }
+      return;
+    }
+
     if (message.author !== "user") return;
 
     // Handle /agent commands
@@ -154,7 +168,10 @@ function bootstrap() {
     // Handle regular messages — run agent loop
     console.log("📨 [Agent] Processing:", message.content.slice(0, 80));
 
+    agentProcessing = true;
+
     handleUserMessage(message).catch((err) => {
+      agentProcessing = false;
       console.error("❌ [Agent] Error:", err);
       oc.thread.messages.push({
         author: "ai",
