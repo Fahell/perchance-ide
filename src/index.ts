@@ -122,13 +122,21 @@ function bootstrap() {
   // Setup window (iframe content)
   setupWindow();
 
+  // CRITICAL: Pipeline runs BEFORE AI sees the message
+  // This prevents the default AI from responding to ANY user message
+  oc.messageRenderingPipeline.push(({ message, reader }: { message: OcMessage; reader: string }) => {
+    if (reader === "ai" && message.author === "user") {
+      message.expectsReply = false;
+      message.hiddenFrom = ["ai"];
+      console.log("🛡️ [Agent] Pipeline: blocked AI from seeing user message");
+    }
+  });
+
   oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
     if (message.author !== "user") return;
 
     // Handle /agent commands
     if (isAgentCommand(message.content)) {
-      message.expectsReply = false;
-      message.hiddenFrom = ["ai"];
       handleCommand(message.content);
       setTimeout(() => {
         const idx = oc.thread.messages.indexOf(message);
@@ -138,8 +146,7 @@ function bootstrap() {
     }
 
     // Handle regular messages — run agent loop
-    message.expectsReply = false;
-    message.hiddenFrom = ["ai"];
+    console.log("📨 [Agent] Processing:", message.content.slice(0, 80));
 
     handleUserMessage(message).catch((err) => {
       console.error("❌ [Agent] Error:", err);
