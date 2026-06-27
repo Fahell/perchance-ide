@@ -42,7 +42,10 @@ function validateEnvironment(): boolean {
 function setupWindow() {
   document.body.innerHTML = `
     <div style="font-family: system-ui; padding: 16px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; flex-direction: column;">
-      <h2 style="margin: 0 0 12px 0; color: #00d4ff; font-size: 16px;">🤖 Agent Panel</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="margin: 0; color: #00d4ff; font-size: 16px;">🤖 Agent Panel</h2>
+        <span style="font-size: 11px; color: #666;">v${__VERSION__}+${__COMMIT__} · ${__BUILD_TIME__}</span>
+      </div>
       <div id="agent-output" style="flex: 1; overflow-y: auto; font-size: 13px;"></div>
     </div>
   `;

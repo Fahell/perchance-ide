@@ -17,6 +17,7 @@ Agent framework for Perchance AI Character Chat. TypeScript project bundled with
 
 ## Key APIs (Perchance)
 - `oc.thread.on("MessageAdded")` — intercept messages (SYNCHRONOUS handler required)
+- `oc.messageRenderingPipeline.push()` — process messages BEFORE AI sees them
 - `oc.thread.messages.push()` — add messages to chat
 - `oc.generateText({instruction})` — call LLM programmatically
 - `oc.window.show() / .hide()` — control iframe window
@@ -24,9 +25,10 @@ Agent framework for Perchance AI Character Chat. TypeScript project bundled with
 - `message.hiddenFrom = ["ai"]` — hide message from AI
 
 ## Critical Patterns
-- **Message interception**: Set `expectsReply: false` + `hiddenFrom: ["ai"]` BEFORE AI captures the message
+- **Message interception**: Use `messageRenderingPipeline` to set `expectsReply: false` BEFORE AI sees message
 - **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back
 - **Window**: All UI goes in the iframe (`document.body.innerHTML`), not in the chat
+- **Jina API**: POST with Bearer auth (free tier key in web-search.ts)
 
 ## Commands
 - `pnpm build` — bundle to dist/agent.js
@@ -37,4 +39,4 @@ Agent framework for Perchance AI Character Chat. TypeScript project bundled with
 - Use `import type` for type-only imports
 - Synchronous handlers for `MessageAdded` (race condition prevention)
 - All custom code runs in sandboxed iframe (no access to parent window)
-- Jina API for web search/scrape (CORS-friendly, no auth)
+- Jina API: POST with Bearer auth, CORS-friendly
