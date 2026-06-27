@@ -8,7 +8,7 @@ echo "📦 Version: ${VERSION}"
 echo "🕐 Build: ${BUILD_TIME}"
 
 echo "🔨 Building..."
-pnpm build
+COMMIT=$(git rev-parse --short HEAD) pnpm build
 
 echo "📦 Committing..."
 git add -A

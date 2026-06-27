@@ -33,11 +33,11 @@ Now respond to the user based on this information. Do NOT use any more tools \u2
 
 [Tool Error - ${c.name}]: ${u}
 
-The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var s=window.oc;function I(){console.log("\u{1F916} Agent v0.1.0+dev"),console.log("   Build: 2026-06-27 02:16:46"),console.log("   https://github.com/Fahell/agent-perchance")}function M(){return s?s.thread?typeof s.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function P(){document.body.innerHTML=`
+The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var s=window.oc;function I(){console.log("\u{1F916} Agent v0.1.0+7431ed5"),console.log("   Build: 2026-06-27 02:18:05"),console.log("   https://github.com/Fahell/agent-perchance")}function M(){return s?s.thread?typeof s.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function P(){document.body.innerHTML=`
     <div style="font-family: system-ui; padding: 16px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="margin: 0; color: #00d4ff; font-size: 16px;">\u{1F916} Agent Panel</h2>
-        <span style="font-size: 11px; color: #666;">v0.1.0+dev \xB7 2026-06-27 02:16:46</span>
+        <span style="font-size: 11px; color: #666;">v0.1.0+7431ed5 \xB7 2026-06-27 02:18:05</span>
       </div>
       <div id="agent-output" style="flex: 1; overflow-y: auto; font-size: 13px;"></div>
     </div>
