@@ -4,6 +4,7 @@
  */
 
 import type { Oc, OcMessage } from "./types.js";
+import { agentLoop } from "./agent-loop.js";
 
 // ─── Globals ────────────────────────────────────────────────
 const oc: Oc = window.oc;
@@ -54,6 +55,34 @@ function handleCommand(content: string): void {
   }
 }
 
+// ─── Agent Message Handler ──────────────────────────────────
+async function handleUserMessage(message: OcMessage): Promise<void> {
+  console.log("🤖 [Agent] Processing:", message.content.slice(0, 80));
+
+  // Show status in the window
+  const output = document.getElementById("agent-output");
+  if (output) {
+    output.innerHTML += `<div style="margin: 5px 0; color: #00d4ff;">🔍 ${message.content.slice(0, 60)}...</div>`;
+  }
+
+  // Run the agent loop (handles tool calls)
+  const response = await agentLoop(oc, message.content, (status) => {
+    console.log("🤖 [Agent]", status);
+  });
+
+  console.log("🤖 [Agent] Response:", response.slice(0, 100));
+
+  // Push the AI response to the chat
+  oc.thread.messages.push({
+    author: "ai",
+    content: response,
+  });
+
+  if (output) {
+    output.innerHTML += `<div style="margin: 5px 0; color: #4ade80;">✅ Done (${response.length} chars)</div>`;
+  }
+}
+
 // ─── Bootstrap ──────────────────────────────────────────────
 function bootstrap() {
   console.log("🚀 [Agent] Loading...");
@@ -61,27 +90,32 @@ function bootstrap() {
   // Setup window (iframe content)
   setupWindow();
 
-  // SYNCHRONOUS handler — critical to prevent race condition with AI
   oc.thread.on("MessageAdded", function({ message }: { message: OcMessage }) {
     if (message.author !== "user") return;
-    if (!isAgentCommand(message.content)) return;
 
-    console.log("📨 [Agent] Command:", message.content);
+    // Handle /agent commands
+    if (isAgentCommand(message.content)) {
+      message.expectsReply = false;
+      message.hiddenFrom = ["ai"];
+      handleCommand(message.content);
+      setTimeout(() => {
+        const idx = oc.thread.messages.indexOf(message);
+        if (idx !== -1) oc.thread.messages.splice(idx, 1);
+      }, 100);
+      return;
+    }
 
-    // 1) Prevent AI from replying to this message
+    // Handle regular messages — run agent loop
     message.expectsReply = false;
-
-    // 2) Hide from AI entirely
     message.hiddenFrom = ["ai"];
 
-    // 3) Execute the command
-    handleCommand(message.content);
-
-    // 4) Delete the message from chat after a tick (so AI has already skipped it)
-    setTimeout(() => {
-      const idx = oc.thread.messages.indexOf(message);
-      if (idx !== -1) oc.thread.messages.splice(idx, 1);
-    }, 100);
+    handleUserMessage(message).catch((err) => {
+      console.error("❌ [Agent] Error:", err);
+      oc.thread.messages.push({
+        author: "ai",
+        content: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    });
   });
 
   console.log("✅ [Agent] Ready!");
