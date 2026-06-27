@@ -16,9 +16,9 @@ export interface Tool {
 const tools: Record<string, Tool> = {
   web_search: {
     name: "web_search",
-    description: "Search the web for current information. Returns titles, URLs, and descriptions.",
+    description: "Search the web for REAL-TIME or CURRENT information. USE this for: prices, exchange rates, sports results, news, weather, events, recent facts, or anything you are not 100% sure about. Returns up to 5 results with titles, URLs, and descriptions.",
     parameters: {
-      query: "The search query string",
+      query: "The search query string. Be specific — include topic, year, or context when relevant.",
     },
     execute: async (args) => {
       const result = await webSearch(args.query, 5);
@@ -28,9 +28,9 @@ const tools: Record<string, Tool> = {
 
   scrape_url: {
     name: "scrape_url",
-    description: "Fetch and extract the main content from a URL as markdown.",
+    description: "Fetch and extract the full text content from a specific URL as markdown. USE this when you have a URL and need to read its content.",
     parameters: {
-      url: "The URL to scrape",
+      url: "The full URL to scrape (must start with http:// or https://)",
     },
     execute: async (args) => {
       const result = await scrapeUrl(args.url, 5000);

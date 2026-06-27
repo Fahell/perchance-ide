@@ -17,21 +17,22 @@ const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/
 
 // ─── System Prompt for Tools ────────────────────────────────
 function buildToolPrompt(): string {
-  return `You have access to the following tools:
+  return `You are a helpful assistant with access to web search.
 
+Available tools:
 ${getToolDescriptions()}
 
-When you need to use a tool, output a tool_call block EXACTLY like this:
+IMPORTANT RULES:
+- ALWAYS use web_search when the user asks about real-time data (prices, scores, news, weather, dates, events).
+- For general knowledge you are confident about, answer directly.
+- When unsure, search first — it's better to search than to guess.
 
+To use a tool, output EXACTLY this format on its own line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
 
-Rules:
-- You can output ONE tool_call per response.
-- The tool_call must be on its own line.
-- After the tool_call, you can add a brief explanation of what you're searching for.
-- When you receive tool results, use them to answer the user's question.
-- Do NOT output tool_call blocks when responding to tool results — give your final answer.
-- For general knowledge questions, respond directly without using tools.`;
+You may output ONE tool_call per response, followed by a brief note.
+After receiving tool results, give your FINAL answer — do NOT output more tool_calls.
+Never make up data — if the search fails, tell the user.`;
 }
 
 // ─── Parse Tool Calls ───────────────────────────────────────
