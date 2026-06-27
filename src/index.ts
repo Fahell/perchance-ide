@@ -150,15 +150,32 @@ function setupWindow() {
         <h2 style="margin: 0; color: #00d4ff; font-size: 16px;">🤖 Agent Panel</h2>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span style="font-size: 11px; color: #666;">v${__VERSION__}+${__COMMIT__}</span>
+          <button id="fs-btn" title="Tela cheia" style="background: none; border: 1px solid #2a3a5e; color: #666; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">⛶</button>
           <button id="settings-btn" style="background: none; border: 1px solid #2a3a5e; color: #666; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">⚙️</button>
         </div>
       </div>
       <div id="agent-output" style="flex: 1; overflow-y: auto; font-size: 13px;"></div>
     </div>
   `;
+  document.getElementById("fs-btn")!.addEventListener("click", toggleFullscreen);
   document.getElementById("settings-btn")!.addEventListener("click", openSettings);
+  document.addEventListener("fullscreenchange", () => {
+    const btn = document.getElementById("fs-btn");
+    if (btn) btn.textContent = document.fullscreenElement ? "↙" : "⛶";
+  });
   oc.window.show();
   console.log("🪟 [Agent] Window opened");
+}
+
+// ─── Fullscreen Toggle ─────────────────────────────────────
+function toggleFullscreen(): void {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch((err) => {
+      console.warn("🪟 [Agent] Fullscreen failed:", err);
+    });
+  } else {
+    document.exitFullscreen();
+  }
 }
 
 // ─── Settings Screen ────────────────────────────────────────
