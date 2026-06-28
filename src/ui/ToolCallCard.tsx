@@ -1,41 +1,30 @@
 import { h } from "preact";
 import { useState } from "preact/hooks";
-import { colors } from "./theme.js";
+import { colors, fonts } from "./theme.js";
 import type { ToolCallEntry } from "./types.js";
 
 interface ToolCallCardProps {
   toolCall: ToolCallEntry;
 }
 
-const TOOL_ICONS: Record<string, string> = {
-  web_search: "🔍",
-  scrape_url: "📄",
-};
-
 const TOOL_LABELS: Record<string, string> = {
-  web_search: "Web Search",
-  scrape_url: "Scrape URL",
+  web_search: "web_search",
+  scrape_url: "scrape_url",
 };
 
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const icon = TOOL_ICONS[toolCall.name] ?? "🔧";
   const label = TOOL_LABELS[toolCall.name] ?? toolCall.name;
 
   const borderColor =
-    toolCall.status === "success" ? colors.success :
-    toolCall.status === "error" ? colors.error :
-    colors.warning;
-
-  const badgeColor =
-    toolCall.status === "success" ? colors.success :
-    toolCall.status === "error" ? colors.error :
-    colors.warning;
+    toolCall.status === "success" ? colors.statusDone :
+    toolCall.status === "error" ? colors.statusError :
+    colors.borderEmphasis;
 
   const badgeText =
-    toolCall.status === "success" ? "✓" :
-    toolCall.status === "error" ? "✗" :
-    "⏳";
+    toolCall.status === "success" ? "[ok]" :
+    toolCall.status === "error" ? "[!!]" :
+    "[...]";
 
   const query = toolCall.args.query ?? toolCall.args.url ?? "";
   const queryPreview = typeof query === "string"
@@ -46,8 +35,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
     <div style={{
       margin: "4px 0",
       background: colors.bg,
-      borderRadius: "6px",
-      borderLeft: `3px solid ${borderColor}`,
+      borderLeft: `2px solid ${borderColor}`,
       overflow: "hidden",
       animation: "agent-slide-in 0.2s ease-out",
     }}>
@@ -57,17 +45,17 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "6px",
+          gap: "8px",
           width: "100%",
           padding: "6px 10px",
           background: "none",
           border: "none",
           cursor: "pointer",
           textAlign: "left",
-          fontSize: "12px",
+          fontSize: "11px",
+          fontFamily: fonts.mono,
         }}
       >
-        <span>{icon}</span>
         <span style={{ color: colors.textSecondary, fontWeight: "600" }}>{label}</span>
         <span style={{
           marginLeft: "auto",
@@ -77,14 +65,20 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
+          fontFamily: fonts.mono,
         }}>
           {queryPreview}
         </span>
-        <span style={{
-          fontSize: "10px",
-          color: badgeColor,
-          fontWeight: "bold",
-        }}>
+        <span
+          className={toolCall.status === "running" ? "shimmer-text" : ""}
+          style={{
+            fontSize: "10px",
+            color: toolCall.status === "running" ? undefined : borderColor,
+            fontWeight: "bold",
+            fontFamily: fonts.mono,
+            ...(toolCall.status === "running" ? {} : {}),
+          }}
+        >
           {badgeText}
         </span>
       </button>
@@ -95,11 +89,12 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
           padding: "6px 10px 8px",
           borderTop: `1px solid ${colors.border}`,
           fontSize: "11px",
+          fontFamily: fonts.mono,
         }}>
           {/* Args */}
           <div style={{ marginBottom: "4px" }}>
-            <span style={{ color: colors.textMuted }}>Args: </span>
-            <span style={{ color: colors.textSecondary, fontFamily: "monospace", fontSize: "10px" }}>
+            <span style={{ color: colors.textMuted }}>args: </span>
+            <span style={{ color: colors.textSecondary, fontSize: "10px" }}>
               {JSON.stringify(toolCall.args)}
             </span>
           </div>
@@ -110,12 +105,12 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
               maxHeight: "150px",
               overflowY: "auto",
               padding: "6px",
-              background: colors.card,
-              borderRadius: "4px",
+              background: colors.surface2,
               color: colors.textSecondary,
               lineHeight: "1.4",
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
+              fontSize: "10px",
             }}>
               {toolCall.result.slice(0, 1000)}
               {toolCall.result.length > 1000 && (
@@ -128,9 +123,9 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
           {toolCall.error && (
             <div style={{
               padding: "6px",
-              background: "rgba(248, 113, 113, 0.1)",
-              borderRadius: "4px",
-              color: colors.error,
+              background: colors.surface2,
+              color: colors.statusError,
+              fontSize: "10px",
             }}>
               {toolCall.error}
             </div>

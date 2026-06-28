@@ -1,6 +1,6 @@
 import { h } from "preact";
 import { useState, useCallback } from "preact/hooks";
-import { colors } from "./theme.js";
+import { colors, fonts } from "./theme.js";
 import { Header } from "./Header.js";
 import { MessageList } from "./MessageList.js";
 import { UserMessage } from "./UserMessage.js";
@@ -124,7 +124,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
 
   return (
     <div style={{
-      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontFamily: fonts.mono,
       background: colors.bg,
       color: colors.text,
       height: "100vh",
@@ -151,14 +151,18 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
             color: colors.textMuted,
             textAlign: "center",
             padding: "20px",
+            fontFamily: fonts.mono,
           }}>
-            <div style={{ fontSize: "32px", marginBottom: "8px" }}>{panelMode === "tools-only" ? "📊" : "🤖"}</div>
-            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
-              {panelMode === "tools-only"
-                ? "Modo compacto — envie uma mensagem no chat"
-                : "Olá! Envie uma mensagem para começar."}
+            <div style={{ fontSize: "12px", marginBottom: "6px" }}>
+              {panelMode === "tools-only" ? (
+                <span>compact — tool calls only</span>
+              ) : (
+                <span>
+                  ready<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
+                </span>
+              )}
             </div>
-            <div style={{ fontSize: "10px" }}>v{version}+{commit}</div>
+            <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
           </div>
         )}
 
@@ -175,8 +179,8 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
 
           if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
             return (
-              <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "11px" }}>
-                📊 Modo compacto — apenas tool calls visíveis
+              <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono }}>
+                compact — tool calls only
               </div>
             );
           }

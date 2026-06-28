@@ -1,36 +1,39 @@
 import { h } from "preact";
-import { colors } from "./theme.js";
+import { colors, fonts } from "./theme.js";
 import type { AgentStatus } from "./types.js";
 
 interface StatusIndicatorProps {
   status: AgentStatus;
 }
 
-const STATUS_CONFIG: Record<AgentStatus, { icon: string; label: string; color: string } | null> = {
+const STATUS_LABELS: Record<AgentStatus, string | null> = {
   idle: null,
-  thinking: { icon: "💭", label: "Pensando...", color: colors.accent },
-  searching: { icon: "🔍", label: "Pesquisando na web...", color: colors.warning },
-  scraping: { icon: "📄", label: "Lendo página...", color: colors.success },
-  responding: { icon: "✍️", label: "Gerando resposta...", color: colors.accent },
+  thinking: "thinking",
+  searching: "searching",
+  scraping: "reading",
+  responding: "generating",
 };
 
 export function StatusIndicator({ status }: StatusIndicatorProps) {
-  const config = STATUS_CONFIG[status];
-  if (!config) return null;
+  const label = STATUS_LABELS[status];
+  if (!label) return null;
 
   return (
     <div style={{
       display: "flex",
       alignItems: "center",
-      gap: "6px",
-      padding: "6px 10px",
-      margin: "4px 0",
-      fontSize: "12px",
-      color: config.color,
-      animation: "agent-pulse 1.5s ease-in-out infinite",
+      gap: "4px",
+      padding: "4px 10px",
+      margin: "2px 0",
+      fontSize: "11px",
+      fontFamily: fonts.mono,
     }}>
-      <span>{config.icon}</span>
-      <span>{config.label}</span>
+      <span className="shimmer-text">{label}</span>
+      <span style={{
+        color: colors.text,
+        animation: "cursor-blink 1s step-end infinite",
+        fontWeight: "bold",
+      }}>|</span>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { h } from "preact";
 import { useState } from "preact/hooks";
-import { colors } from "./theme.js";
+import { colors, fonts } from "./theme.js";
 
 import type { PanelMode } from "./types.js";
 
@@ -21,18 +21,20 @@ export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, 
 
   async function handleSave() {
     if (!key.trim()) {
-      setMsg("Insira uma chave.");
+      setMsg("[!!] insert a key");
       return;
     }
-    setMsg("Validando...");
+    setMsg("[...] validating");
     const ok = await onSave(key.trim());
-    setMsg(ok ? "✅ Chave salva!" : "❌ Chave inválida.");
+    setMsg(ok ? "[ok] saved" : "[!!] invalid key");
     if (ok) setTimeout(onClose, 800);
   }
 
   const maskedKey = currentKey
     ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4)
-    : "Nenhuma";
+    : "none";
+
+  const isCompact = panelMode === "tools-only";
 
   return (
     <div
@@ -43,7 +45,7 @@ export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, 
         left: "0",
         right: "0",
         bottom: "0",
-        background: "rgba(0,0,0,0.7)",
+        background: "rgba(0,0,0,0.85)",
         zIndex: "1000",
         display: "flex",
         alignItems: "center",
@@ -53,44 +55,45 @@ export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, 
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: colors.card,
-          borderRadius: "10px",
-          padding: "16px",
-          maxWidth: "360px",
+          background: colors.bg,
+          padding: "20px",
+          maxWidth: "380px",
           width: "90%",
           border: `1px solid ${colors.border}`,
         }}
       >
-        <h3 style={{ margin: "0 0 10px", color: colors.text, fontSize: "14px" }}>⚙️ Configurações</h3>
+        <h3 style={{ margin: "0 0 16px", color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+          settings
+        </h3>
 
         {/* Panel mode toggle */}
-        <div style={{ marginBottom: "12px", padding: "8px", borderRadius: "6px", background: colors.inputBg, border: `1px solid ${colors.border}` }}>
+        <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ color: colors.text, fontSize: "12px", fontWeight: "bold" }}>📊 Modo compacto</div>
-              <div style={{ color: colors.textMuted, fontSize: "10px", marginTop: "2px" }}>Mostra apenas tool calls e status</div>
+              <div style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>compact mode</div>
+              <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono }}>tool calls + status only</div>
             </div>
             <div
-              onClick={() => onPanelModeChange(panelMode === "full" ? "tools-only" : "full")}
+              onClick={() => onPanelModeChange(isCompact ? "full" : "tools-only")}
               style={{
-                width: "36px", height: "20px", borderRadius: "10px", cursor: "pointer",
-                background: panelMode === "tools-only" ? colors.accent : colors.border,
-                position: "relative", transition: "background 0.2s", flexShrink: 0,
+                cursor: "pointer",
+                fontFamily: fonts.mono,
+                fontSize: "10px",
+                color: isCompact ? colors.text : colors.textMuted,
+                border: `1px solid ${isCompact ? colors.text : colors.border}`,
+                padding: "3px 8px",
+                letterSpacing: "0.5px",
+                transition: "all 0.15s",
               }}
             >
-              <div style={{
-                width: "16px", height: "16px", borderRadius: "50%", background: colors.text,
-                position: "absolute", top: "2px",
-                left: panelMode === "tools-only" ? "18px" : "2px",
-                transition: "left 0.2s",
-              }} />
+              {isCompact ? "on" : "off"}
             </div>
           </div>
         </div>
 
-        <div style={{ marginBottom: "10px" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", display: "block", marginBottom: "3px" }}>
-            Chave de API da Jina:
+        <div style={{ marginBottom: "14px" }}>
+          <label style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+            jina api key
           </label>
           <input
             type="password"
@@ -99,63 +102,64 @@ export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, 
             placeholder="jina_xxx..."
             style={{
               width: "100%",
-              padding: "6px 8px",
-              borderRadius: "4px",
+              padding: "8px 10px",
               border: `1px solid ${colors.border}`,
-              background: colors.inputBg,
+              background: colors.surface1,
               color: colors.text,
-              fontSize: "12px",
-              fontFamily: "monospace",
+              fontSize: "11px",
+              fontFamily: fonts.mono,
               boxSizing: "border-box",
               outline: "none",
             }}
           />
-          <div style={{ color: colors.textMuted, fontSize: "10px", marginTop: "3px" }}>
-            Atual: {maskedKey}
+          <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+            current: {maskedKey}
           </div>
         </div>
 
         {msg && (
           <div style={{
-            fontSize: "11px",
-            marginBottom: "6px",
-            color: msg.startsWith("✅") ? colors.success : msg.startsWith("❌") ? colors.error : colors.textSecondary,
+            fontSize: "10px",
+            marginBottom: "10px",
+            color: msg.startsWith("[ok]") ? colors.textSecondary : msg.startsWith("[!!]") ? colors.statusError : colors.textMuted,
+            fontFamily: fonts.mono,
           }}>
             {msg}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
           <button
             onClick={handleSave}
             style={{
               flex: "1",
-              padding: "6px",
-              borderRadius: "4px",
-              border: "none",
-              background: colors.accent,
-              color: colors.bg,
-              fontSize: "12px",
-              fontWeight: "bold",
+              padding: "8px",
+              border: `1px solid ${colors.text}`,
+              background: "transparent",
+              color: colors.text,
+              fontSize: "11px",
+              fontFamily: fonts.mono,
               cursor: "pointer",
+              letterSpacing: "0.5px",
             }}
           >
-            Salvar
+            save
           </button>
           <button
             onClick={onClose}
             style={{
               flex: "1",
-              padding: "6px",
-              borderRadius: "4px",
+              padding: "8px",
               border: `1px solid ${colors.border}`,
               background: "transparent",
-              color: colors.textSecondary,
-              fontSize: "12px",
+              color: colors.textMuted,
+              fontSize: "11px",
+              fontFamily: fonts.mono,
               cursor: "pointer",
+              letterSpacing: "0.5px",
             }}
           >
-            Fechar
+            close
           </button>
         </div>
       </div>

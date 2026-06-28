@@ -1,22 +1,34 @@
 /**
- * Design tokens for the Agent Panel
+ * Monochrome design tokens — Agent Panel
  */
 
 export const colors = {
-  bg: "#1a1a2e",
-  card: "#16213e",
-  border: "#2a3a5e",
-  accent: "#00d4ff",
-  success: "#4ade80",
-  warning: "#f59e0b",
-  error: "#f87171",
-  text: "#eee",
-  textSecondary: "#aaa",
-  textMuted: "#666",
-  inputBg: "#0f3460",
+  // Surfaces
+  bg: "#000000",
+  surface1: "#0a0a0a",
+  surface2: "#111111",
+  surface3: "#1a1a1a",
+
+  // Borders
+  border: "#222222",
+  borderEmphasis: "#333333",
+
+  // Text
+  text: "#ffffff",
+  textSecondary: "#888888",
+  textMuted: "#444444",
+  textHighlight: "#cccccc",
+
+  // Status
+  statusRunning: "rgba(255,255,255,0.9)",
+  statusDone: "#666666",
+  statusError: "#ffffff",
+
+  // Input
+  inputBg: "#111111",
 } as const;
 
 export const fonts = {
   main: "system-ui, -apple-system, sans-serif",
-  mono: "monospace",
+  mono: "'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
 } as const;
