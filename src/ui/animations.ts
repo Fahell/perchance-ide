@@ -94,30 +94,6 @@ const ANIMATION_CSS = `
   border-top: 1px solid #222;
   margin: 10px 0;
 }
-
-/* Toggle expand/collapse transition */
-.process-toggle-content {
-  overflow: hidden;
-  transition: max-height 0.2s ease-out, opacity 0.15s ease-out;
-}
-.process-toggle-content.collapsed {
-  max-height: 0;
-  opacity: 0;
-  padding: 0;
-}
-.process-toggle-content.expanded {
-  max-height: 2000px;
-  opacity: 1;
-}
-
-/* Status shimmer bar */
-.status-shimmer {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-  padding-left: 4px;
-}
 `;
 
 let injected = false;

@@ -93,6 +93,13 @@ export function ThinkingIndicator() {
     // Create DOM structure
     container.innerHTML = "";
 
+    // Shimmer label
+    const label = document.createElement("div");
+    label.className = "shimmer-text";
+    label.style.cssText = `font-family:${fonts.mono};font-size:11px;letter-spacing:1px;margin-bottom:4px;`;
+    label.textContent = "thinking";
+    container.appendChild(label);
+
     // Terminal lines container
     const linesWrap = document.createElement("div");
 
