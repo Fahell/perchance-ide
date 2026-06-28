@@ -20,6 +20,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "preact": "^10.29.3"
+    "preact": "^10.29.3",
+    "snarkdown": "^2.0.0"
   }
 }

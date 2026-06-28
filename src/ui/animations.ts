@@ -41,6 +41,59 @@ const ANIMATION_CSS = `
 ::-webkit-scrollbar-track { background: #0a0a0a; }
 ::-webkit-scrollbar-thumb { background: #333; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* Markdown content styles */
+.md-content { line-height: 1.6; }
+.md-content p { margin: 0 0 8px; }
+.md-content p:last-child { margin-bottom: 0; }
+.md-content strong { color: #fff; font-weight: 700; }
+.md-content em { color: #aaa; font-style: italic; }
+.md-content code {
+  background: #1a1a1a;
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  font-family: 'SF Mono','Cascadia Code','Fira Code','Consolas',monospace;
+}
+.md-content pre {
+  background: #111;
+  border: 1px solid #222;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.md-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.md-content a { color: #ccc; text-decoration: underline; }
+.md-content a:hover { color: #fff; }
+.md-content h1, .md-content h2, .md-content h3,
+.md-content h4, .md-content h5, .md-content h6 {
+  font-family: 'SF Mono','Cascadia Code','Fira Code','Consolas',monospace;
+  color: #fff;
+  margin: 12px 0 6px;
+}
+.md-content h1 { font-size: 16px; }
+.md-content h2 { font-size: 14px; }
+.md-content h3 { font-size: 13px; }
+.md-content ul, .md-content ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.md-content li { margin: 2px 0; }
+.md-content blockquote {
+  border-left: 2px solid #333;
+  padding-left: 10px;
+  margin: 8px 0;
+  color: #888;
+}
+.md-content hr {
+  border: none;
+  border-top: 1px solid #222;
+  margin: 10px 0;
+}
 `;
 
 let injected = false;

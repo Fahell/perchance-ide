@@ -1,5 +1,6 @@
 import { h } from "preact";
 import { colors, fonts } from "./theme.js";
+import { renderMarkdown } from "./markdown.js";
 
 interface ResponseTextProps {
   content: string;
@@ -43,7 +44,10 @@ export function ResponseText({ content, loading }: ResponseTextProps) {
       <div style={{ color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
         response
       </div>
-      <div>{content}</div>
+      <div
+        className="md-content"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+      />
     </div>
   );
 }
