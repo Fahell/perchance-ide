@@ -178,7 +178,15 @@ function startAgent() {
         console.log("⏳ [Agent] Already processing, ignoring panel input");
         return;
       }
-      oc.thread.messages.push({ author: "user", content: text });
+      // Include suppression flags directly so the internal generator
+      // never picks it up — avoids the race condition where
+      // getBotReply fires before our MessageAdded handler can set them.
+      oc.thread.messages.push({
+        author: "user",
+        content: text,
+        expectsReply: false,
+        hiddenFrom: ["ai"],
+      });
     },
   });
 
