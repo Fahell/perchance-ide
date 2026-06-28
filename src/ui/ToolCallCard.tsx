@@ -55,12 +55,12 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         fontFamily: fonts.mono,
       }}
     >
-      <span style={{ color: colors.textSecondary, fontWeight: "600" }}>{label}</span>
+      <span style={{ color: colors.textSecondary, fontWeight: "600", flexShrink: 0 }}>{label}</span>
       <span style={{
-        marginLeft: "auto",
+        flex: 1,
+        minWidth: 0,
         fontSize: "10px",
         color: colors.textMuted,
-        maxWidth: "200px",
         overflow: "hidden",
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
@@ -75,6 +75,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         color: borderColor,
         fontWeight: "bold",
         fontFamily: fonts.mono,
+        flexShrink: 0,
         width: "14px",
         textAlign: "center",
       }}>
