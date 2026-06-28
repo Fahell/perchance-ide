@@ -51,7 +51,7 @@ function savePanelMode(mode: "full" | "tools-only"): void {
 }
 
 function loadInputEnabled(): boolean {
-  return storageGet<string>(INPUT_ENABLED_STORAGE) === "true";
+  return storageGet<string>(INPUT_ENABLED_STORAGE) !== "false";
 }
 
 function saveInputEnabled(enabled: boolean): void {
@@ -250,7 +250,7 @@ function startAgent() {
     }
 
     console.log("📨 [Agent] MessageAdded from Perchance UI");
-    processUserMessage(message);
+    await processUserMessage(message);
   });
 
   console.log("✅ [Agent] Ready!");
