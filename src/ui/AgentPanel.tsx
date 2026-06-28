@@ -6,7 +6,7 @@ import { MessageList } from "./MessageList.js";
 import { UserMessage } from "./UserMessage.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { SettingsModal } from "./SettingsModal.js";
-import type { AgentStatus, PanelMessage, ToolCallEntry } from "./types.js";
+import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
 
 let msgCounter = 0;
 function nextId(): string {
@@ -17,7 +17,9 @@ export interface AgentPanelProps {
   version: string;
   commit: string;
   currentApiKey: string;
+  panelMode: PanelMode;
   onSettingsSave: (key: string) => Promise<boolean>;
+  onPanelModeChange: (mode: PanelMode) => void;
 }
 
 export interface AgentPanelRef {
@@ -28,11 +30,17 @@ export interface AgentPanelRef {
   setResponse(response: string): void;
 }
 
-export function AgentPanel({ version, commit, currentApiKey, onSettingsSave }: AgentPanelProps) {
+export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, onSettingsSave, onPanelModeChange }: AgentPanelProps) {
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
+  const [panelMode, setPanelMode] = useState<PanelMode>(initialPanelMode);
+
+  const handlePanelModeChange = (mode: PanelMode) => {
+    setPanelMode(mode);
+    onPanelModeChange(mode);
+  };
 
   // ── Exposed actions (used via ref from index.ts) ────────
   const addUserMessage = useCallback((content: string) => {
@@ -144,34 +152,61 @@ export function AgentPanel({ version, commit, currentApiKey, onSettingsSave }: A
             textAlign: "center",
             padding: "20px",
           }}>
-            <div style={{ fontSize: "32px", marginBottom: "8px" }}>🤖</div>
-            <div style={{ fontSize: "13px", marginBottom: "4px" }}>Olá! Envie uma mensagem para começar.</div>
+            <div style={{ fontSize: "32px", marginBottom: "8px" }}>{panelMode === "tools-only" ? "📊" : "🤖"}</div>
+            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+              {panelMode === "tools-only"
+                ? "Modo compacto — envie uma mensagem no chat"
+                : "Olá! Envie uma mensagem para começar."}
+            </div>
             <div style={{ fontSize: "10px" }}>v{version}+{commit}</div>
           </div>
         )}
 
-        {messages.map((msg) =>
-          msg.role === "user" ? (
-            <UserMessage key={msg.id} content={msg.content} />
-          ) : (
-            <AgentMessage
-              key={msg.id}
-              message={msg}
-              agentStatus={agentStatus}
-            />
-          )
-        )}
+        {(() => {
+          const isCompact = panelMode === "tools-only";
+          const filtered = isCompact
+            ? messages.filter((msg) => {
+                if (msg.role === "user") return false;
+                if (msg.toolCalls.length > 0) return true;
+                if (agentStatus !== "idle") return true;
+                return false;
+              })
+            : messages;
+
+          if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
+            return (
+              <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "11px" }}>
+                📊 Modo compacto — apenas tool calls visíveis
+              </div>
+            );
+          }
+
+          return filtered.map((msg) =>
+            msg.role === "user" ? (
+              <UserMessage key={msg.id} content={msg.content} />
+            ) : (
+              <AgentMessage
+                key={msg.id}
+                message={msg}
+                agentStatus={agentStatus}
+                compact={isCompact}
+              />
+            )
+          );
+        })()}
       </MessageList>
 
       <SettingsModal
         isOpen={settingsOpen}
         currentKey={apiKey}
+        panelMode={panelMode}
         onClose={() => setSettingsOpen(false)}
         onSave={async (key) => {
           const ok = await onSettingsSave(key);
           if (ok) setApiKey(key);
           return ok;
         }}
+        onPanelModeChange={handlePanelModeChange}
       />
     </div>
   );

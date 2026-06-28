@@ -29,6 +29,7 @@ function printBanner() {
 
 // ─── API Key Storage (customData) ───────────────────────────
 const API_KEY_STORAGE = "agent:jina_key";
+const PANEL_MODE_STORAGE = "agent:panel_mode";
 
 function loadApiKey(): string | null {
   return storageGet<string>(API_KEY_STORAGE) ?? null;
@@ -36,6 +37,15 @@ function loadApiKey(): string | null {
 
 function saveApiKey(key: string): void {
   storageSet(API_KEY_STORAGE, key);
+}
+
+function loadPanelMode(): "full" | "tools-only" {
+  const v = storageGet<string>(PANEL_MODE_STORAGE);
+  return v === "tools-only" ? "tools-only" : "full";
+}
+
+function savePanelMode(mode: "full" | "tools-only"): void {
+  storageSet(PANEL_MODE_STORAGE, mode);
 }
 
 // ─── Environment Validation ──────────────────────────────────
@@ -135,6 +145,7 @@ function startAgent() {
     version: __VERSION__,
     commit: __COMMIT__,
     currentApiKey: getApiKey(),
+    panelMode: loadPanelMode(),
     onSettingsSave: async (key: string) => {
       const valid = await validateApiKey(key);
       if (valid) {
@@ -143,6 +154,10 @@ function startAgent() {
         return true;
       }
       return false;
+    },
+    onPanelModeChange: (mode) => {
+      savePanelMode(mode);
+      console.log("📊 [Agent] Panel mode:", mode);
     },
   });
 

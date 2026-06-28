@@ -2,14 +2,18 @@ import { h } from "preact";
 import { useState } from "preact/hooks";
 import { colors } from "./theme.js";
 
+import type { PanelMode } from "./types.js";
+
 interface SettingsModalProps {
   isOpen: boolean;
   currentKey: string;
+  panelMode: PanelMode;
   onClose: () => void;
   onSave: (key: string) => Promise<boolean>;
+  onPanelModeChange: (mode: PanelMode) => void;
 }
 
-export function SettingsModal({ isOpen, currentKey, onClose, onSave }: SettingsModalProps) {
+export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, onPanelModeChange }: SettingsModalProps) {
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
 
@@ -59,6 +63,31 @@ export function SettingsModal({ isOpen, currentKey, onClose, onSave }: SettingsM
       >
         <h3 style={{ margin: "0 0 10px", color: colors.text, fontSize: "14px" }}>⚙️ Configurações</h3>
 
+        {/* Panel mode toggle */}
+        <div style={{ marginBottom: "12px", padding: "8px", borderRadius: "6px", background: colors.inputBg, border: `1px solid ${colors.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ color: colors.text, fontSize: "12px", fontWeight: "bold" }}>📊 Modo compacto</div>
+              <div style={{ color: colors.textMuted, fontSize: "10px", marginTop: "2px" }}>Mostra apenas tool calls e status</div>
+            </div>
+            <div
+              onClick={() => onPanelModeChange(panelMode === "full" ? "tools-only" : "full")}
+              style={{
+                width: "36px", height: "20px", borderRadius: "10px", cursor: "pointer",
+                background: panelMode === "tools-only" ? colors.accent : colors.border,
+                position: "relative", transition: "background 0.2s", flexShrink: 0,
+              }}
+            >
+              <div style={{
+                width: "16px", height: "16px", borderRadius: "50%", background: colors.text,
+                position: "absolute", top: "2px",
+                left: panelMode === "tools-only" ? "18px" : "2px",
+                transition: "left 0.2s",
+              }} />
+            </div>
+          </div>
+        </div>
+
         <div style={{ marginBottom: "10px" }}>
           <label style={{ color: colors.textSecondary, fontSize: "11px", display: "block", marginBottom: "3px" }}>
             Chave de API da Jina:
@@ -96,7 +125,7 @@ export function SettingsModal({ isOpen, currentKey, onClose, onSave }: SettingsM
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
           <button
             onClick={handleSave}
             style={{

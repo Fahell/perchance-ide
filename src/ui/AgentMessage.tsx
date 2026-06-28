@@ -7,9 +7,10 @@ import type { PanelMessage, AgentStatus } from "./types.js";
 interface AgentMessageProps {
   message: PanelMessage;
   agentStatus: AgentStatus;
+  compact?: boolean;
 }
 
-export function AgentMessage({ message, agentStatus }: AgentMessageProps) {
+export function AgentMessage({ message, agentStatus, compact }: AgentMessageProps) {
   const isActive = message.role === "agent" && agentStatus !== "idle" && message.content === "";
 
   return (
@@ -22,8 +23,8 @@ export function AgentMessage({ message, agentStatus }: AgentMessageProps) {
         <ToolCallCard key={tc.id} toolCall={tc} />
       ))}
 
-      {/* Final response */}
-      {message.content && <ResponseText content={message.content} />}
+      {/* Final response — hidden in compact mode */}
+      {!compact && message.content && <ResponseText content={message.content} />}
     </div>
   );
 }
