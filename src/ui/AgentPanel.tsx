@@ -9,6 +9,7 @@ import { SettingsModal } from "./SettingsModal.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { WebSearchIndicator } from "./WebSearchIndicator.js";
 import { ScrollFAB } from "./ScrollFAB.js";
+import { Footer } from "./Footer.js";
 import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
 
 let msgCounter = 0;
@@ -23,6 +24,9 @@ export interface AgentPanelProps {
   panelMode: PanelMode;
   onSettingsSave: (key: string) => Promise<boolean>;
   onPanelModeChange: (mode: PanelMode) => void;
+  inputEnabled: boolean;
+  onInputEnabledChange: (enabled: boolean) => void;
+  onSendMessage: (text: string) => void;
 }
 
 export interface AgentPanelRef {
@@ -33,17 +37,23 @@ export interface AgentPanelRef {
   setResponse(response: string): void;
 }
 
-export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, onSettingsSave, onPanelModeChange }: AgentPanelProps) {
+export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, onSettingsSave, onPanelModeChange, inputEnabled: initialInputEnabled, onInputEnabledChange, onSendMessage }: AgentPanelProps) {
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [panelMode, setPanelMode] = useState<PanelMode>(initialPanelMode);
+  const [inputEnabled, setInputEnabled] = useState(initialInputEnabled);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handlePanelModeChange = (mode: PanelMode) => {
     setPanelMode(mode);
     onPanelModeChange(mode);
+  };
+
+  const handleInputEnabledChange = (enabled: boolean) => {
+    setInputEnabled(enabled);
+    onInputEnabledChange(enabled);
   };
 
   // ── Exposed actions (used via ref from index.ts) ────────
@@ -138,12 +148,9 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
       boxSizing: "border-box",
       overflow: "hidden",
     }}>
-      <Header
-        version={version}
-        commit={commit}
-        onSettings={() => setSettingsOpen(true)}
-      />
+      <Header version={version} commit={commit} />
 
+      <div style={{ position: "relative", flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
       <MessageList outerRef={scrollRef}>
         {messages.length === 0 && (
           <div style={{
@@ -224,14 +231,24 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
 
       {/* Scroll-to-bottom FAB */}
       <ScrollFAB scrollRef={scrollRef} />
+      </div>
 
       {/* Status line */}
       <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
+
+      {/* Footer */}
+      <Footer
+        onSettings={() => setSettingsOpen(true)}
+        inputEnabled={inputEnabled}
+        onSend={onSendMessage}
+        disabled={agentStatus !== "idle"}
+      />
 
       <SettingsModal
         isOpen={settingsOpen}
         currentKey={apiKey}
         panelMode={panelMode}
+        inputEnabled={inputEnabled}
         onClose={() => setSettingsOpen(false)}
         onSave={async (key) => {
           const ok = await onSettingsSave(key);
@@ -239,6 +256,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
           return ok;
         }}
         onPanelModeChange={handlePanelModeChange}
+        onInputEnabledChange={handleInputEnabledChange}
       />
     </div>
   );

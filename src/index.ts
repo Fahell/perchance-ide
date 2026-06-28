@@ -30,6 +30,7 @@ function printBanner() {
 // ─── API Key Storage (customData) ───────────────────────────
 const API_KEY_STORAGE = "agent:jina_key";
 const PANEL_MODE_STORAGE = "agent:panel_mode";
+const INPUT_ENABLED_STORAGE = "agent:input_enabled";
 
 function loadApiKey(): string | null {
   return storageGet<string>(API_KEY_STORAGE) ?? null;
@@ -46,6 +47,14 @@ function loadPanelMode(): "full" | "tools-only" {
 
 function savePanelMode(mode: "full" | "tools-only"): void {
   storageSet(PANEL_MODE_STORAGE, mode);
+}
+
+function loadInputEnabled(): boolean {
+  return storageGet<string>(INPUT_ENABLED_STORAGE) === "true";
+}
+
+function saveInputEnabled(enabled: boolean): void {
+  storageSet(INPUT_ENABLED_STORAGE, String(enabled));
 }
 
 // ─── Environment Validation ──────────────────────────────────
@@ -158,6 +167,18 @@ function startAgent() {
     onPanelModeChange: (mode) => {
       savePanelMode(mode);
       console.log("📊 [Agent] Panel mode:", mode);
+    },
+    inputEnabled: loadInputEnabled(),
+    onInputEnabledChange: (enabled) => {
+      saveInputEnabled(enabled);
+      console.log("📊 [Agent] Panel input:", enabled ? "enabled" : "disabled");
+    },
+    onSendMessage: (text: string) => {
+      if (agentProcessing) {
+        console.log("⏳ [Agent] Already processing, ignoring panel input");
+        return;
+      }
+      oc.thread.messages.push({ author: "user", content: text });
     },
   });
 

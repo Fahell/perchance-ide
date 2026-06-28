@@ -8,12 +8,14 @@ interface SettingsModalProps {
   isOpen: boolean;
   currentKey: string;
   panelMode: PanelMode;
+  inputEnabled: boolean;
   onClose: () => void;
   onSave: (key: string) => Promise<boolean>;
   onPanelModeChange: (mode: PanelMode) => void;
+  onInputEnabledChange: (enabled: boolean) => void;
 }
 
-export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, onPanelModeChange }: SettingsModalProps) {
+export function SettingsModal({ isOpen, currentKey, panelMode, inputEnabled, onClose, onSave, onPanelModeChange, onInputEnabledChange }: SettingsModalProps) {
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
 
@@ -87,6 +89,31 @@ export function SettingsModal({ isOpen, currentKey, panelMode, onClose, onSave, 
               }}
             >
               {isCompact ? "on" : "off"}
+            </div>
+          </div>
+        </div>
+
+        {/* Panel input toggle */}
+        <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>panel input</div>
+              <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono }}>type messages in the panel</div>
+            </div>
+            <div
+              onClick={() => onInputEnabledChange(!inputEnabled)}
+              style={{
+                cursor: "pointer",
+                fontFamily: fonts.mono,
+                fontSize: "10px",
+                color: inputEnabled ? colors.text : colors.textMuted,
+                border: `1px solid ${inputEnabled ? colors.text : colors.border}`,
+                padding: "3px 8px",
+                letterSpacing: "0.5px",
+                transition: "all 0.15s",
+              }}
+            >
+              {inputEnabled ? "on" : "off"}
             </div>
           </div>
         </div>
