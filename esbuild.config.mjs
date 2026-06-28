@@ -17,6 +17,7 @@ const config = {
   format: "esm",
   target: "es2022",
   platform: "browser",
+  jsxImportSource: "preact",
   minify: !isWatch,
   sourcemap: isWatch,
   define: {
