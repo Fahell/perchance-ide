@@ -55,7 +55,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         fontFamily: fonts.mono,
       }}
     >
-      <span style={{ color: colors.textSecondary, fontWeight: "600", flexShrink: 0 }}>{label}</span>
+      <span style={{ color: colors.textSecondary, fontWeight: "600", flexShrink: 0, maxWidth: "40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       <span style={{
         flex: 1,
         minWidth: 0,
@@ -72,12 +72,11 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
       </span>
       <span style={{
         fontSize: "12px",
-        color: borderColor,
+        color: isRunning ? colors.textSecondary : borderColor,
         fontWeight: "bold",
         fontFamily: fonts.mono,
         flexShrink: 0,
-        width: "14px",
-        textAlign: "center",
+        whiteSpace: "nowrap",
       }}>
         {isRunning ? <Spinner /> : badgeText}
       </span>
@@ -89,7 +88,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
       margin: "2px 0",
       background: colors.bg,
       borderLeft: `2px solid ${borderColor}`,
-      overflow: "hidden",
+      overflow: "visible",
       animation: "agent-slide-in 0.2s ease-out",
     }}>
       {/* Header — button when complete, div when running */}
