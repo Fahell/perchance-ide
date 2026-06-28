@@ -7,6 +7,7 @@ import { UserMessage } from "./UserMessage.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
+import { WebSearchIndicator } from "./WebSearchIndicator.js";
 import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
 
 let msgCounter = 0;
@@ -203,6 +204,11 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         {/* Thinking gap — covers the phase before any agent message exists */}
         {agentStatus === "thinking" && (messages.length === 0 || messages[messages.length - 1].role === "user") && (
           <ThinkingIndicator />
+        )}
+
+        {/* Web search indicator — browser mockup during web_search execution */}
+        {agentStatus === "searching" && (
+          <WebSearchIndicator />
         )}
       </MessageList>
 
