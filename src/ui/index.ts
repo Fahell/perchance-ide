@@ -9,6 +9,7 @@ import { SetupScreen } from "./SetupScreen.js";
 import type { AgentPanelRef } from "./AgentPanel.js";
 
 export type { AgentPanelRef } from "./AgentPanel.js";
+export { LottieAnim } from "./LottieAnim.js";
 
 export function renderPanel(container: HTMLElement, props: AgentPanelProps): AgentPanelRef {
   injectAnimations();

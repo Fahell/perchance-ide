@@ -6,7 +6,10 @@ import { MessageList } from "./MessageList.js";
 import { UserMessage } from "./UserMessage.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { SettingsModal } from "./SettingsModal.js";
+import { LottieAnim } from "./LottieAnim.js";
 import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
+
+const SEARCH_LOTTIE_URL = "https://lottie.host/d662511b-0326-4c1f-b48a-ac0329ec5102/co1Y6Wlb4z.json";
 
 let msgCounter = 0;
 function nextId(): string {
@@ -198,6 +201,13 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
             )
           );
         })()}
+
+        {/* Search Lottie — visible while web_search executes */}
+        {agentStatus === "searching" && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+            <LottieAnim src={SEARCH_LOTTIE_URL} size={40} loop={true} autoplay={true} />
+          </div>
+        )}
       </MessageList>
 
       <SettingsModal
