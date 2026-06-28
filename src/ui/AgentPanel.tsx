@@ -1,5 +1,5 @@
 import { h } from "preact";
-import { useState, useCallback } from "preact/hooks";
+import { useState, useCallback, useRef } from "preact/hooks";
 import { colors, fonts } from "./theme.js";
 import { Header } from "./Header.js";
 import { MessageList } from "./MessageList.js";
@@ -8,6 +8,7 @@ import { AgentMessage } from "./AgentMessage.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { WebSearchIndicator } from "./WebSearchIndicator.js";
+import { ScrollFAB } from "./ScrollFAB.js";
 import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
 
 let msgCounter = 0;
@@ -38,6 +39,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [panelMode, setPanelMode] = useState<PanelMode>(initialPanelMode);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const handlePanelModeChange = (mode: PanelMode) => {
     setPanelMode(mode);
@@ -142,7 +144,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         onSettings={() => setSettingsOpen(true)}
       />
 
-      <MessageList>
+      <MessageList outerRef={scrollRef}>
         {messages.length === 0 && (
           <div style={{
             display: "flex",
@@ -187,18 +189,26 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
             );
           }
 
-          return filtered.map((msg) =>
-            msg.role === "user" ? (
-              <UserMessage key={msg.id} content={msg.content} />
-            ) : (
-              <AgentMessage
-                key={msg.id}
-                message={msg}
-                agentStatus={agentStatus}
-                compact={isCompact}
-              />
-            )
-          );
+          const elements: preact.VNode[] = [];
+          filtered.forEach((msg, i) => {
+            const prev = filtered[i - 1];
+            if (prev && prev.role !== msg.role) {
+              elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
+            }
+            if (msg.role === "user") {
+              elements.push(<UserMessage key={msg.id} content={msg.content} />);
+            } else {
+              elements.push(
+                <AgentMessage
+                  key={msg.id}
+                  message={msg}
+                  agentStatus={agentStatus}
+                  compact={isCompact}
+                />
+              );
+            }
+          });
+          return elements;
         })()}
 
         {/* Thinking gap — covers the phase before any agent message exists */}
@@ -211,6 +221,12 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
           <WebSearchIndicator />
         )}
       </MessageList>
+
+      {/* Scroll-to-bottom FAB */}
+      <ScrollFAB scrollRef={scrollRef} />
+
+      {/* Status line */}
+      <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
 
       <SettingsModal
         isOpen={settingsOpen}

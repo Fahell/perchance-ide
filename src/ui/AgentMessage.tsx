@@ -14,7 +14,7 @@ export function AgentMessage({ message, agentStatus, compact }: AgentMessageProp
   const isActive = message.role === "agent" && agentStatus !== "idle";
 
   return (
-    <div style={{ animation: "agent-slide-in 0.2s ease-out" }}>
+    <div style={{ animation: "agent-slide-in 0.2s ease-out", maxWidth: "85%" }}>
       {/* Thinking indicator — terminal typing animation */}
       {isActive && !message.content && message.toolCalls.length === 0 && <ThinkingIndicator />}
 

@@ -94,6 +94,34 @@ const ANIMATION_CSS = `
   border-top: 1px solid #222;
   margin: 10px 0;
 }
+
+/* Turn separator */
+.msg-turn-separator {
+  border-top: 1px solid #1a1a1a;
+  margin: 6px 0;
+}
+
+/* Bottom status line */
+@keyframes status-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.status-line {
+  height: 2px;
+  flex-shrink: 0;
+  background: transparent;
+  transition: background 0.3s;
+}
+.status-line--thinking {
+  background: linear-gradient(90deg, #222 0%, #555 50%, #222 100%);
+  background-size: 200% 100%;
+  animation: status-pulse 1s infinite linear;
+}
+.status-line--searching {
+  background: linear-gradient(90deg, #222 0%, #444 50%, #222 100%);
+  background-size: 200% 100%;
+  animation: status-pulse 1.5s infinite linear;
+}
 `;
 
 let injected = false;

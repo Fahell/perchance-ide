@@ -33,7 +33,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
 
   return (
     <div style={{
-      margin: "4px 0",
+      margin: "2px 0",
       background: colors.bg,
       borderLeft: `2px solid ${borderColor}`,
       overflow: "hidden",
@@ -47,7 +47,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
           alignItems: "center",
           gap: "8px",
           width: "100%",
-          padding: "6px 10px",
+          padding: "4px 10px",
           background: "none",
           border: "none",
           cursor: "pointer",

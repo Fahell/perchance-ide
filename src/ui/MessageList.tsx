@@ -4,10 +4,12 @@ import { colors } from "./theme.js";
 
 interface MessageListProps {
   children: ComponentChildren;
+  outerRef?: { current: HTMLDivElement | null };
 }
 
-export function MessageList({ children }: MessageListProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function MessageList({ children, outerRef }: MessageListProps) {
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = outerRef ?? internalRef;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -26,6 +28,7 @@ export function MessageList({ children }: MessageListProps) {
         padding: "8px",
         fontSize: "13px",
         scrollBehavior: "smooth",
+        position: "relative",
       }}
     >
       {children}
