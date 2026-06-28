@@ -46,13 +46,13 @@ ${c}`;s+=b}catch(d){let c=d instanceof Error?d.message:String(d);console.error(`
 
 [Tool Error - ${l.name}]: ${c}
 
-The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var x=null;function z(e){x=e}function H(){return x?.thread?.customData?x.thread.customData:{}}function L(e){try{return H()[e]??void 0}catch(t){console.warn("[Storage] get("+e+") failed:",t);return}}function P(e,t){try{if(!x?.thread?.customData){console.warn("[Storage] set: oc.thread.customData not available");return}x.thread.customData[e]=t}catch(o){console.warn("[Storage] set("+e+") failed:",o)}}var i=window.oc,A=!1,W=10;function Y(){console.log("\u{1F916} Agent v0.1.0+dev"),console.log("   Build: 2026-06-28 00:24:35"),console.log("   https://github.com/Fahell/agent-perchance")}var K="agent:jina_key";function q(){return L(K)??null}function j(e){P(K,e)}function J(){return i?i.thread?typeof i.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function X(){document.body.innerHTML=`
+The tool failed. Respond to the user explaining the issue.`}}}}return"I apologize, but I wasn't able to complete that task after multiple attempts."}var x=null;function z(e){x=e}function H(){return x?.thread?.customData?x.thread.customData:{}}function L(e){try{return H()[e]??void 0}catch(t){console.warn("[Storage] get("+e+") failed:",t);return}}function P(e,t){try{if(!x?.thread?.customData){console.warn("[Storage] set: oc.thread.customData not available");return}x.thread.customData[e]=t}catch(o){console.warn("[Storage] set("+e+") failed:",o)}}var i=window.oc,A=!1,W=10;function Y(){console.log("\u{1F916} Agent v0.1.0+0215d2b"),console.log("   Build: 2026-06-28 00:28:28"),console.log("   https://github.com/Fahell/agent-perchance")}var K="agent:jina_key";function q(){return L(K)??null}function j(e){P(K,e)}function J(){return i?i.thread?typeof i.generateText!="function"?(console.error("\u274C [Agent] oc.generateText not available"),!1):!0:(console.error("\u274C [Agent] oc.thread not available"),!1):(console.error("\u274C [Agent] window.oc not found \u2014 are you running inside Perchance?"),!1)}function X(){document.body.innerHTML=`
     <div style="font-family: system-ui; padding: 24px; background: #1a1a2e; color: #eee; height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;">
       <div style="max-width: 480px; width: 100%;">
         <div style="text-align: center; margin-bottom: 24px;">
           <div style="font-size: 48px; margin-bottom: 8px;">\u{1F916}</div>
           <h2 style="margin: 0; color: #00d4ff; font-size: 20px;">Agent for Perchance</h2>
-          <span style="font-size: 11px; color: #666;">v0.1.0+dev</span>
+          <span style="font-size: 11px; color: #666;">v0.1.0+0215d2b</span>
         </div>
         <div style="background: #16213e; border-radius: 12px; padding: 20px; border: 1px solid #2a3a5e;">
           <h3 style="margin: 0 0 12px 0; color: #eee; font-size: 15px;">\u26A1 Setup \u2014 Chave de API da Jina</h3>
@@ -89,7 +89,7 @@ The tool failed. Respond to the user explaining the issue.`}}}}return"I apologiz
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0;">
         <h2 style="margin: 0; color: #00d4ff; font-size: 14px;">\u{1F916} Agent Panel</h2>
         <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 10px; color: #666;">v0.1.0+dev</span>
+          <span style="font-size: 10px; color: #666;">v0.1.0+0215d2b</span>
           <button id="settings-btn" style="background: none; border: 1px solid #2a3a5e; color: #666; font-size: 10px; padding: 1px 6px; border-radius: 4px; cursor: pointer;">\u2699\uFE0F</button>
         </div>
       </div>
