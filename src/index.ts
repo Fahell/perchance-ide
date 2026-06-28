@@ -178,14 +178,13 @@ function startAgent() {
         console.log("⏳ [Agent] Already processing, ignoring panel input");
         return;
       }
-      // Include suppression flags directly so the internal generator
-      // never picks it up — avoids the race condition where
-      // getBotReply fires before our MessageAdded handler can set them.
+      // expectsReply=false hints the internal generator to skip,
+      // but do NOT set hiddenFrom — it blocks MessageAdded from firing.
+      // Our handler also sets both flags as a safety net.
       oc.thread.messages.push({
         author: "user",
         content: text,
         expectsReply: false,
-        hiddenFrom: ["ai"],
       });
     },
   });
