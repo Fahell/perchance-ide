@@ -19,6 +19,7 @@ const oc: Oc = window.oc;
 let agentProcessing = false;
 let panel: AgentPanelRef | null = null;
 const MAX_HISTORY_MESSAGES = 10;
+const _panelProcessed = new WeakSet<object>();
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -147,6 +148,42 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
   });
 }
 
+// ─── Process User Message (single source of truth) ───────────
+async function processUserMessage(message: OcMessage): Promise<void> {
+  // Suppress internal generator by setting flags directly on the message object.
+  message.expectsReply = false;
+  if (!message.hiddenFrom) message.hiddenFrom = [];
+  if (!message.hiddenFrom.includes("ai")) message.hiddenFrom.push("ai");
+  console.log("🛡️ [Agent] Set expectsReply=false, hiddenFrom=[ai] on user message");
+
+  // Handle /agent commands
+  if (isAgentCommand(message.content)) {
+    handleCommand(message.content);
+    setTimeout(() => {
+      const idx = oc.thread.messages.indexOf(message);
+      if (idx !== -1) oc.thread.messages.splice(idx, 1);
+    }, 100);
+    return;
+  }
+
+  // Process user message via agent
+  agentProcessing = true;
+  panel?.setStatus("thinking");
+  try {
+    await handleUserMessage(message);
+  } catch (err) {
+    console.error("❌ [Agent] Error:", err);
+    panel?.setResponse(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    oc.thread.messages.push({
+      author: "ai",
+      content: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  } finally {
+    agentProcessing = false;
+    panel?.setStatus("idle");
+  }
+}
+
 // ─── Start Agent (registers handlers) ────────────────────────
 function startAgent() {
   // Render Preact panel
@@ -178,30 +215,22 @@ function startAgent() {
         console.log("⏳ [Agent] Already processing, ignoring panel input");
         return;
       }
-      // expectsReply=false hints the internal generator to skip,
-      // but do NOT set hiddenFrom — it blocks MessageAdded from firing.
-      // Our handler also sets both flags as a safety net.
-      oc.thread.messages.push({
-        author: "user",
-        content: text,
-        expectsReply: false,
-      });
+      // Push to thread for chat history, then process directly.
+      // MessageAdded does NOT fire for messages pushed from within
+      // the same sandboxed iframe — so we must process manually.
+      const msg = { author: "user", content: text, expectsReply: false } as OcMessage;
+      _panelProcessed.add(msg);
+      oc.thread.messages.push(msg);
+      console.log("📨 [Panel] Direct processing:", text.slice(0, 60));
+      processUserMessage(msg);
     },
   });
 
   oc.window.show();
   console.log("🪟 [Agent] Window opened");
 
-  // Register message handler
+  // Register message handler — processes messages from the Perchance reply box
   oc.thread.on("MessageAdded", async function({ message }: { message: OcMessage }) {
-    // Suppress internal generator by setting flags directly on the message object.
-    if (message.author === "user") {
-      message.expectsReply = false;
-      if (!message.hiddenFrom) message.hiddenFrom = [];
-      if (!message.hiddenFrom.includes("ai")) message.hiddenFrom.push("ai");
-      console.log("🛡️ [Agent] Set expectsReply=false, hiddenFrom=[ai] on user message");
-    }
-
     // Remove messages from Perchance's internal generator while our agent is running
     if (message.author === "ai" && agentProcessing) {
       const idx = oc.thread.messages.indexOf(message);
@@ -214,32 +243,14 @@ function startAgent() {
 
     if (message.author !== "user") return;
 
-    // Handle /agent commands
-    if (isAgentCommand(message.content)) {
-      handleCommand(message.content);
-      setTimeout(() => {
-        const idx = oc.thread.messages.indexOf(message);
-        if (idx !== -1) oc.thread.messages.splice(idx, 1);
-      }, 100);
+    // Skip if already processed by onSendMessage (panel input)
+    if (_panelProcessed.has(message)) {
+      console.log("⏭️ [Agent] Skipping MessageAdded (panel-pushed, already processing)");
       return;
     }
 
-    // Process user message
-    agentProcessing = true;
-    panel?.setStatus("thinking");
-    try {
-      await handleUserMessage(message);
-    } catch (err) {
-      console.error("❌ [Agent] Error:", err);
-      panel?.setResponse(`Error: ${err instanceof Error ? err.message : String(err)}`);
-      oc.thread.messages.push({
-        author: "ai",
-        content: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    } finally {
-      agentProcessing = false;
-      panel?.setStatus("idle");
-    }
+    console.log("📨 [Agent] MessageAdded from Perchance UI");
+    processUserMessage(message);
   });
 
   console.log("✅ [Agent] Ready!");
