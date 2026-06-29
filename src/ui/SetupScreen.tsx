@@ -119,7 +119,7 @@ export function SetupScreen({ version, locale, onSetupComplete, validateApiKey, 
               letterSpacing: "0.5px",
             }}
           >
-            {status === "validating" ? `[...] ${t("setup.validating", locale)}` : t("setup.save", locale)}
+            {status === "validating" ? t("setup.validating", locale) : t("setup.save", locale)}
           </button>
           <button
             onClick={onSetupComplete}
