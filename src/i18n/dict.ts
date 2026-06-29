@@ -45,8 +45,8 @@ const en: Translations = {
 
   // Response
   "response.label": "agent",
-  "response.expand": "[+ expand]",
-  "response.collapse": "[- collapse]",
+  "response.expand": "expand",
+  "response.collapse": "collapse",
 
   // User
   "user.you": "you",
@@ -106,8 +106,8 @@ const ptBR: Translations = {
 
   // Response
   "response.label": "agente",
-  "response.expand": "[+ expandir]",
-  "response.collapse": "[- recolher]",
+  "response.expand": "expandir",
+  "response.collapse": "recolher",
 
   // User
   "user.you": "você",
@@ -162,8 +162,8 @@ const es: Translations = {
   "panel.ready": "listo",
   "panel.compact": "compacto — solo tool calls",
   "response.label": "agente",
-  "response.expand": "[+ expandir]",
-  "response.collapse": "[- contraer]",
+  "response.expand": "expandir",
+  "response.collapse": "contraer",
   "user.you": "tú",
   "tool.args": "args:",
   "setup.title": "agente",
@@ -210,8 +210,8 @@ const ja: Translations = {
   "panel.ready": "準備完了",
   "panel.compact": "コンパクト — ツールのみ",
   "response.label": "エージェント",
-  "response.expand": "[+ 展開]",
-  "response.collapse": "[- 折りたたむ]",
+  "response.expand": "展開",
+  "response.collapse": "折りたたむ",
   "user.you": "あなた",
   "tool.args": "引数:",
   "setup.title": "エージェント",
@@ -258,8 +258,8 @@ const zh: Translations = {
   "panel.ready": "就绪",
   "panel.compact": "紧凑 — 仅工具调用",
   "response.label": "代理",
-  "response.expand": "[+ 展开]",
-  "response.collapse": "[- 折叠]",
+  "response.expand": "展开",
+  "response.collapse": "折叠",
   "user.you": "你",
   "tool.args": "参数:",
   "setup.title": "代理",

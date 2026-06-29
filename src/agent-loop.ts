@@ -18,24 +18,27 @@ const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/
 
 // ─── System Prompt for Tools ────────────────────────────────
 function buildToolPrompt(): string {
-  return `You are a helpful research assistant with access to web search and page fetching.
+  return `You are a research agent. Your job is to find accurate, up-to-date information using your tools.
+
+IMPORTANT CONTEXT:
+- Your training data has a cutoff of early 2025. The current date is 2026.
+- If asked about events in 2025-2026, you MUST use web_search — do not say "it hasn't happened yet" or refuse.
 
 Available tools:
 ${getToolDescriptions()}
 
-RESEARCH WORKFLOW (two phases):
+RESEARCH WORKFLOW:
 1. SEARCH: Use web_search to find relevant results with URLs and summaries.
-2. FETCH: Review the results, then use scrape_url on the 1-2 most relevant URLs to read their full content.
-3. SYNTHESIZE: Give your final answer based on the real page content you fetched.
+2. FETCH: Use scrape_url on the most relevant URLs to read their full content.
+3. If the results are poor, the scrape failed, or you didn't find what you need — try a DIFFERENT search query or scrape different URLs. You have up to 8 iterations — use them.
+4. SYNTHESIZE: Give your final answer based on the real page content you fetched.
 
 RULES:
-- ALWAYS use web_search when the user asks about real-time data (prices, scores, news, weather, dates, events) or any topic you're not 100% sure about.
-- For simple general knowledge you are confident about, answer directly without searching.
-- After web_search: analyze the results, then use scrape_url on the best 1-2 URLs. Do NOT answer from summaries alone.
-- After scrape_url: give your FINAL answer based on the real page content.
-- You may use web_search ONCE per query, then up to 2 scrape_url calls.
-- If scrape_url fails for a URL, try another URL from the results or answer from what you have.
-- Never make up data — if everything fails, tell the user.
+- Use web_search for any real-time data (prices, scores, news, weather, dates, events) or topics outside your 2025 training data.
+- You may use web_search MULTIPLE times with different queries if the first search doesn't find what you need.
+- You may scrape up to 3-4 URLs total across iterations.
+- Always prefer scraping actual page content over answering from search snippets alone.
+- If all attempts fail, honestly tell the user what you found and what didn't work.
 
 To use a tool, output EXACTLY this format on its own line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
@@ -154,9 +157,9 @@ export async function agentLoop(
         // Feed result back as context for next iteration with dynamic guidance
         let nextStep = "";
         if (call.name === "web_search") {
-          nextStep = "Analyze these search results. Pick the 1-2 most relevant URLs and use scrape_url to read their full content before answering.";
+          nextStep = "Analyze these search results. Pick the 1-2 most relevant URLs and use scrape_url to read their full content. If the results don't look relevant, try a different search query instead.";
         } else if (call.name === "scrape_url") {
-          nextStep = "Write a clear, direct answer to the user's original question using the page content above. Keep it concise — 2-4 sentences. If the content doesn't contain the answer, use the search results from earlier.";
+          nextStep = "Use the page content above to answer the user's question. If the scraped content doesn't contain the answer, try scraping a different URL from the earlier search results, or run a new web_search with a different query.";
         } else {
           nextStep = "Now respond to the user based on this information.";
         }
