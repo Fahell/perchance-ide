@@ -9,6 +9,7 @@
 import type { HistoryMessage } from "./agent-loop.js";
 import { getLastN, getMessageCount, getAllMessages, type ChatMessage } from "./message-store.js";
 import { storageGet, storageSet, storageDel } from "./storage.js";
+import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const CHARS_PER_TOKEN = 4;
@@ -91,7 +92,7 @@ Summary:`;
   console.log("📝 [Context] Summarizing", messages.length, "messages (~" + estimateTokens(convoText) + " tokens)");
 
   try {
-    const result = await (window.ai as any)({ instruction });
+    const result = await getAi()({ instruction });
     const summary = (result.generatedText || result.text || result.toString()).trim();
     console.log("📝 [Context] Summary generated (~" + estimateTokens(summary) + " tokens)");
     return summary;

@@ -69,3 +69,42 @@ declare global {
     ai: (inputData: string | AiCallOptions, extraOpts?: Partial<AiCallOptions>) => AiCallResult;
   }
 }
+
+/**
+ * Resolve window.ai across frame hierarchy.
+ *
+ * In Perchance, the HTML panel runs in an iframe, but ai-text-plugin
+ * exposes window.ai on the parent page (where the list panel executes).
+ */
+let _cachedAi: ((input: any, extraOpts?: any) => any) | null = null;
+
+function findAi(): ((input: any, extraOpts?: any) => any) | null {
+  if (typeof (window as any).ai === "function") return (window as any).ai;
+  try {
+    if (window.parent && typeof (window.parent as any).ai === "function") return (window.parent as any).ai;
+  } catch { /* cross-origin */ }
+  try {
+    if (window.top && typeof (window.top as any).ai === "function") return (window.top as any).ai;
+  } catch { /* cross-origin */ }
+  return null;
+}
+
+/** Get the ai function, caching the result after first successful lookup. */
+export function getAi(): ((input: any, extraOpts?: any) => any) {
+  if (_cachedAi) return _cachedAi;
+  const ai = findAi();
+  if (ai) {
+    _cachedAi = ai;
+    return ai;
+  }
+  throw new Error("window.ai not found in any frame — ai-text-plugin not loaded?");
+}
+
+/** Check if ai is available without throwing. */
+export function isAiAvailable(): boolean {
+  try {
+    return getAi() !== null;
+  } catch {
+    return false;
+  }
+}

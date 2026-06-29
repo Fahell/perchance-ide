@@ -6,6 +6,7 @@
  */
 
 import { storageGet, storageSet, storageDel } from "./storage.js";
+import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MEMORIES_KEY = "agent:memories";
@@ -77,7 +78,7 @@ Assistant: ${agentResponse.slice(0, 1000)}
 New facts (one per line, or NONE):`;
 
   try {
-    const result = await (window.ai as any)({ instruction });
+    const result = await getAi()({ instruction });
     const text = (result.generatedText || result.text || result.toString()).trim();
 
     // Check for no new facts

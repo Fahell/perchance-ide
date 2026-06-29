@@ -10,6 +10,7 @@
 
 import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
 import type { ContextResult } from "./context-manager.js";
+import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 8;
@@ -139,7 +140,7 @@ export async function agentLoop(
     onStatus?.(`Thinking... (step ${iteration})`);
 
     // Call the LLM via ai-text-plugin
-    const result = await window.ai({
+    const result = await getAi()({
       instruction: instruction,
       stopSequences: ["</tool_call>"],
     });

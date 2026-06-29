@@ -12,6 +12,7 @@ import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index
 import { buildContext } from "./context-manager.js";
 import { extractMemories, formatMemories } from "./memory.js";
 import { initMessageStore, addMessage } from "./message-store.js";
+import { isAiAvailable } from "./types.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -66,7 +67,7 @@ function loadLocale(): Locale {
 
 // ─── Environment Validation ──────────────────────────────────
 function validateEnvironment(): boolean {
-  if (typeof window.ai !== "function") {
+  if (!isAiAvailable()) {
     console.error("❌ [Agent] window.ai not found — ai-text-plugin not loaded?");
     console.log("💡 [Agent] Make sure you have 'ai = {import:ai-text-plugin}' in your list panel.");
     return false;
