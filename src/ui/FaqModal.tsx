@@ -11,7 +11,7 @@ interface FaqModalProps {
 const FAQ_ITEMS = [
   {
     q: "Where is the source code?",
-    a: "You can access the project via the GitHub repository at https://github.com/Fahell/agent-perchance",
+    a: "You can access the project via the GitHub repository at https://github.com/Fahell/perchance-ide",
   },
   {
     q: "Do I need an API key?",

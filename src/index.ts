@@ -29,7 +29,7 @@ const _panelProcessed = new WeakSet<object>();
 function printBanner() {
   console.log("🤖 Agent v" + __VERSION__ + "+" + __COMMIT__);
   console.log("   Build: " + __BUILD_TIME__);
-  console.log("   https://github.com/Fahell/agent-perchance");
+  console.log("   https://github.com/Fahell/perchance-ide");
 }
 
 // ─── API Key Storage (customData) ───────────────────────────

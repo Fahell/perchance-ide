@@ -1,4 +1,4 @@
-# agent-perchance
+# perchance-ide
 
 Agent framework for [Perchance AI Character Chat](https://perchance.org/ai-character-chat).
 
@@ -9,7 +9,7 @@ TypeScript project bundled with esbuild into a single JS file, served via jsDeli
 ### In Perchance Custom Code
 
 ```js
-import("https://cdn.jsdelivr.net/gh/Fahell/agent-perchance@<COMMIT>/dist/agent.js");
+import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@<COMMIT>/dist/agent.js");
 ```
 
 Replace `<COMMIT>` with the latest commit hash (auto-generated in `IMPORT.md` after each deploy).
