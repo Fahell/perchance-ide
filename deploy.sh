@@ -21,7 +21,7 @@ git push
 COMMIT=$(git rev-parse --short HEAD)
 
 # Use @commit instead of @main — jsDelivr serves exact file, no CDN staleness
-IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/agent-perchance@${COMMIT}/dist/agent.js"
+IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${COMMIT}/dist/agent.js"
 
 cat > IMPORT.md << EOF
 # Import URL
