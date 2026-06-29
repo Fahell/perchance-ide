@@ -1,7 +1,19 @@
 # Import URL
 
-Copy-paste this into Perchance Custom Code:
+## Option 1: HTML Panel (standalone generator)
 
+Add an HTML panel to your generator with:
+
+```html
+<script>
+  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@cba117b/dist/agent.js");
+</script>
 ```
-import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@651e3f4/dist/agent.js");
+
+Also add `ai = {import:ai-text-plugin}` to your list panel.
+
+## Option 2: Perchance Custom Code (legacy)
+
+```js
+import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@cba117b/dist/agent.js");
 ```
