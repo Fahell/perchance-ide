@@ -1,14 +1,14 @@
 /**
  * Context Manager — token-aware conversation history with summarization.
  *
- * Reads oc.thread.messages, estimates token usage, and builds a context
+ * Reads from message-store, estimates token usage, and builds a context
  * object with optional summary for older messages that exceed the budget.
- * Summaries are persisted in oc.thread.customData.
+ * Summaries are persisted in localStorage via storage module.
  */
 
-import type { Oc } from "./types.js";
 import type { HistoryMessage } from "./agent-loop.js";
 import { getLastN, getMessageCount, getAllMessages, type ChatMessage } from "./message-store.js";
+import { storageGet, storageSet, storageDel } from "./storage.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const CHARS_PER_TOKEN = 4;
@@ -36,24 +36,18 @@ export interface ChunkSummary {
   tokenCount: number;
 }
 
-export function getChunkedSummaries(oc: Oc): ChunkSummary[] {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return [];
-  return (cd[CHUNKS_KEY] as ChunkSummary[]) || [];
+export function getChunkedSummaries(): ChunkSummary[] {
+  return storageGet<ChunkSummary[]>(CHUNKS_KEY) || [];
 }
 
-function persistChunk(oc: Oc, chunk: ChunkSummary): void {
-  if (!oc.thread.customData) oc.thread.customData = {};
-  const cd = oc.thread.customData as Record<string, unknown>;
-  const chunks = ((cd[CHUNKS_KEY] as ChunkSummary[]) || []).slice();
+function persistChunk(chunk: ChunkSummary): void {
+  const chunks = (getChunkedSummaries()).slice();
   chunks.push(chunk);
-  cd[CHUNKS_KEY] = chunks;
+  storageSet(CHUNKS_KEY, chunks);
 }
 
-export function clearChunkedSummaries(oc: Oc): void {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return;
-  delete cd[CHUNKS_KEY];
+export function clearChunkedSummaries(): void {
+  storageDel(CHUNKS_KEY);
 }
 
 // ─── Token Estimation ───────────────────────────────────────
@@ -62,30 +56,24 @@ export function estimateTokens(text: string): number {
 }
 
 // ─── Summary Persistence ────────────────────────────────────
-function persistSummary(oc: Oc, summary: string, msgCount: number): void {
-  if (!oc.thread.customData) oc.thread.customData = {};
-  const cd = oc.thread.customData as Record<string, unknown>;
-  cd[SUMMARY_KEY] = summary;
-  cd[SUMMARY_UPDATED_KEY] = Date.now();
-  cd[SUMMARY_MSG_COUNT_KEY] = msgCount;
+function persistSummary(summary: string, msgCount: number): void {
+  storageSet(SUMMARY_KEY, summary);
+  storageSet(SUMMARY_UPDATED_KEY, Date.now());
+  storageSet(SUMMARY_MSG_COUNT_KEY, msgCount);
 }
 
-export function loadSummary(oc: Oc): string | null {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return null;
-  return (cd[SUMMARY_KEY] as string) || null;
+export function loadSummary(): string | null {
+  return storageGet<string>(SUMMARY_KEY) || null;
 }
 
-export function clearSummary(oc: Oc): void {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return;
-  delete cd[SUMMARY_KEY];
-  delete cd[SUMMARY_UPDATED_KEY];
-  delete cd[SUMMARY_MSG_COUNT_KEY];
+export function clearSummary(): void {
+  storageDel(SUMMARY_KEY);
+  storageDel(SUMMARY_UPDATED_KEY);
+  storageDel(SUMMARY_MSG_COUNT_KEY);
 }
 
 // ─── Summarization ──────────────────────────────────────────
-async function summarizeOldMessages(oc: Oc, messages: HistoryMessage[]): Promise<string> {
+async function summarizeOldMessages(messages: HistoryMessage[]): Promise<string> {
   const convoText = messages
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n");
@@ -103,8 +91,8 @@ Summary:`;
   console.log("📝 [Context] Summarizing", messages.length, "messages (~" + estimateTokens(convoText) + " tokens)");
 
   try {
-    const response = await oc.generateText({ instruction });
-    const summary = response.toString().trim();
+    const result = await (window.ai as any)({ instruction });
+    const summary = (result.generatedText || result.text || result.toString()).trim();
     console.log("📝 [Context] Summary generated (~" + estimateTokens(summary) + " tokens)");
     return summary;
   } catch (err) {
@@ -122,10 +110,9 @@ export interface ContextResult {
 }
 
 export async function buildContext(
-  oc: Oc,
   currentUserMessage: string
 ): Promise<ContextResult> {
-  // Get messages from our custom message store (or empty if not yet initialized)
+  // Get messages from our custom message store
   const recentMsgs = getLastN(MAX_RECENT_MESSAGES);
 
   // Estimate tokens for all messages
@@ -139,7 +126,7 @@ export async function buildContext(
   const currentMsgTokens = estimateTokens(currentUserMessage);
 
   // Load existing summary
-  const existingSummary = loadSummary(oc);
+  const existingSummary = loadSummary();
   const existingSummaryTokens = existingSummary ? estimateTokens(existingSummary) : 0;
 
   if (totalMsgTokens + currentMsgTokens + existingSummaryTokens <= MAX_CONTEXT_TOKENS) {
@@ -153,7 +140,6 @@ export async function buildContext(
   }
 
   // Over budget — need to summarize older messages
-  // Keep recent messages that fit within budget (minus summary + current msg)
   const budgetForHistory = MAX_CONTEXT_TOKENS - currentMsgTokens - existingSummaryTokens;
   let keptTokens = 0;
   let splitIndex = msgsWithTokens.length;
@@ -169,7 +155,6 @@ export async function buildContext(
   const recentKept = msgsWithTokens.slice(splitIndex);
 
   if (toSummarize.length === 0) {
-    // Can't fit anything — just return what we can
     return {
       summary: existingSummary,
       recentMessages: recentKept.map(({ role, content }) => ({ role, content })),
@@ -179,7 +164,7 @@ export async function buildContext(
   }
 
   // Build combined summary: existing + new
-  const newSummary = await summarizeOldMessages(oc, toSummarize);
+  const newSummary = await summarizeOldMessages(toSummarize);
 
   let combinedSummary: string;
   let summarizedCount: number;
@@ -191,7 +176,6 @@ export async function buildContext(
     combinedSummary = newSummary;
     summarizedCount = toSummarize.length;
   } else {
-    // Summarization failed — keep what we can without summary
     combinedSummary = existingSummary || "";
     summarizedCount = 0;
   }
@@ -199,7 +183,7 @@ export async function buildContext(
   // Persist the updated summary
   const totalMsgs = getMessageCount();
   if (combinedSummary) {
-    persistSummary(oc, combinedSummary, totalMsgs);
+    persistSummary(combinedSummary, totalMsgs);
   }
 
   const finalTokens = estimateTokens(combinedSummary) + keptTokens + currentMsgTokens;
@@ -223,14 +207,11 @@ export interface ContextState {
 }
 
 export function getContextState(
-  oc: Oc,
   currentUserMessage: string
 ): ContextState {
   const recentMsgs = getLastN(MAX_RECENT_MESSAGES);
-
   const recentMessages = recentMsgs.map(msgToHistory);
-
-  const summary = loadSummary(oc);
+  const summary = loadSummary();
   const summaryTokens = summary ? estimateTokens(summary) : 0;
   const historyTokens = recentMessages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
   const currentMsgTokens = estimateTokens(currentUserMessage);
@@ -247,10 +228,10 @@ export function getContextState(
 }
 
 // ─── Search & Range Retrieval (for context-tools) ───────────
-export function getAllHistoryMessages(oc: Oc): { role: "user" | "assistant"; content: string }[] {
+export function getAllHistoryMessages(): { role: "user" | "assistant"; content: string }[] {
   return allHistoryMessages();
 }
 
-export function getTotalMessageCount(oc: Oc): number {
+export function getTotalMessageCount(): number {
   return getMessageCount();
 }

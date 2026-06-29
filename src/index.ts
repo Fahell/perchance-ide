@@ -3,16 +3,15 @@
  * Entry point — imports here are bundled into dist/agent.js
  */
 
-import type { Oc } from "./types.js";
 import { agentLoop } from "./agent-loop.js";
 import { setApiKey, getApiKey, validateApiKey } from "./tools/web-search.js";
 import { initContextTools } from "./tools/index.js";
-import { storageGet, storageSet, initStorage } from "./storage.js";
+import { storageGet, storageSet } from "./storage.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
 import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
 import { buildContext } from "./context-manager.js";
 import { extractMemories, formatMemories } from "./memory.js";
-import { initMessageStore, addMessage, getMessages, clearMessages } from "./message-store.js";
+import { initMessageStore, addMessage } from "./message-store.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -20,7 +19,6 @@ declare const __COMMIT__: string;
 declare const __BUILD_TIME__: string;
 
 // ─── Globals ────────────────────────────────────────────────
-const oc: Oc = window.oc;
 let agentProcessing = false;
 let panel: AgentPanelRef | null = null;
 let currentToolCallId: string | null = null;
@@ -32,7 +30,7 @@ function printBanner() {
   console.log("   https://github.com/Fahell/perchance-ide");
 }
 
-// ─── API Key Storage (customData) ───────────────────────────
+// ─── API Key Storage (localStorage) ─────────────────────────
 const API_KEY_STORAGE = "agent:jina_key";
 const PANEL_MODE_STORAGE = "agent:panel_mode";
 const INPUT_ENABLED_STORAGE = "agent:input_enabled";
@@ -68,14 +66,6 @@ function loadLocale(): Locale {
 
 // ─── Environment Validation ──────────────────────────────────
 function validateEnvironment(): boolean {
-  if (!oc) {
-    console.error("❌ [Agent] window.oc not found — are you running inside Perchance?");
-    return false;
-  }
-  if (!oc.thread?.customData) {
-    console.error("❌ [Agent] oc.thread.customData not available");
-    return false;
-  }
   if (typeof window.ai !== "function") {
     console.error("❌ [Agent] window.ai not found — ai-text-plugin not loaded?");
     console.log("💡 [Agent] Make sure you have 'ai = {import:ai-text-plugin}' in your list panel.");
@@ -84,7 +74,7 @@ function validateEnvironment(): boolean {
   return true;
 }
 
-// ─── Agent Message Handler (standalone generator) ────────────
+// ─── Agent Message Handler ───────────────────────────────────
 async function handleSendMessage(text: string): Promise<void> {
   console.log("🤖 [Agent] Processing:", text.slice(0, 80));
 
@@ -93,14 +83,14 @@ async function handleSendMessage(text: string): Promise<void> {
   panel?.addUserMessage(text);
 
   // Build context with token-aware summarization
-  const ctx = await buildContext(oc, text);
+  const ctx = await buildContext(text);
   console.log("🧠 [Agent] Context: ~" + ctx.totalTokens + " tokens, " + ctx.recentMessages.length + " messages" + (ctx.summarizedCount > 0 ? ", summarized " + ctx.summarizedCount + " older messages" : ""));
 
   // Run agent loop with structured context
   const agentContext = {
     summary: ctx.summary,
     recentMessages: ctx.recentMessages,
-    memories: formatMemories(oc),
+    memories: formatMemories(),
   };
 
   const response = await agentLoop(
@@ -155,10 +145,10 @@ async function handleSendMessage(text: string): Promise<void> {
   addMessage({ role: "assistant", content: response });
 
   // Extract memories in background (non-blocking)
-  extractMemories(oc, text, response).catch(() => {});
+  extractMemories(text, response).catch(() => {});
 }
 
-// ─── Start Agent (standalone generator) ──────────────────────
+// ─── Start Agent ─────────────────────────────────────────────
 function startAgent() {
   // Initialize message store (load persisted messages)
   initMessageStore();
@@ -213,7 +203,7 @@ function startAgent() {
   });
 
   // Register context tools (search_history, get_messages)
-  initContextTools(oc);
+  initContextTools();
 
   console.log("✅ [Agent] Ready!");
   console.log("💡 [Agent] Type in the sidebar panel to start.");
@@ -225,12 +215,10 @@ function bootstrap() {
 
   if (!validateEnvironment()) return;
 
-  initStorage(oc);
-
   const savedKey = loadApiKey();
   if (savedKey) {
     setApiKey(savedKey);
-    console.log("🔑 [Agent] API key loaded from customData");
+    console.log("🔑 [Agent] API key loaded from localStorage");
     startAgent();
   } else {
     console.log("🔑 [Agent] No API key found — showing setup screen");
@@ -242,7 +230,7 @@ function bootstrap() {
       saveApiKey: (key: string) => {
         saveApiKey(key);
         setApiKey(key);
-        console.log("🔑 [Agent] API key saved to customData");
+        console.log("🔑 [Agent] API key saved to localStorage");
       },
     });
   }

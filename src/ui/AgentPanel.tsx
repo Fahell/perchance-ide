@@ -298,7 +298,6 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
       {/* ── Modals ────────────────────────────────────────── */}
       <ContextViewer
         isOpen={contextOpen}
-        oc={(window as any).oc}
         locale={locale}
         onClose={() => setContextOpen(false)}
         onRefresh={() => setContextOpen(false)}

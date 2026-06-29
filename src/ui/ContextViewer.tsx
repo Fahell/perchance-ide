@@ -4,27 +4,25 @@ import { colors, fonts } from "./theme.js";
 import { t, type Locale } from "../i18n/index.js";
 import { getContextState, clearSummary, getChunkedSummaries, clearChunkedSummaries, getTotalMessageCount, type ContextState } from "../context-manager.js";
 import { getMemories, clearMemories, deleteMemory } from "../memory.js";
-import type { Oc } from "../types.js";
 
 interface ContextViewerProps {
   isOpen: boolean;
-  oc: Oc;
   locale?: Locale;
   onClose: () => void;
   onRefresh: () => void;
 }
 
-export function ContextViewer({ isOpen, oc, locale, onClose, onRefresh }: ContextViewerProps) {
+export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextViewerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   if (!isOpen) return null;
 
-  const state = getContextState(oc, "");
-  const memories = getMemories(oc);
-  const chunks = getChunkedSummaries(oc);
-  const totalMessages = getTotalMessageCount(oc);
+  const state = getContextState("");
+  const memories = getMemories();
+  const chunks = getChunkedSummaries();
+  const totalMessages = getTotalMessageCount();
   const usagePercent = Math.min(100, Math.round((state.totalTokens / state.maxTokens) * 100));
   const isOverBudget = state.totalTokens > state.maxTokens;
 
@@ -154,7 +152,7 @@ export function ContextViewer({ isOpen, oc, locale, onClose, onRefresh }: Contex
             </span>
             {state.summary && (
               <span
-                onClick={() => { clearSummary(oc); onRefresh(); }}
+                onClick={() => { clearSummary(); onRefresh(); }}
                 style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
               >
                 [clear]
@@ -183,7 +181,7 @@ export function ContextViewer({ isOpen, oc, locale, onClose, onRefresh }: Contex
                   {t("context.tier.warm", locale) || "warm — searchable"}
                 </span>
                 <span
-                  onClick={() => { clearChunkedSummaries(oc); onRefresh(); }}
+                  onClick={() => { clearChunkedSummaries(); onRefresh(); }}
                   style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
                 >
                   [clear]
@@ -257,7 +255,7 @@ export function ContextViewer({ isOpen, oc, locale, onClose, onRefresh }: Contex
             </span>
             {memories.length > 0 && (
               <span
-                onClick={() => { clearMemories(oc); onRefresh(); }}
+                onClick={() => { clearMemories(); onRefresh(); }}
                 style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
               >
                 [clear all]
@@ -271,7 +269,7 @@ export function ContextViewer({ isOpen, oc, locale, onClose, onRefresh }: Contex
                   {mem.length > 100 ? mem.slice(0, 100) + "..." : mem}
                 </span>
                 <span
-                  onClick={() => { deleteMemory(oc, i); onRefresh(); }}
+                  onClick={() => { deleteMemory(i); onRefresh(); }}
                   style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px", flexShrink: "0" }}
                 >
                   [x]

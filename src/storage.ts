@@ -1,25 +1,28 @@
 /**
- * Persistent storage layer using oc.thread.customData (Perchance native API).
+ * Persistent storage layer using localStorage.
  *
- * localStorage and IndexedDB are BLOCKED in Perchance sandboxed iframes.
- * oc.thread.customData persists via the parent frame's IndexedDB.
- *
- * Limitation: ~1-2KB recommended. Use prefix conventions:
- *   "agent:key" -> API keys, "agent:state" -> runtime state, etc.
+ * In standalone Perchance generators (HTML panel), localStorage is available.
+ * Keys use "agent:" prefix to avoid collisions.
  */
 
-import type { Oc } from "./types.js";
-
-let _oc: Oc | null = null;
-
-/** Must be called once after oc is available (in bootstrap). */
-export function initStorage(oc: Oc): void {
-  _oc = oc;
-}
+// --- Internal Helpers ---
 
 function getData(): Record<string, unknown> {
-  if (!_oc?.thread?.customData) return {};
-  return _oc.thread.customData as Record<string, unknown>;
+  try {
+    const raw = localStorage.getItem("agent:storage");
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function setData(data: Record<string, unknown>): void {
+  try {
+    localStorage.setItem("agent:storage", JSON.stringify(data));
+  } catch (e) {
+    console.warn('[Storage] set failed:', e);
+  }
 }
 
 // --- API ---
@@ -36,11 +39,9 @@ export function storageGet<T = unknown>(key: string): T | undefined {
 
 export function storageSet<T = unknown>(key: string, value: T): void {
   try {
-    if (!_oc?.thread?.customData) {
-      console.warn('[Storage] set: oc.thread.customData not available');
-      return;
-    }
-    (_oc.thread.customData as Record<string, unknown>)[key] = value;
+    const data = getData();
+    data[key] = value;
+    setData(data);
   } catch (e) {
     console.warn('[Storage] set(' + key + ') failed:', e);
   }
@@ -50,6 +51,7 @@ export function storageDel(key: string): void {
   try {
     const data = getData();
     delete data[key];
+    setData(data);
   } catch (e) {
     console.warn('[Storage] del(' + key + ') failed:', e);
   }

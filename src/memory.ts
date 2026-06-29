@@ -1,11 +1,11 @@
 /**
  * Memory Extraction — persistent facts extracted from conversations.
  *
- * After each agent response, extracts 1-3 "timeless facts" using oc.generateText()
- * and stores them in oc.thread.customData. Memories survive page reloads.
+ * After each agent response, extracts 1-3 "timeless facts" using window.ai()
+ * and stores them in localStorage via storage module.
  */
 
-import type { Oc } from "./types.js";
+import { storageGet, storageSet, storageDel } from "./storage.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MEMORIES_KEY = "agent:memories";
@@ -13,44 +13,36 @@ const MAX_MEMORIES = 20;
 const MIN_CONTENT_LENGTH = 50; // Skip trivial exchanges
 
 // ─── Memory Persistence ─────────────────────────────────────
-export function getMemories(oc: Oc): string[] {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return [];
-  const memories = cd[MEMORIES_KEY];
+export function getMemories(): string[] {
+  const memories = storageGet<string[]>(MEMORIES_KEY);
   if (!Array.isArray(memories)) return [];
   return memories.filter((m): m is string => typeof m === "string");
 }
 
-function saveMemories(oc: Oc, memories: string[]): void {
-  if (!oc.thread.customData) oc.thread.customData = {};
-  const cd = oc.thread.customData as Record<string, unknown>;
-  // Cap at MAX_MEMORIES — evict oldest
-  cd[MEMORIES_KEY] = memories.slice(-MAX_MEMORIES);
+function saveMemories(memories: string[]): void {
+  storageSet(MEMORIES_KEY, memories.slice(-MAX_MEMORIES));
 }
 
-export function clearMemories(oc: Oc): void {
-  const cd = oc.thread.customData as Record<string, unknown> | undefined;
-  if (!cd) return;
-  delete cd[MEMORIES_KEY];
+export function clearMemories(): void {
+  storageDel(MEMORIES_KEY);
 }
 
-export function deleteMemory(oc: Oc, index: number): void {
-  const memories = getMemories(oc);
+export function deleteMemory(index: number): void {
+  const memories = getMemories();
   if (index < 0 || index >= memories.length) return;
   memories.splice(index, 1);
-  saveMemories(oc, memories);
+  saveMemories(memories);
 }
 
 // ─── Format for Context Injection ───────────────────────────
-export function formatMemories(oc: Oc): string {
-  const memories = getMemories(oc);
+export function formatMemories(): string {
+  const memories = getMemories();
   if (memories.length === 0) return "";
   return memories.map((m) => `- ${m}`).join("\n");
 }
 
 // ─── Memory Extraction ──────────────────────────────────────
 export async function extractMemories(
-  oc: Oc,
   userMessage: string,
   agentResponse: string
 ): Promise<void> {
@@ -60,7 +52,7 @@ export async function extractMemories(
   }
 
   // Check for existing memories to avoid duplicates
-  const existing = getMemories(oc);
+  const existing = getMemories();
   const existingText = existing.join("\n");
 
   const instruction = `Extract 1-3 NEW facts from this conversation exchange that would be useful to remember in future conversations. Focus on:
@@ -85,8 +77,8 @@ Assistant: ${agentResponse.slice(0, 1000)}
 New facts (one per line, or NONE):`;
 
   try {
-    const response = await oc.generateText({ instruction });
-    const text = response.toString().trim();
+    const result = await (window.ai as any)({ instruction });
+    const text = (result.generatedText || result.text || result.toString()).trim();
 
     // Check for no new facts
     if (text === "NONE" || text.includes("NONE") || text.length < 5) {
@@ -95,10 +87,10 @@ New facts (one per line, or NONE):`;
     }
 
     // Parse facts (one per line)
-    const newFacts = text
+    const newFacts: string[] = text
       .split("\n")
-      .map((line) => line.replace(/^[-•*]\s*/, "").trim())
-      .filter((line) => line.length > 10 && line !== "NONE");
+      .map((line: string) => line.replace(/^[-•*]\s*/, "").trim())
+      .filter((line: string) => line.length > 10 && line !== "NONE");
 
     if (newFacts.length === 0) {
       console.log("🧠 [Memory] No valid facts extracted");
@@ -107,7 +99,7 @@ New facts (one per line, or NONE):`;
 
     // Deduplicate against existing
     const unique = newFacts.filter(
-      (fact) => !existing.some((e) => e.toLowerCase() === fact.toLowerCase())
+      (fact: string) => !existing.some((e: string) => e.toLowerCase() === fact.toLowerCase())
     );
 
     if (unique.length === 0) {
@@ -117,7 +109,7 @@ New facts (one per line, or NONE):`;
 
     // Append and save
     const updated = [...existing, ...unique];
-    saveMemories(oc, updated);
+    saveMemories(updated);
     console.log("🧠 [Memory] Extracted", unique.length, "new fact(s). Total:", updated.length);
   } catch (err) {
     console.error("❌ [Memory] Extraction failed:", err);

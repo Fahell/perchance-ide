@@ -4,7 +4,6 @@
 
 import { webSearch, scrapeUrl } from "./web-search.js";
 import { createContextTools } from "./context-tools.js";
-import type { Oc } from "../types.js";
 
 // ─── Tool Definition ────────────────────────────────────────
 export interface Tool {
@@ -58,8 +57,8 @@ export function hasTool(name: string): boolean {
   return name in tools;
 }
 
-// ─── Context Tools (require oc) ─────────────────────────────
-export function initContextTools(oc: Oc): void {
+// ─── Context Tools ─────────────────────────────────────────
+export function initContextTools(): void {
   const contextTools = createContextTools();
   Object.assign(tools, contextTools);
   console.log("🔧 [Tools] Context tools registered:", Object.keys(contextTools).join(", "));
