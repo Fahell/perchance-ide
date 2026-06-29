@@ -88,6 +88,13 @@ const en: Translations = {
   "context.noMessages": "no messages yet",
   "context.memories": "memories",
   "context.noMemories": "no memories extracted yet",
+  "context.tier.hot": "hot — in prompt",
+  "context.tier.warm": "warm — searchable",
+  "context.chunks": "chunked summaries",
+  "context.noChunks": "no chunks yet",
+  "context.totalHistory": "total messages",
+  "context.searchPlaceholder": "search history...",
+  "context.search": "search",
 };
 
 const ptBR: Translations = {
@@ -159,6 +166,13 @@ const ptBR: Translations = {
   "context.noMessages": "nenhuma mensagem ainda",
   "context.memories": "memórias",
   "context.noMemories": "nenhuma memória extraída ainda",
+  "context.tier.hot": "hot — no prompt",
+  "context.tier.warm": "warm — pesquisável",
+  "context.chunks": "resumos fragmentados",
+  "context.noChunks": "nenhum chunk ainda",
+  "context.totalHistory": "total de mensagens",
+  "context.searchPlaceholder": "buscar histórico...",
+  "context.search": "buscar",
 };
 
 const es: Translations = {
@@ -216,8 +230,13 @@ const es: Translations = {
   "context.messages": "mensajes",
   "context.noMessages": "sin mensajes aún",
   "context.memories": "memorias",
-  "context.noMemories": "sin memorias extraídas aún",
-};
+  "context.noMemories": "sin memorias extraídas aún",  "context.tier.hot": "hot — en prompt",
+  "context.tier.warm": "warm — buscable",
+  "context.chunks": "resumenes fragmentados",
+  "context.noChunks": "sin chunks aun",
+  "context.totalHistory": "total de mensajes",
+  "context.searchPlaceholder": "buscar historial...",
+  "context.search": "buscar",};
 
 const ja: Translations = {
   "settings.title": "設定",
@@ -275,6 +294,13 @@ const ja: Translations = {
   "context.noMessages": "メッセージなし",
   "context.memories": "メモリ",
   "context.noMemories": "メモリなし",
+  "context.tier.hot": "hot — プロンプト内",
+  "context.tier.warm": "warm — 検索可能",
+  "context.chunks": "チャンク要約",
+  "context.noChunks": "チャンクなし",
+  "context.totalHistory": "総メッセージ数",
+  "context.searchPlaceholder": "履歴を検索...",
+  "context.search": "検索",
 };
 
 const zh: Translations = {
@@ -333,6 +359,13 @@ const zh: Translations = {
   "context.noMessages": "暂无消息",
   "context.memories": "记忆",
   "context.noMemories": "暂无提取的记忆",
+  "context.tier.hot": "hot — 在提示中",
+  "context.tier.warm": "warm — 可搜索",
+  "context.chunks": "分块摘要",
+  "context.noChunks": "暂无分块",
+  "context.totalHistory": "总消息数",
+  "context.searchPlaceholder": "搜索历史...",
+  "context.search": "搜索",
 };
 
 export const dict: Record<Locale, Translations> = {

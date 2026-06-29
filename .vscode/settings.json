@@ -27,5 +27,6 @@
   },
 
   // Terminal
-  "terminal.integrated.defaultProfile.linux": "zsh"
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "markdown.validate.enabled": true
 }

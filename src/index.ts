@@ -6,6 +6,7 @@
 import type { Oc, OcMessage } from "./types.js";
 import { agentLoop } from "./agent-loop.js";
 import { setApiKey, getApiKey, validateApiKey } from "./tools/web-search.js";
+import { initContextTools } from "./tools/index.js";
 import { storageGet, storageSet, initStorage } from "./storage.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
 import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
@@ -271,6 +272,9 @@ function startAgent() {
 
   oc.window.show();
   console.log("🪟 [Agent] Window opened");
+
+  // Register context tools (search_history, get_messages)
+  initContextTools(oc);
 
   // Register message handler — processes messages from the Perchance reply box
   oc.thread.on("MessageAdded", async function({ message }: { message: OcMessage }) {

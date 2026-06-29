@@ -11,11 +11,40 @@ import type { HistoryMessage } from "./agent-loop.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const CHARS_PER_TOKEN = 4;
-const MAX_CONTEXT_TOKENS = 6000;
-const MAX_RECENT_MESSAGES = 20;
+const MAX_CONTEXT_TOKENS = 3000;
+const MAX_RECENT_MESSAGES = 5;
 const SUMMARY_KEY = "agent:context_summary";
 const SUMMARY_UPDATED_KEY = "agent:context_summary_updated_at";
 const SUMMARY_MSG_COUNT_KEY = "agent:context_summary_msg_count";
+const CHUNKS_KEY = "agent:context_chunks";
+
+// ─── Chunked Summary Storage ────────────────────────────────
+export interface ChunkSummary {
+  from: number;
+  to: number;
+  summary: string;
+  tokenCount: number;
+}
+
+export function getChunkedSummaries(oc: Oc): ChunkSummary[] {
+  const cd = oc.thread.customData as Record<string, unknown> | undefined;
+  if (!cd) return [];
+  return (cd[CHUNKS_KEY] as ChunkSummary[]) || [];
+}
+
+function persistChunk(oc: Oc, chunk: ChunkSummary): void {
+  if (!oc.thread.customData) oc.thread.customData = {};
+  const cd = oc.thread.customData as Record<string, unknown>;
+  const chunks = ((cd[CHUNKS_KEY] as ChunkSummary[]) || []).slice();
+  chunks.push(chunk);
+  cd[CHUNKS_KEY] = chunks;
+}
+
+export function clearChunkedSummaries(oc: Oc): void {
+  const cd = oc.thread.customData as Record<string, unknown> | undefined;
+  if (!cd) return;
+  delete cd[CHUNKS_KEY];
+}
 
 // ─── Token Estimation ───────────────────────────────────────
 export function estimateTokens(text: string): number {
@@ -194,7 +223,7 @@ export function getContextState(
     .slice(-MAX_RECENT_MESSAGES);
 
   const recentMessages = allMessages.map((m) => ({
-    role: m.author === "user" ? ("user" as const) : ("assistant" as const) as const,
+    role: m.author === "user" ? ("user" as const) : ("assistant" as const),
     content: m.content,
   }));
 
@@ -212,4 +241,18 @@ export function getContextState(
     summaryTokens,
     historyTokens,
   };
+}
+
+// ─── Search & Range Retrieval (for context-tools) ───────────
+export function getAllHistoryMessages(oc: Oc): { role: "user" | "assistant"; content: string }[] {
+  return oc.thread.messages
+    .filter((m) => m.author === "user" || m.author === "ai")
+    .map((m) => ({
+      role: m.author === "user" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    }));
+}
+
+export function getTotalMessageCount(oc: Oc): number {
+  return oc.thread.messages.filter((m) => m.author === "user" || m.author === "ai").length;
 }
