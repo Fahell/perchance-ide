@@ -60,7 +60,7 @@ export function hasTool(name: string): boolean {
 
 // ─── Context Tools (require oc) ─────────────────────────────
 export function initContextTools(oc: Oc): void {
-  const contextTools = createContextTools(oc);
+  const contextTools = createContextTools();
   Object.assign(tools, contextTools);
   console.log("🔧 [Tools] Context tools registered:", Object.keys(contextTools).join(", "));
 }

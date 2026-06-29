@@ -26,9 +26,21 @@ IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${COMMIT}/dist/agen
 cat > IMPORT.md << EOF
 # Import URL
 
-Copy-paste this into Perchance Custom Code:
+## Option 1: HTML Panel (standalone generator)
 
+Add an HTML panel to your generator with:
+
+\`\`\`html
+<script>
+  import("${IMPORT_URL}");
+</script>
 \`\`\`
+
+Also add \`ai = {import:ai-text-plugin}\` to your list panel.
+
+## Option 2: Perchance Custom Code (legacy)
+
+\`\`\`js
 import("${IMPORT_URL}");
 \`\`\`
 EOF

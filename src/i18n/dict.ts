@@ -98,6 +98,15 @@ const en: Translations = {
 
   // FAQ
   "faq.title": "faq",
+
+  // Editor
+  "editor.title": "editor",
+  "editor.placeholder": "// write code or text here...",
+  "editor.clear": "clear",
+  "editor.send": "send →",
+
+  // Right Panel
+  "rightPanel.placeholder": "panel coming soon",
 };
 
 const ptBR: Translations = {
@@ -179,6 +188,15 @@ const ptBR: Translations = {
 
   // FAQ
   "faq.title": "perguntas frequentes",
+
+  // Editor
+  "editor.title": "editor",
+  "editor.placeholder": "// escreva código ou texto aqui...",
+  "editor.clear": "limpar",
+  "editor.send": "enviar →",
+
+  // Right Panel
+  "rightPanel.placeholder": "painel em breve",
 };
 
 const es: Translations = {
@@ -246,6 +264,15 @@ const es: Translations = {
 
   // FAQ
   "faq.title": "preguntas frecuentes",
+
+  // Editor
+  "editor.title": "editor",
+  "editor.placeholder": "// escribe código o texto aquí...",
+  "editor.clear": "limpiar",
+  "editor.send": "enviar →",
+
+  // Right Panel
+  "rightPanel.placeholder": "panel próximamente",
 };
 
 const ja: Translations = {
@@ -314,6 +341,15 @@ const ja: Translations = {
 
   // FAQ
   "faq.title": "よくある質問",
+
+  // Editor
+  "editor.title": "エディタ",
+  "editor.placeholder": "// コードまたはテキストをここに書く...",
+  "editor.clear": "クリア",
+  "editor.send": "送信 →",
+
+  // Right Panel
+  "rightPanel.placeholder": "パネル準備中",
 };
 
 const zh: Translations = {
@@ -382,6 +418,15 @@ const zh: Translations = {
 
   // FAQ
   "faq.title": "常见问题",
+
+  // Editor
+  "editor.title": "编辑器",
+  "editor.placeholder": "// 在这里编写代码或文本...",
+  "editor.clear": "清除",
+  "editor.send": "发送 →",
+
+  // Right Panel
+  "rightPanel.placeholder": "面板即将推出",
 };
 
 export const dict: Record<Locale, Translations> = {

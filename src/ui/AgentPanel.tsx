@@ -12,6 +12,8 @@ import { ScrollFAB } from "./ScrollFAB.js";
 import { Footer } from "./Footer.js";
 import { ContextViewer } from "./ContextViewer.js";
 import { FaqModal } from "./FaqModal.js";
+import { CodeEditor } from "./CodeEditor.js";
+import { RightPanel } from "./RightPanel.js";
 import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
 
 let msgCounter = 0;
@@ -165,103 +167,135 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     }}>
       <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} />
 
-      <div style={{ position: "relative", flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
-      <MessageList outerRef={scrollRef}>
-        {messages.length === 0 && (
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "100%",
-            color: colors.textMuted,
-            textAlign: "center",
-            padding: "20px",
-            fontFamily: fonts.mono,
-          }}>
-            <div style={{ fontSize: "12px", marginBottom: "6px" }}>
-              {panelMode === "tools-only" ? (
-                <span>{t("panel.compact", locale)}</span>
-              ) : (
-                <span>
-                  {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
-                </span>
+      {/* ─── 3-Column Layout ──────────────────────────────── */}
+      <div style={{
+        display: "flex",
+        flex: "1",
+        minHeight: "0",
+        overflow: "hidden",
+      }}>
+
+        {/* ── Left: Sidebar Panel (chat + tools + status) ── */}
+        <div style={{
+          width: "300px",
+          minWidth: "300px",
+          display: "flex",
+          flexDirection: "column",
+          borderRight: `1px solid ${colors.border}`,
+        }}>
+          {/* Messages area */}
+          <div style={{ position: "relative", flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
+            <MessageList outerRef={scrollRef}>
+              {messages.length === 0 && (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  color: colors.textMuted,
+                  textAlign: "center",
+                  padding: "20px",
+                  fontFamily: fonts.mono,
+                }}>
+                  <div style={{ fontSize: "12px", marginBottom: "6px" }}>
+                    {panelMode === "tools-only" ? (
+                      <span>{t("panel.compact", locale)}</span>
+                    ) : (
+                      <span>
+                        {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
+                </div>
               )}
-            </div>
-            <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
+
+              {(() => {
+                const isCompact = panelMode === "tools-only";
+                const filtered = isCompact
+                  ? messages.filter((msg) => {
+                      if (msg.role === "user") return false;
+                      if (msg.toolCalls.length > 0) return true;
+                      if (agentStatus !== "idle") return true;
+                      return false;
+                    })
+                  : messages;
+
+                if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
+                  return (
+                    <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono }}>
+                      {t("panel.compact", locale)}
+                    </div>
+                  );
+                }
+
+                const elements: preact.VNode[] = [];
+                filtered.forEach((msg, i) => {
+                  const prev = filtered[i - 1];
+                  if (prev && prev.role !== msg.role) {
+                    elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
+                  }
+                  if (msg.role === "user") {
+                    elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} />);
+                  } else {
+                    elements.push(
+                      <AgentMessage
+                        key={msg.id}
+                        message={msg}
+                        agentStatus={agentStatus}
+                        compact={isCompact}
+                        locale={locale}
+                      />
+                    );
+                  }
+                });
+                return elements;
+              })()}
+
+              {/* Thinking gap */}
+              {agentStatus === "thinking" && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+                <>
+                  <div className="msg-turn-separator" />
+                  <ThinkingIndicator />
+                </>
+              )}
+
+            </MessageList>
+
+            {/* Scroll-to-bottom FAB */}
+            <ScrollFAB scrollRef={scrollRef} />
           </div>
-        )}
 
-        {(() => {
-          const isCompact = panelMode === "tools-only";
-          const filtered = isCompact
-            ? messages.filter((msg) => {
-                if (msg.role === "user") return false;
-                if (msg.toolCalls.length > 0) return true;
-                if (agentStatus !== "idle") return true;
-                return false;
-              })
-            : messages;
+          {/* Status line */}
+          <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
 
-          if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
-            return (
-              <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono }}>
-                {t("panel.compact", locale)}
-              </div>
-            );
-          }
+          {/* Footer */}
+          <Footer
+            onSettings={() => setSettingsOpen(true)}
+            onContext={() => setContextOpen(true)}
+            inputEnabled={inputEnabled}
+            onSend={onSendMessage}
+            disabled={agentStatus !== "idle"}
+            locale={locale}
+          />
+        </div>
 
-          const elements: preact.VNode[] = [];
-          filtered.forEach((msg, i) => {
-            const prev = filtered[i - 1];
-            if (prev && prev.role !== msg.role) {
-              elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
-            }
-            if (msg.role === "user") {
-              elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} />);
-            } else {
-              elements.push(
-                <AgentMessage
-                  key={msg.id}
-                  message={msg}
-                  agentStatus={agentStatus}
-                  compact={isCompact}
-                  locale={locale}
-                />
-              );
-            }
-          });
-          return elements;
-        })()}
+        {/* ── Middle: Code Editor ─────────────────────────── */}
+        <div style={{ flex: "1", minWidth: "0" }}>
+          <CodeEditor
+            locale={locale}
+            onSendToAgent={(text) => onSendMessage(text)}
+          />
+        </div>
 
-        {/* Thinking gap — covers the phase before any agent message exists */}
-        {agentStatus === "thinking" && messages.length > 0 && messages[messages.length - 1].role === "user" && (
-          <>
-            <div className="msg-turn-separator" />
-            <ThinkingIndicator />
-          </>
-        )}
-
-
-      </MessageList>
-
-      {/* Scroll-to-bottom FAB */}
-      <ScrollFAB scrollRef={scrollRef} />
+        {/* ── Right: Placeholder panel ───────────────────── */}
+        <div style={{ width: "300px", minWidth: "300px" }}>
+          <RightPanel locale={locale} />
+        </div>
       </div>
 
-      {/* Status line */}
-      <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
-
-      {/* Footer */}
-      <Footer
-        onSettings={() => setSettingsOpen(true)}
-        onContext={() => setContextOpen(true)}
-        inputEnabled={inputEnabled}
-        onSend={onSendMessage}
-        disabled={agentStatus !== "idle"}
-        locale={locale}
-      />
-
+      {/* ── Modals ────────────────────────────────────────── */}
       <ContextViewer
         isOpen={contextOpen}
         oc={(window as any).oc}

@@ -1,9 +1,9 @@
 /**
- * Agent for Perchance AI Character Chat
+ * Agent for Perchance Generator (standalone, with ai-text-plugin)
  * Entry point — imports here are bundled into dist/agent.js
  */
 
-import type { Oc, OcMessage } from "./types.js";
+import type { Oc } from "./types.js";
 import { agentLoop } from "./agent-loop.js";
 import { setApiKey, getApiKey, validateApiKey } from "./tools/web-search.js";
 import { initContextTools } from "./tools/index.js";
@@ -12,6 +12,7 @@ import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
 import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
 import { buildContext } from "./context-manager.js";
 import { extractMemories, formatMemories } from "./memory.js";
+import { initMessageStore, addMessage, getMessages, clearMessages } from "./message-store.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -23,7 +24,6 @@ const oc: Oc = window.oc;
 let agentProcessing = false;
 let panel: AgentPanelRef | null = null;
 let currentToolCallId: string | null = null;
-const _panelProcessed = new WeakSet<object>();
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -72,43 +72,28 @@ function validateEnvironment(): boolean {
     console.error("❌ [Agent] window.oc not found — are you running inside Perchance?");
     return false;
   }
-  if (!oc.thread) {
-    console.error("❌ [Agent] oc.thread not available");
+  if (!oc.thread?.customData) {
+    console.error("❌ [Agent] oc.thread.customData not available");
     return false;
   }
-  if (typeof oc.generateText !== "function") {
-    console.error("❌ [Agent] oc.generateText not available");
+  if (typeof window.ai !== "function") {
+    console.error("❌ [Agent] window.ai not found — ai-text-plugin not loaded?");
+    console.log("💡 [Agent] Make sure you have 'ai = {import:ai-text-plugin}' in your list panel.");
     return false;
   }
   return true;
 }
 
-// ─── Command Handler ────────────────────────────────────────
-function isAgentCommand(content: string): boolean {
-  const cmd = content.trim();
-  return cmd.startsWith("/agent");
-}
+// ─── Agent Message Handler (standalone generator) ────────────
+async function handleSendMessage(text: string): Promise<void> {
+  console.log("🤖 [Agent] Processing:", text.slice(0, 80));
 
-function handleCommand(content: string): void {
-  const cmd = content.trim();
-  if (cmd === "/agent open") {
-    oc.window.show();
-    console.log("🪟 [Agent] Window opened");
-  } else if (cmd === "/agent close") {
-    oc.window.hide();
-    console.log("🪟 [Agent] Window closed");
-  }
-}
-
-// ─── Agent Message Handler ──────────────────────────────────
-async function handleUserMessage(message: OcMessage): Promise<void> {
-  console.log("🤖 [Agent] Processing:", message.content.slice(0, 80));
-
-  // Show user message in Preact panel
-  panel?.addUserMessage(message.content);
+  // Store user message
+  addMessage({ role: "user", content: text });
+  panel?.addUserMessage(text);
 
   // Build context with token-aware summarization
-  const ctx = await buildContext(oc, message.content);
+  const ctx = await buildContext(oc, text);
   console.log("🧠 [Agent] Context: ~" + ctx.totalTokens + " tokens, " + ctx.recentMessages.length + " messages" + (ctx.summarizedCount > 0 ? ", summarized " + ctx.summarizedCount + " older messages" : ""));
 
   // Run agent loop with structured context
@@ -119,8 +104,7 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
   };
 
   const response = await agentLoop(
-    oc,
-    message.content,
+    text,
     agentContext,
     (status) => {
       console.log("🤖 [Agent]", status);
@@ -167,60 +151,18 @@ async function handleUserMessage(message: OcMessage): Promise<void> {
   // Show response in Preact panel
   panel?.setResponse(response);
 
-  // Push to Perchance chat
-  oc.thread.messages.push({
-    author: "ai",
-    content: response,
-  });
+  // Store assistant message
+  addMessage({ role: "assistant", content: response });
 
   // Extract memories in background (non-blocking)
-  extractMemories(oc, message.content, response).catch(() => {});
+  extractMemories(oc, text, response).catch(() => {});
 }
 
-// ─── Process User Message (single source of truth) ───────────
-async function processUserMessage(message: OcMessage): Promise<void> {
-  // Prevent concurrent processing (e.g. panel push + Perchance chat simultaneously)
-  if (agentProcessing) {
-    console.log("⏳ [Agent] Already processing, skipping:", message.content.slice(0, 40));
-    return;
-  }
-
-  // Suppress internal generator by setting flags directly on the message object.
-  message.expectsReply = false;
-  if (!message.hiddenFrom) message.hiddenFrom = [];
-  if (!message.hiddenFrom.includes("ai")) message.hiddenFrom.push("ai");
-  console.log("🛡️ [Agent] Set expectsReply=false, hiddenFrom=[ai] on user message");
-
-  // Handle /agent commands
-  if (isAgentCommand(message.content)) {
-    handleCommand(message.content);
-    setTimeout(() => {
-      const idx = oc.thread.messages.indexOf(message);
-      if (idx !== -1) oc.thread.messages.splice(idx, 1);
-    }, 100);
-    return;
-  }
-
-  // Process user message via agent
-  agentProcessing = true;
-  panel?.setStatus("thinking");
-  try {
-    await handleUserMessage(message);
-  } catch (err) {
-    console.error("❌ [Agent] Error:", err);
-    panel?.setResponse(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    oc.thread.messages.push({
-      author: "ai",
-      content: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
-    });
-  } finally {
-    agentProcessing = false;
-    panel?.setStatus("idle");
-  }
-}
-
-// ─── Start Agent (registers handlers) ────────────────────────
+// ─── Start Agent (standalone generator) ──────────────────────
 function startAgent() {
+  // Initialize message store (load persisted messages)
+  initMessageStore();
+
   // Render Preact panel
   panel = renderPanel(document.body, {
     version: __VERSION__,
@@ -228,10 +170,7 @@ function startAgent() {
     currentApiKey: getApiKey(),
     panelMode: loadPanelMode(),
     locale: loadLocale(),
-    userName: oc.thread.userCharacter?.name
-      || oc.character?.userCharacter?.name
-      || oc.userCharacter?.name
-      || "",
+    userName: "",
     onSettingsSave: async (key: string) => {
       const valid = await validateApiKey(key);
       if (valid) {
@@ -259,48 +198,25 @@ function startAgent() {
         console.log("⏳ [Agent] Already processing, ignoring panel input");
         return;
       }
-      // Push to thread for chat history, then process directly.
-      // MessageAdded does NOT fire for messages pushed from within
-      // the same sandboxed iframe — so we must process manually.
-      const msg = { author: "user", content: text, expectsReply: false } as OcMessage;
-      _panelProcessed.add(msg);
-      oc.thread.messages.push(msg);
-      console.log("📨 [Panel] Direct processing:", text.slice(0, 60));
-      processUserMessage(msg);
+      agentProcessing = true;
+      panel?.setStatus("thinking");
+      handleSendMessage(text)
+        .catch((err) => {
+          console.error("❌ [Agent] Error:", err);
+          panel?.setResponse(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        })
+        .finally(() => {
+          agentProcessing = false;
+          panel?.setStatus("idle");
+        });
     },
   });
-
-  oc.window.show();
-  console.log("🪟 [Agent] Window opened");
 
   // Register context tools (search_history, get_messages)
   initContextTools(oc);
 
-  // Register message handler — processes messages from the Perchance reply box
-  oc.thread.on("MessageAdded", async function({ message }: { message: OcMessage }) {
-    // Remove messages from Perchance's internal generator while our agent is running
-    if (message.author === "ai" && agentProcessing) {
-      const idx = oc.thread.messages.indexOf(message);
-      if (idx !== -1) {
-        oc.thread.messages.splice(idx, 1);
-        console.log("🗑️ [Agent] Removed internal generator message");
-      }
-      return;
-    }
-
-    if (message.author !== "user") return;
-
-    // Skip if already processed by onSendMessage (panel input)
-    if (_panelProcessed.has(message)) {
-      console.log("⏭️ [Agent] Skipping MessageAdded (panel-pushed, already processing)");
-      return;
-    }
-
-    console.log("📨 [Agent] MessageAdded from Perchance UI");
-    await processUserMessage(message);
-  });
-
   console.log("✅ [Agent] Ready!");
+  console.log("💡 [Agent] Type in the sidebar panel to start.");
 }
 
 // ─── Bootstrap ──────────────────────────────────────────────
@@ -329,7 +245,6 @@ function bootstrap() {
         console.log("🔑 [Agent] API key saved to customData");
       },
     });
-    oc.window.show();
   }
 }
 

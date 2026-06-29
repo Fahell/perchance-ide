@@ -8,6 +8,7 @@
 
 import type { Oc } from "./types.js";
 import type { HistoryMessage } from "./agent-loop.js";
+import { getLastN, getMessageCount, getAllMessages, type ChatMessage } from "./message-store.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const CHARS_PER_TOKEN = 4;
@@ -17,6 +18,15 @@ const SUMMARY_KEY = "agent:context_summary";
 const SUMMARY_UPDATED_KEY = "agent:context_summary_updated_at";
 const SUMMARY_MSG_COUNT_KEY = "agent:context_summary_msg_count";
 const CHUNKS_KEY = "agent:context_chunks";
+
+// ─── Helpers ────────────────────────────────────────────────
+function msgToHistory(m: ChatMessage): HistoryMessage {
+  return { role: m.role as "user" | "assistant", content: m.content };
+}
+
+function allHistoryMessages(): HistoryMessage[] {
+  return getAllMessages().map(msgToHistory);
+}
 
 // ─── Chunked Summary Storage ────────────────────────────────
 export interface ChunkSummary {
@@ -115,15 +125,12 @@ export async function buildContext(
   oc: Oc,
   currentUserMessage: string
 ): Promise<ContextResult> {
-  // Get all user/ai messages (exclude current one)
-  const allMessages = oc.thread.messages
-    .filter((m) => (m.author === "user" || m.author === "ai"))
-    .slice(-MAX_RECENT_MESSAGES);
+  // Get messages from our custom message store (or empty if not yet initialized)
+  const recentMsgs = getLastN(MAX_RECENT_MESSAGES);
 
   // Estimate tokens for all messages
-  const msgsWithTokens = allMessages.map((m) => ({
-    role: m.author === "user" ? ("user" as const) : ("assistant" as const),
-    content: m.content,
+  const msgsWithTokens = recentMsgs.map((m) => ({
+    ...msgToHistory(m),
     tokens: estimateTokens(m.content),
   }));
 
@@ -190,8 +197,9 @@ export async function buildContext(
   }
 
   // Persist the updated summary
+  const totalMsgs = getMessageCount();
   if (combinedSummary) {
-    persistSummary(oc, combinedSummary, allMessages.length);
+    persistSummary(oc, combinedSummary, totalMsgs);
   }
 
   const finalTokens = estimateTokens(combinedSummary) + keptTokens + currentMsgTokens;
@@ -218,14 +226,9 @@ export function getContextState(
   oc: Oc,
   currentUserMessage: string
 ): ContextState {
-  const allMessages = oc.thread.messages
-    .filter((m) => (m.author === "user" || m.author === "ai"))
-    .slice(-MAX_RECENT_MESSAGES);
+  const recentMsgs = getLastN(MAX_RECENT_MESSAGES);
 
-  const recentMessages = allMessages.map((m) => ({
-    role: m.author === "user" ? ("user" as const) : ("assistant" as const),
-    content: m.content,
-  }));
+  const recentMessages = recentMsgs.map(msgToHistory);
 
   const summary = loadSummary(oc);
   const summaryTokens = summary ? estimateTokens(summary) : 0;
@@ -245,14 +248,9 @@ export function getContextState(
 
 // ─── Search & Range Retrieval (for context-tools) ───────────
 export function getAllHistoryMessages(oc: Oc): { role: "user" | "assistant"; content: string }[] {
-  return oc.thread.messages
-    .filter((m) => m.author === "user" || m.author === "ai")
-    .map((m) => ({
-      role: m.author === "user" ? ("user" as const) : ("assistant" as const),
-      content: m.content,
-    }));
+  return allHistoryMessages();
 }
 
 export function getTotalMessageCount(oc: Oc): number {
-  return oc.thread.messages.filter((m) => m.author === "user" || m.author === "ai").length;
+  return getMessageCount();
 }

@@ -8,7 +8,6 @@
  *   4. Repeat until LLM gives a final answer (no tool_call)
  */
 
-import type { Oc } from "./types.js";
 import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
 import type { ContextResult } from "./context-manager.js";
 
@@ -99,7 +98,6 @@ function cleanResponse(text: string): string {
 
 // ─── Agent Loop ─────────────────────────────────────────────
 export async function agentLoop(
-  oc: Oc,
   userMessage: string,
   context: AgentContext,
   onStatus?: (status: string) => void,
@@ -140,12 +138,13 @@ export async function agentLoop(
     iteration++;
     onStatus?.(`Thinking... (step ${iteration})`);
 
-    // Call the LLM
-    const response = await oc.generateText({
+    // Call the LLM via ai-text-plugin
+    const result = await window.ai({
       instruction: instruction,
+      stopSequences: ["</tool_call>"],
     });
 
-    const responseText = response.toString();
+    const responseText = result.generatedText || result.text || result.toString();
 
     // Check for tool calls
     const toolCalls = extractToolCalls(responseText);

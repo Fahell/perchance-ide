@@ -16,6 +16,7 @@ npm-debug.log*
 .env
 .env.local
 
-ai-character-chat generator/
+ai-text-plugin/
 .vscode/
 .github/
+super-fetch-plugin/

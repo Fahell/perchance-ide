@@ -14,16 +14,20 @@ const FAQ_ITEMS = [
     a: "You can access the project via the GitHub repository at https://github.com/Fahell/perchance-ide",
   },
   {
-    q: "Do I need an API key?",
-    a: "You need a Jina.ai API key for the search to work. It's free. Your API key isn't shared, as it's stored in your browser's local storage.",
+    q: "What is this?",
+    a: "A Perchance generator that uses the ai-text-plugin internally. The sidebar panel runs an AI agent with web search, context management, and memory extraction.",
   },
   {
-    q: "Why does my message show as 'hidden from the AI'?",
-    a: 'The messages you send appear as "hidden from the AI" so that the internal roleplay prompt in ai-character-chat doesn\'t "contaminate" the agent\'s response.',
+    q: "Do I need an API key?",
+    a: "You need a Jina.ai API key for the agent's web search tool. It's free. Your key is stored locally and never shared.",
+  },
+  {
+    q: "How do I use the generator?",
+    a: "Open the sidebar panel and type your message. The agent will think, use tools if needed, and respond. You can also write text/code in the middle editor panel and send it to the agent.",
   },
   {
     q: "Will this be updated?",
-    a: "I had planned to expand this bot's capabilities, but due to many restrictions in ai-character-chat, I won't be continuing to update it.",
+    a: "Yes! This is an active project. More panels and features are planned.",
   },
 ];
 

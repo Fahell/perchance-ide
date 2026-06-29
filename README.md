@@ -1,15 +1,26 @@
 # perchance-ide
 
-Agent framework for [Perchance AI Character Chat](https://perchance.org/ai-character-chat).
+Standalone AI agent generator for [Perchance](https://perchance.org), powered by [ai-text-plugin](https://perchance.org/ai-text-plugin).
 
 TypeScript project bundled with esbuild into a single JS file, served via jsDelivr CDN.
 
 ## Quick Start
 
-### In Perchance Custom Code
+### 1. Create a Perchance generator
 
-```js
-import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@<COMMIT>/dist/agent.js");
+Make a new generator on Perchance and set up an HTML panel with:
+
+```html
+<!-- HTML Panel -->
+<script>
+  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@<COMMIT>/dist/agent.js");
+</script>
+```
+
+### 2. Add ai-text-plugin to your list panel
+
+```
+ai = {import:ai-text-plugin}
 ```
 
 Replace `<COMMIT>` with the latest commit hash (auto-generated in `IMPORT.md` after each deploy).
@@ -30,27 +41,36 @@ pnpm deploy
 pnpm dev
 ```
 
+### Generator scaffolding
+
+The `generator/` folder contains templates you can adapt:
+
+- `generator/list-panel.txt` — minimal list panel with ai-text-plugin import
+- `generator/html-template.html` — minimal HTML panel that loads the agent bundle
+
 ## Features
 
-- **Web search + page scraping** via Jina AI API (free tier)
+- **AI agent with tools** — web search, page scraping, context management
 - **Tool-calling agent loop** — AI outputs `<tool_call>` XML, custom code executes and feeds results back (up to 8 iterations)
 - **Context window management** — token-aware summarization with 3-tier architecture (hot/warm/cold)
 - **Context tools** — agent can query its own history via `search_history` (BM25-lite) and `get_messages` (index retrieval)
 - **Persistent memory** — extracts timeless facts from conversations, stored across sessions
+- **Custom message store** — replaces `oc.thread.messages` for standalone use; persists to `customData`
 - **i18n** — 5 languages (English, Português, Español, 日本語, 中文)
-- **Monochrome dark UI** — Preact-based panel with compact/full modes, tool call cards, scroll FAB
+- **Monochrome dark UI** — Preact-based 3-column panel with chat sidebar, code editor, and placeholder right panel
 - **FAQ panel** — built-in info modal with project links and usage notes
 
 ## Architecture
 
 ```
 src/
-├── index.ts              # Entry point — bootstrap, MessageAdded handler, agent orchestration
-├── agent-loop.ts         # Core agent loop — tool call detection, instruction building, LLM calls
+├── index.ts              # Entry point — bootstrap, agent orchestration, send handler
+├── agent-loop.ts         # Core agent loop — tool call detection, instruction building, window.ai calls
 ├── context-manager.ts    # Token-aware context building, summarization, chunked summaries
 ├── memory.ts             # Persistent memory extraction and retrieval
 ├── storage.ts            # Persistent storage via oc.thread.customData
-├── types.ts              # Perchance API types (oc.*)
+├── message-store.ts      # Custom in-memory message store with customData persistence
+├── types.ts              # Perchance API types + window.ai type declarations
 │
 ├── tools/
 │   ├── index.ts          # Tool registry + initContextTools()
@@ -62,7 +82,7 @@ src/
 │   └── index.ts          # t() function, locale detection, persistence
 │
 └── ui/
-    ├── AgentPanel.tsx     # Main panel — state, layout, modal management
+    ├── AgentPanel.tsx     # Main panel — 3-column layout, state, modal management
     ├── Header.tsx         # Top bar with version + FAQ button
     ├── Footer.tsx         # Input bar + settings/context buttons
     ├── MessageList.tsx    # Scrollable message container
@@ -75,6 +95,8 @@ src/
     ├── SettingsModal.tsx  # API key, panel mode, language settings
     ├── ContextViewer.tsx  # Context visualization (tokens, tiers, search, memories)
     ├── FaqModal.tsx       # FAQ modal with project info
+    ├── CodeEditor.tsx     # Code/text editor panel (middle column)
+    ├── RightPanel.tsx     # Placeholder panel (right column, coming soon)
     ├── SetupScreen.tsx    # Initial API key setup wizard
     ├── theme.ts           # Monochrome color palette + fonts
     ├── markdown.ts        # Minimal markdown → HTML renderer
@@ -105,39 +127,35 @@ The agent uses a **3-tier context architecture** to manage conversation history 
 - **Memory extraction** runs in background after each exchange, capturing timeless facts (max 20)
 - **Context tools** let the agent search its own history when the user references earlier conversation
 - **ContextViewer** modal visualizes token usage, tiers, chunks, and memories
+- **Custom message store** replaces `oc.thread.messages` — messages stored in memory + persisted to `customData`
 
 ## Message Flow
 
 ```
 User sends message
     │
-    ├──→ Our agent (custom code in iframe)
-    │    ├─ MessageAdded handler intercepts
-    │    ├─ Sets expectsReply=false, hiddenFrom=["ai"] on message
+    ├──→ handleSendMessage()
+    │    ├─ addMessage() → stores in custom message store
     │    ├─ buildContext() → token-aware summarization + recent messages
     │    ├─ formatMemories() → injects key facts
-    │    ├─ agentLoop() → LLM call with tool instructions
+    │    ├─ agentLoop() → window.ai() call with tool instructions
     │    │   ├─ Agent uses web_search / scrape_url for real-time data
     │    │   ├─ Agent uses search_history / get_messages for older context
     │    │   └─ Up to 8 tool-call iterations
-    │    ├─ extractMemories() → background fact extraction
-    │    └─ Pushes response to oc.thread.messages
+    │    ├─ addMessage() → stores agent response
+    │    └─ extractMemories() → background fact extraction
     │
-    └──→ Internal Perchance generator (ai-character-chat)
-         └─ Sees expectsReply=false / hiddenFrom=["ai"]
-         └─ Does NOT fire (suppressed)
+    └──→ Response shown in Preact sidebar panel
 ```
 
 ## Key Perchance APIs
 
 | API | Purpose | Notes |
 |-----|---------|-------|
-| `oc.thread.on("MessageAdded")` | Intercept messages | SYNCHRONOUS handler required |
-| `oc.thread.messages.push()` | Add messages to chat | Triggers MessageAdded |
-| `oc.generateText({instruction})` | Call LLM programmatically | Standalone, no auto-context |
-| `oc.window.show() / .hide()` | Control iframe window | UI lives in iframe |
+| `window.ai()` | Call LLM via ai-text-plugin | Replaces `oc.generateText()` in agent loop |
+| `oc.generateText()` | Call LLM programmatically | Used only for summarization + memory extraction |
 | `oc.thread.customData` | Persistent key-value storage | ~1-2KB limit, persists across sessions |
-| `oc.thread.userCharacter?.name` | Get username | 3-level fallback chain |
+| `oc.thread.userCharacter?.name` | Get username (legacy) | 3-level fallback chain |
 
 ## Tools
 
@@ -150,16 +168,17 @@ User sends message
 
 ## Critical Patterns
 
-- **Generator suppression**: Set `expectsReply = false` and `hiddenFrom = ["ai"]` on user messages in the `MessageAdded` handler (NOT in the pipeline — pipeline is rendering-only)
-- **Storage**: Use `oc.thread.customData` for persistence — `localStorage` and `IndexedDB` are blocked in Perchance sandboxed iframes
-- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back
-- **Window**: All UI goes in the iframe (`document.body.innerHTML`), not in the chat
-- **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main`
+- **LLM calls**: Agent loop uses `window.ai()` from ai-text-plugin. Fallback to `oc.generateText()` for summarization and memory extraction (internal operations).
+- **Custom message store**: Messages stored in-memory array + persisted to `customData["agent:messages"]`. Replaces `oc.thread.messages`.
+- **Storage**: Use `oc.thread.customData` for persistence — `localStorage` and `IndexedDB` are blocked in Perchance sandboxed iframes.
+- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back.
+- **UI**: All UI rendered by Preact into `document.body` — no chat window involved.
+- **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main`.
 - **Username fallback**: `oc.thread.userCharacter?.name` → `oc.character?.userCharacter?.name` → `oc.userCharacter?.name`
 
 ## Bundle
 
-~85KB minified (esbuild), served via jsDelivr CDN.
+~88KB minified (esbuild), served via jsDelivr CDN.
 
 ## License
 

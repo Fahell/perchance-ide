@@ -2,12 +2,11 @@
  * Context tools — agent-accessible tools for querying conversation history.
  *
  * Provides search_history (BM25-lite keyword search) and get_messages
- * (index-based retrieval). Both tools require the `oc` object, which is
- * injected via closure in createContextTools().
+ * (index-based retrieval). Reads from the custom message store.
  */
 
-import type { Oc } from "../types.js";
 import type { Tool } from "./index.js";
+import { getAllMessages, getMessageCount } from "../message-store.js";
 
 // ─── Stopwords (minimal set for BM25-lite) ──────────────────
 const STOPWORDS = new Set([
@@ -97,7 +96,7 @@ function searchMessages(messages: { author: string; content: string }[], query: 
 }
 
 // ─── Tool Factory ───────────────────────────────────────────
-export function createContextTools(oc: Oc): Record<string, Tool> {
+export function createContextTools(): Record<string, Tool> {
   return {
     search_history: {
       name: "search_history",
@@ -110,13 +109,11 @@ export function createContextTools(oc: Oc): Record<string, Tool> {
         const query = String(args.query || "");
         if (!query.trim()) return "Error: query is required.";
 
-        // Get all user/ai messages from the full history
-        const allMessages = oc.thread.messages
-          .filter((m) => m.author === "user" || m.author === "ai")
-          .map((m) => ({
-            author: m.author === "user" ? "user" : "ai",
-            content: m.content,
-          }));
+        // Get all messages from our custom message store
+        const allMessages = getAllMessages().map((m) => ({
+          author: m.role === "user" ? "user" : m.role === "assistant" ? "ai" : "system",
+          content: m.content,
+        }));
 
         if (allMessages.length === 0) return "No conversation history found.";
 
@@ -141,13 +138,11 @@ export function createContextTools(oc: Oc): Record<string, Tool> {
         to: "End index (0-based, exclusive). Example: 15",
       },
       execute: async (args) => {
-        // Get all user/ai messages from the full history
-        const allMessages = oc.thread.messages
-          .filter((m) => m.author === "user" || m.author === "ai")
-          .map((m) => ({
-            author: m.author === "user" ? "user" : "ai",
-            content: m.content,
-          }));
+        // Get all messages from our custom message store
+        const allMessages = getAllMessages().map((m) => ({
+          author: m.role === "user" ? "user" : m.role === "assistant" ? "ai" : "system",
+          content: m.content,
+        }));
 
         if (allMessages.length === 0) return "No conversation history found.";
 

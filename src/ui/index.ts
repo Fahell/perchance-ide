@@ -7,6 +7,7 @@ import { injectAnimations } from "./animations.js";
 import { AgentPanel, type AgentPanelProps } from "./AgentPanel.js";
 import { SetupScreen } from "./SetupScreen.js";
 import type { AgentPanelRef } from "./AgentPanel.js";
+import type { Locale } from "../i18n/index.js";
 
 export type { AgentPanelRef } from "./AgentPanel.js";
 
@@ -36,7 +37,7 @@ export function renderPanel(container: HTMLElement, props: AgentPanelProps): Age
 
 export function renderSetup(container: HTMLElement, props: {
   version: string;
-  locale?: string;
+  locale?: Locale;
   onSetupComplete: () => void;
   validateApiKey: (key: string) => Promise<boolean>;
   saveApiKey: (key: string) => void;

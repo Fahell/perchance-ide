@@ -1,0 +1,8 @@
+ai = {import:ai-text-plugin}
+
+agentInstruction
+  instruction = the agent will manage its own instructions internally. this list is just for setup.
+  endButtons = none
+
+output
+  [ai(agentInstruction)]
