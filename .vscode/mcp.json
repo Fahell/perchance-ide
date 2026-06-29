@@ -1,8 +1,0 @@
-{
-  "servers": {
-    "gitmcp": {
-      "type": "sse",
-      "url": "https://gitmcp.io/docs"
-    }
-  }
-}
