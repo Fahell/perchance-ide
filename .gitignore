@@ -17,3 +17,5 @@ npm-debug.log*
 .env.local
 
 ai-character-chat generator/
+.vscode/
+.github/

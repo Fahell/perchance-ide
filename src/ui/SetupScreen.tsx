@@ -67,7 +67,7 @@ export function SetupScreen({ version, locale, onSetupComplete, validateApiKey, 
             {t("setup.desc", locale)}
           </p>
           <ol style={{ color: colors.textSecondary, fontSize: "11px", margin: "0 0 16px", paddingLeft: "16px", lineHeight: "2", fontFamily: fonts.mono }}>
-            <li>{t("setup.step1", locale)} <a href="https://jina.ai/?sui=apikey" target="_blank" style={{ color: colors.text, textDecoration: "underline" }}>jina.ai/?sui=apikey</a></li>
+            <li>{t("setup.step1", locale)} <span onClick={() => window.open("https://jina.ai/?sui=apikey", "_blank")} style={{ color: colors.text, textDecoration: "underline", cursor: "pointer" }}>jina.ai/?sui=apikey</span></li>
             <li>{t("setup.step2", locale)}</li>
             <li>{t("setup.step3", locale)}</li>
             <li>{t("setup.step4", locale)}</li>
