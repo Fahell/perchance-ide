@@ -81,16 +81,16 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
         display: "flex",
         justifyContent: "flex-end",
         alignItems: "center",
-        padding: "4px 10px",
+        padding: "6px 12px",
       }}>
         <button
           onClick={onSettings}
           style={{
             background: "none",
             border: "none",
-            color: colors.textMuted,
+            color: colors.textSecondary,
             fontSize: "11px",
-            padding: "0",
+            padding: "2px 6px",
             cursor: "pointer",
             fontFamily: fonts.mono,
           }}
@@ -103,9 +103,9 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
           style={{
             background: "none",
             border: "none",
-            color: colors.textMuted,
+            color: colors.textSecondary,
             fontSize: "11px",
-            padding: "0",
+            padding: "2px 6px",
             cursor: "pointer",
             fontFamily: fonts.mono,
           }}

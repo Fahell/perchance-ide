@@ -13,23 +13,23 @@ export function Header({ version, commit, onFaq }: HeaderProps) {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      padding: "6px 10px",
+      padding: "8px 12px",
       borderBottom: `1px solid ${colors.border}`,
       flexShrink: "0",
     }}>
-      <span style={{ color: colors.textSecondary, fontSize: "11px", fontWeight: "600", fontFamily: fonts.mono, letterSpacing: "0.5px" }}>
+      <span style={{ color: colors.textSecondary, fontSize: "12px", fontWeight: "600", fontFamily: fonts.mono, letterSpacing: "0.5px" }}>
         agent
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         {onFaq && (
           <span
             onClick={onFaq}
-            style={{ color: colors.textMuted, cursor: "pointer", fontSize: "10px", fontFamily: fonts.mono }}
+            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px" }}
           >
             [?]
           </span>
         )}
-        <span style={{ fontSize: "9px", color: colors.textMuted, fontFamily: fonts.mono }}>
+        <span style={{ fontSize: "10px", color: colors.textSecondary, fontFamily: fonts.mono }}>
           v{version}+{commit}
         </span>
       </div>
