@@ -98,6 +98,29 @@ body { background: #000; }
   border-top: 1px solid #222;
   margin: 10px 0;
 }
+.md-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.md-content th,
+.md-content td {
+  border: 1px solid #333;
+  padding: 4px 8px;
+  text-align: left;
+}
+.md-content th {
+  background: #1a1a1a;
+  color: #ccc;
+  font-weight: 700;
+}
+.md-content td {
+  color: #aaa;
+}
+.md-content tr:nth-child(even) td {
+  background: #0f0f0f;
+}
 
 /* Turn separator */
 .msg-turn-separator {
