@@ -36,7 +36,7 @@ Add an HTML panel to your generator with:
 </script>
 \`\`\`
 
-Also add \`ai = {import:ai-text-plugin}\` to your list panel.
+Also add \`agentAi = {import:ai-text-plugin}\` to your list panel.
 
 ## Option 2: Perchance Custom Code (legacy)
 
