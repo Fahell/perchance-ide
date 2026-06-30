@@ -20,7 +20,7 @@ Make a new generator on Perchance and set up an HTML panel with:
 ### 2. Add ai-text-plugin to your list panel
 
 ```
-ai = {import:ai-text-plugin}
+agentAi = {import:ai-text-plugin}
 ```
 
 Replace `<COMMIT>` with the latest commit hash (auto-generated in `IMPORT.md` after each deploy).

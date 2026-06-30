@@ -68,8 +68,10 @@ function loadLocale(): Locale {
 // ─── Environment Validation ──────────────────────────────────
 function validateEnvironment(): boolean {
   if (!isAiAvailable()) {
-    console.error("❌ [Agent] window.ai not found — ai-text-plugin not loaded?");
-    console.log("💡 [Agent] Make sure you have 'ai = {import:ai-text-plugin}' in your list panel.");
+    console.error("❌ [Agent] ai-text-plugin not found!");
+    console.log("💡 [Agent] Make sure your list panel has:");
+    console.log('   agentAi = {import:ai-text-plugin}');
+    console.log("   Then reload the generator.");
     return false;
   }
   return true;

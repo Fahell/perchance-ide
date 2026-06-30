@@ -1,4 +1,4 @@
-ai = {import:ai-text-plugin}
+agentAi = {import:ai-text-plugin}
 
 agentInstruction
   instruction = the agent will manage its own instructions internally. this list is just for setup.

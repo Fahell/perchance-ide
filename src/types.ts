@@ -70,22 +70,23 @@ declare global {
   }
 }
 
+/** Possible global names that the user might have imported the plugin as. */
+const AI_GLOBAL_NAMES = ["agentAi", "generateText", "text", "ai"];
+
 /**
- * Resolve window.ai across frame hierarchy.
+ * Resolve the ai-text-plugin function across expected global names.
  *
- * In Perchance, the HTML panel runs in an iframe, but ai-text-plugin
- * exposes window.ai on the parent page (where the list panel executes).
+ * In Perchance, importing `name = {import:ai-text-plugin}` in the list panel
+ * makes `window.name` available as an async function. We check multiple names
+ * to be flexible with whatever the user chose.
  */
 let _cachedAi: ((input: any, extraOpts?: any) => any) | null = null;
 
 function findAi(): ((input: any, extraOpts?: any) => any) | null {
-  if (typeof (window as any).ai === "function") return (window as any).ai;
-  try {
-    if (window.parent && typeof (window.parent as any).ai === "function") return (window.parent as any).ai;
-  } catch { /* cross-origin */ }
-  try {
-    if (window.top && typeof (window.top as any).ai === "function") return (window.top as any).ai;
-  } catch { /* cross-origin */ }
+  for (const name of AI_GLOBAL_NAMES) {
+    const fn = (window as any)[name];
+    if (typeof fn === "function") return fn;
+  }
   return null;
 }
 
@@ -97,7 +98,11 @@ export function getAi(): ((input: any, extraOpts?: any) => any) {
     _cachedAi = ai;
     return ai;
   }
-  throw new Error("window.ai not found in any frame — ai-text-plugin not loaded?");
+  throw new Error(
+    "ai-text-plugin not found. Make sure your list panel has:\n" +
+    '  agentAi = {import:ai-text-plugin}\n' +
+    "Then reload the generator."
+  );
 }
 
 /** Check if ai is available without throwing. */
