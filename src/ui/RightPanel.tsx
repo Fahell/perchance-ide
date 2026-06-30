@@ -6,16 +6,16 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
+import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import {
     vfsDeleteTree,
-    vfsExists,
-    vfsMkdir,
+    vfsExists, vfsGetAll, vfsMkdir,
     vfsRename,
     vfsTree,
     vfsWrite,
-    type VfsTreeNode,
+    type VfsTreeNode
 } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
@@ -34,7 +34,6 @@ export function RightPanel({ locale }: RightPanelProps) {
     return ideStore.subscribe(() => forceUpdate((n) => n + 1));
   }, []);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["/"]));
-  const [treeKey, setTreeKey] = useState(0);
   // Inline rename
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -47,7 +46,7 @@ export function RightPanel({ locale }: RightPanelProps) {
   const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
 
   function refresh() {
-    setTreeKey((k) => k + 1);
+    forceUpdate((n) => n + 1);
   }
 
   // ── Handlers ──────────────────────────────────────────
@@ -86,6 +85,12 @@ export function RightPanel({ locale }: RightPanelProps) {
     closeCtxMenu();
   }
 
+  function persistVfs() {
+    dbSaveVfs(vfsGetAll()).catch((e) =>
+      console.warn("[RightPanel] dbSaveVfs failed:", e)
+    );
+  }
+
   function commitRename() {
     if (!renaming || !renameValue.trim()) {
       setRenaming(null);
@@ -94,8 +99,7 @@ export function RightPanel({ locale }: RightPanelProps) {
     const parts = renaming.split("/").filter(Boolean);
     parts.pop();
     const newPath = "/" + [...parts, renameValue.trim()].join("/");
-    if (newPath !== renaming) {
-      vfsRename(renaming, newPath);
+    if (newPath !== renaming && vfsRename(renaming, newPath)) {
       // Update store tabs that reference the old path
       const state = ideStore.getState();
       for (const f of state.files) {
@@ -104,6 +108,7 @@ export function RightPanel({ locale }: RightPanelProps) {
           state.openFile(newPath, renameValue.trim(), newPath.split(".").pop()?.toLowerCase() ?? "js");
         }
       }
+      persistVfs();
       refresh();
     }
     setRenaming(null);
@@ -120,7 +125,8 @@ export function RightPanel({ locale }: RightPanelProps) {
       setCreatingIn(null);
       return;
     }
-    const path = (creatingIn === "/" ? "/" : creatingIn) + createName.trim();
+    const base = creatingIn === "/" ? "/" : creatingIn + "/";
+    const path = base + createName.trim();
     if (creatingIsDir) {
       vfsMkdir(path);
     } else {
@@ -135,6 +141,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       return next;
     });
     setCreatingIn(null);
+    persistVfs();
     refresh();
   }
 
@@ -148,6 +155,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       }
     }
     closeCtxMenu();
+    persistVfs();
     refresh();
   }
 
@@ -202,6 +210,7 @@ export function RightPanel({ locale }: RightPanelProps) {
             onToggle={toggleDir}
             onOpen={openFile}
             onContextMenu={handleContextMenu}
+            onStartCreate={startCreate}
             renaming={renaming}
             renameValue={renameValue}
             onRenameChange={setRenameValue}
@@ -236,11 +245,11 @@ export function RightPanel({ locale }: RightPanelProps) {
           zIndex: 1000, minWidth: "100px",
           fontSize: "11px", fontFamily: fonts.mono,
         }}>
-          <div onClick={() => startRename(ctxTarget)}
+          <div onClick={(e: MouseEvent) => { e.stopPropagation(); startRename(ctxTarget); }}
             style={ctxItemStyle}>
             {t("fileExplorer.rename", locale) || "rename"}
           </div>
-          <div onClick={() => handleDelete(ctxTarget)}
+          <div onClick={(e: MouseEvent) => { e.stopPropagation(); handleDelete(ctxTarget); }}
             style={ctxItemStyle}>
             {t("fileExplorer.delete", locale) || "delete"}
           </div>
@@ -260,7 +269,7 @@ export function RightPanel({ locale }: RightPanelProps) {
 }
 
 // ─── TreeNode ───────────────────────────────────────────────
-function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
+function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu, onStartCreate,
   renaming, renameValue, onRenameChange, onRenameCommit, onRenameCancel,
   creatingIn, creatingIsDir, createName, onCreateNameChange, onCreateCommit, onCreateCancel,
 }: {
@@ -269,6 +278,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
   onToggle: (path: string) => void;
   onOpen: (path: string) => void;
   onContextMenu: (path: string, e: MouseEvent) => void;
+  onStartCreate: (dir: string, isDir: boolean) => void;
   renaming: string | null;
   renameValue: string;
   onRenameChange: (v: string) => void;
@@ -285,6 +295,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
   const isExpanded = expanded.has(node.path);
   const isRenaming = renaming === node.path;
   const indent = depth * 14;
+  const [rowHover, setRowHover] = useState(false);
 
   function handleClick() {
     if (isDir) onToggle(node.path);
@@ -295,6 +306,8 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
     <div>
       <div onClick={handleClick}
         onContextMenu={(e: MouseEvent) => onContextMenu(node.path, e)}
+        onMouseEnter={() => setRowHover(true)}
+        onMouseLeave={() => setRowHover(false)}
         style={{
           display: "flex", alignItems: "center", gap: "4px",
           padding: "2px 4px 2px 0", paddingLeft: `${8 + indent}px`,
@@ -332,6 +345,20 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
             {node.name}
           </span>
         )}
+
+        {/* Hover create buttons for directories */}
+        {isDir && !isRenaming && rowHover && (
+          <span style={{ marginLeft: "auto", display: "flex", gap: "2px" }}>
+            <button
+              onClick={(e: MouseEvent) => { e.stopPropagation(); onStartCreate(node.path, false); }}
+              title="New file in this folder"
+              style={{ background: "none", border: "none", color: colors.textMuted, cursor: "pointer", fontSize: "9px", padding: "0 2px", lineHeight: 1 }}>+</button>
+            <button
+              onClick={(e: MouseEvent) => { e.stopPropagation(); onStartCreate(node.path, true); }}
+              title="New subfolder"
+              style={{ background: "none", border: "none", color: colors.textMuted, cursor: "pointer", fontSize: "9px", padding: "0 2px", lineHeight: 1 }}>d</button>
+          </span>
+        )}
       </div>
 
       {/* Children */}
@@ -346,6 +373,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu,
               onToggle={onToggle}
               onOpen={onOpen}
               onContextMenu={onContextMenu}
+              onStartCreate={onStartCreate}
               renaming={renaming}
               renameValue={renameValue}
               onRenameChange={onRenameChange}

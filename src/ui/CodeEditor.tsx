@@ -10,9 +10,10 @@
  */
 
 import { useEffect, useRef, useState } from "preact/hooks";
+import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
-import { vfsExists, vfsRead, vfsWrite } from "../vfs.js";
+import { vfsExists, vfsGetAll, vfsRead, vfsWrite } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -37,8 +38,19 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<import("codemirror").EditorView | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const persistRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+
+  // Persist VFS to IndexedDB (debounced, not on every keystroke)
+  function schedulePersist() {
+    if (persistRef.current) clearTimeout(persistRef.current);
+    persistRef.current = window.setTimeout(() => {
+      dbSaveVfs(vfsGetAll()).catch((e) =>
+        console.warn("[CodeEditor] dbSaveVfs failed:", e)
+      );
+    }, 2000);
+  }
 
   // ── Mount / remount editor when activeFile changes ─────
   useEffect(() => {
@@ -50,6 +62,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       const content = viewRef.current.state.doc.toString();
       vfsWrite(prevActiveRef.current, content);
       ideStore.getState().setFileDirty(prevActiveRef.current, false);
+      schedulePersist();
     }
     prevActiveRef.current = path;
 
@@ -85,6 +98,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             if (!mountedRef.current) return;
             vfsWrite(path, doc);
             ideStore.getState().setFileDirty(path, false);
+            schedulePersist();
           }, 500);
           ideStore.getState().setFileDirty(path, true);
         },
@@ -102,6 +116,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     return () => {
       mountedRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (persistRef.current) clearTimeout(persistRef.current);
       if (viewRef.current) {
         const currentFile = activeFile;
         if (currentFile) {
@@ -110,6 +125,10 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         viewRef.current.destroy();
         viewRef.current = null;
       }
+      // Flush pending persist on unmount
+      dbSaveVfs(vfsGetAll()).catch((e) =>
+        console.warn("[CodeEditor] final dbSaveVfs failed:", e)
+      );
     };
   }, []);
 
@@ -120,6 +139,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     const path = "/" + name;
     if (!vfsExists(path)) {
       vfsWrite(path, "");
+      schedulePersist();
     }
     ideStore.getState().openFile(path, name, "js");
   }
@@ -128,6 +148,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     e.stopPropagation();
     if (viewRef.current && path === activeFile) {
       vfsWrite(path, viewRef.current.state.doc.toString());
+      schedulePersist();
     }
     ideStore.getState().closeFile(path);
   }
