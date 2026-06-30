@@ -59,10 +59,12 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 
     // Save previous file content before switching
     if (prevActiveRef.current && viewRef.current) {
-      const content = viewRef.current.state.doc.toString();
-      vfsWrite(prevActiveRef.current, content);
-      ideStore.getState().setFileDirty(prevActiveRef.current, false);
-      schedulePersist();
+      if (vfsExists(prevActiveRef.current)) {
+        const content = viewRef.current.state.doc.toString();
+        vfsWrite(prevActiveRef.current, content);
+        ideStore.getState().setFileDirty(prevActiveRef.current, false);
+        schedulePersist();
+      }
     }
     prevActiveRef.current = path;
 

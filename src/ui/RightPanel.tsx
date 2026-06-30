@@ -10,12 +10,12 @@ import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import {
-    vfsDeleteTree,
-    vfsExists, vfsGetAll, vfsMkdir,
-    vfsRename,
-    vfsTree,
-    vfsWrite,
-    type VfsTreeNode
+  vfsDeleteTree,
+  vfsExists, vfsGetAll, vfsMkdir,
+  vfsRename,
+  vfsTree,
+  vfsWrite,
+  type VfsTreeNode
 } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
@@ -216,7 +216,7 @@ export function RightPanel({ locale }: RightPanelProps) {
             onRenameChange={setRenameValue}
             onRenameCommit={commitRename}
             onRenameCancel={() => setRenaming(null)}
-            creatingIn={creatingIn === node.path && node.type === "dir" ? creatingIn : null}
+            creatingIn={creatingIn}
             creatingIsDir={creatingIsDir}
             createName={createName}
             onCreateNameChange={setCreateName}
