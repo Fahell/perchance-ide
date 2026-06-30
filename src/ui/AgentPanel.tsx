@@ -1,20 +1,19 @@
-import { h } from "preact";
-import { useState, useCallback, useRef } from "preact/hooks";
-import { colors, fonts } from "./theme.js";
+import { useCallback, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
-import { Header } from "./Header.js";
-import { MessageList } from "./MessageList.js";
-import { UserMessage } from "./UserMessage.js";
 import { AgentMessage } from "./AgentMessage.js";
-import { SettingsModal } from "./SettingsModal.js";
-import { ThinkingIndicator } from "./ThinkingIndicator.js";
-import { ScrollFAB } from "./ScrollFAB.js";
-import { Footer } from "./Footer.js";
+import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
 import { FaqModal } from "./FaqModal.js";
-import { CodeEditor } from "./CodeEditor.js";
+import { Footer } from "./Footer.js";
+import { Header } from "./Header.js";
+import { MessageList } from "./MessageList.js";
 import { RightPanel } from "./RightPanel.js";
-import type { AgentStatus, PanelMode, PanelMessage, ToolCallEntry } from "./types.js";
+import { ScrollFAB } from "./ScrollFAB.js";
+import { SettingsModal } from "./SettingsModal.js";
+import { colors, fonts } from "./theme.js";
+import { ThinkingIndicator } from "./ThinkingIndicator.js";
+import type { AgentStatus, PanelMessage, PanelMode, ToolCallEntry } from "./types.js";
+import { UserMessage } from "./UserMessage.js";
 
 let msgCounter = 0;
 function nextId(): string {
@@ -285,7 +284,6 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         <div style={{ flex: "1", minWidth: "0" }}>
           <CodeEditor
             locale={locale}
-            onSendToAgent={(text) => onSendMessage(text)}
           />
         </div>
 
