@@ -4,7 +4,7 @@ Add an HTML panel to your generator with:
 
 ```html
 <script>
-  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@3845944/dist/agent.js");
+  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@0b1201d/dist/agent.js");
 </script>
 ```
 

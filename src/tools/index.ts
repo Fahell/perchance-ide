@@ -2,8 +2,9 @@
  * Tool registry — maps tool names to their implementations
  */
 
-import { webSearch, scrapeUrl } from "./web-search.js";
 import { createContextTools } from "./context-tools.js";
+import { createVfsTools } from "./vfs-tools.js";
+import { scrapeUrl, webSearch } from "./web-search.js";
 
 // ─── Tool Definition ────────────────────────────────────────
 export interface Tool {
@@ -62,4 +63,11 @@ export function initContextTools(): void {
   const contextTools = createContextTools();
   Object.assign(tools, contextTools);
   console.log("🔧 [Tools] Context tools registered:", Object.keys(contextTools).join(", "));
+}
+
+// ─── VFS Tools ───────────────────────────────────────────────
+export function initVfsTools(): void {
+  const vfsTools = createVfsTools();
+  Object.assign(tools, vfsTools);
+  console.log("📁 [Tools] VFS tools registered:", Object.keys(vfsTools).join(", "));
 }

@@ -9,7 +9,6 @@
  */
 
 import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
-import type { ContextResult } from "./context-manager.js";
 import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
@@ -45,6 +44,15 @@ CONTEXT TOOLS:
 - get_messages: Get raw messages by position or count. USE this when you need exact quotes or specific messages from the history.
 IMPORTANT: Your prompt only includes the LAST 5 MESSAGES. For anything older, you MUST use search_history or get_messages — do NOT say "I don't remember" without searching first.
 Example: If user says "what was that website you mentioned earlier?", call search_history with {"query":"website"} to find it.
+
+FILE ACCESS RULES:
+- You have FULL access to the project files via read_file, write_file, list_files, search_files, delete_file, and rename_file.
+- When asked to create, modify, or review code, use read_file first to examine existing files, then write_file to make changes.
+- After writing files, briefly summarize what was created or changed.
+- Paths are absolute from root (/): e.g., /src/index.ts, /README.md.
+- You can use search_files to find where a function, variable, or concept is used.
+- Use list_files to explore the project structure before making changes.
+- Use delete_file to remove files (only when explicitly asked).
 
 To use a tool, output EXACTLY this format on its own line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
