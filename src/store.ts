@@ -57,6 +57,8 @@ export interface IdeState {
   addFile: (file: FileTab) => void;
   removeFile: (path: string) => void;
   setFileDirty: (path: string, dirty: boolean) => void;
+  openFile: (path: string, name: string, language: string) => void;
+  closeFile: (path: string) => void;
 
   // Editor history
   pushEditorState: (path: string, content: string) => void;
@@ -119,6 +121,31 @@ export const ideStore = createStore<IdeState>()(
       set((s) => ({
         files: s.files.map((f) => (f.path === path ? { ...f, dirty } : f)),
       })),
+
+    openFile: (path, name, language) =>
+      set((s) => {
+        // If already open, just set as active
+        if (s.files.some((f) => f.path === path)) {
+          return { activeFile: path };
+        }
+        return {
+          files: [...s.files, { path, name, language, dirty: false }],
+          activeFile: path,
+        };
+      }),
+
+    closeFile: (path) =>
+      set((s) => {
+        const idx = s.files.findIndex((f) => f.path === path);
+        if (idx === -1) return s;
+        const remaining = s.files.filter((f) => f.path !== path);
+        let newActive = s.activeFile;
+        if (s.activeFile === path) {
+          const nextIdx = Math.min(idx, remaining.length - 1);
+          newActive = remaining[nextIdx]?.path ?? null;
+        }
+        return { files: remaining, activeFile: newActive };
+      }),
 
     pushEditorState: (path, content) =>
       set((s) => {

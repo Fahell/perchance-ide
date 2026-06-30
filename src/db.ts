@@ -4,11 +4,13 @@
  * Provides specialized stores for:
  * - `messages` — chat message history (auto-increment, timestamp index)
  * - `kv`      — generic key-value store (memories, summaries, chunks)
+ * - `files`   — VFS file entries (path-keyed)
  *
  * Small config (API key, panel mode, locale) stays in localStorage via storage.ts.
  */
 
 import { openDB, type IDBPDatabase } from "idb";
+import type { VfsEntry } from "./vfs.js";
 
 // ─── Schema ─────────────────────────────────────────────────
 export interface DbMessage {
@@ -24,7 +26,7 @@ export interface DbKvEntry {
 }
 
 const DB_NAME = "agent-perchance";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 type DbSchema = {
   messages: {
@@ -35,6 +37,10 @@ type DbSchema = {
   kv: {
     key: string;
     value: DbKvEntry;
+  };
+  files: {
+    key: string;
+    value: VfsEntry;
   };
 };
 
@@ -58,6 +64,11 @@ export async function getDb(): Promise<IDBPDatabase<DbSchema>> {
       // Generic key-value store
       if (!db.objectStoreNames.contains("kv")) {
         db.createObjectStore("kv", { keyPath: "key" });
+      }
+
+      // VFS file entries — path-keyed
+      if (!db.objectStoreNames.contains("files")) {
+        db.createObjectStore("files", { keyPath: "path" });
       }
     },
   });
@@ -141,4 +152,32 @@ export async function dbKvKeys(): Promise<string[]> {
   const db = await getDb();
   const keys = await db.getAllKeys("kv");
   return keys as string[];
+}
+
+// ─── VFS (Virtual File System) ───────────────────────────────
+/** Save all VFS entries to IndexedDB (replaces existing data). */
+export async function dbSaveVfs(entries: VfsEntry[]): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction("files", "readwrite");
+  await tx.store.clear();
+  for (const entry of entries) {
+    if (entry.path !== "/") {
+      // Skip root directory — it's implicit
+      await tx.store.add(entry);
+    }
+  }
+  await tx.done;
+}
+
+/** Load all VFS entries from IndexedDB. */
+export async function dbLoadVfs(): Promise<VfsEntry[]> {
+  const db = await getDb();
+  const entries = await db.getAll("files");
+  return entries;
+}
+
+/** Count VFS entries. */
+export async function dbCountVfs(): Promise<number> {
+  const db = await getDb();
+  return db.count("files");
 }

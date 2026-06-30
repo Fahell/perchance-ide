@@ -5,6 +5,7 @@
 
 import { agentLoop } from "./agent-loop.js";
 import { buildContext } from "./context-manager.js";
+import { dbLoadVfs } from "./db.js";
 import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
 import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
@@ -13,6 +14,7 @@ import { initContextTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
+import { vfsLoadAll } from "./vfs.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -155,6 +157,12 @@ async function handleSendMessage(text: string): Promise<void> {
 function startAgent() {
   // Initialize message store (load persisted messages)
   initMessageStore().catch((e) => console.warn("[Agent] initMessageStore failed:", e));
+
+  // Restore VFS from IndexedDB
+  dbLoadVfs().then((entries) => {
+    vfsLoadAll(entries);
+    console.log("📁 [Agent] VFS restored: " + entries.length + " entries");
+  }).catch((e) => console.warn("[Agent] dbLoadVfs failed:", e));
 
   // Render Preact panel
   panel = renderPanel(document.body, {

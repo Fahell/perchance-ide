@@ -107,6 +107,13 @@ const en: Translations = {
 
   // Right Panel
   "rightPanel.placeholder": "panel coming soon",
+
+  // File Explorer
+  "fileExplorer.title": "files",
+  "fileExplorer.empty": "empty project",
+  "fileExplorer.rename": "rename",
+  "fileExplorer.delete": "delete",
+  "fileExplorer.count": "files",
 };
 
 const ptBR: Translations = {
@@ -197,6 +204,12 @@ const ptBR: Translations = {
 
   // Right Panel
   "rightPanel.placeholder": "painel em breve",
+
+  "fileExplorer.title": "arquivos",
+  "fileExplorer.empty": "projeto vazio",
+  "fileExplorer.rename": "renomear",
+  "fileExplorer.delete": "excluir",
+  "fileExplorer.count": "arquivos",
 };
 
 const es: Translations = {
@@ -254,7 +267,7 @@ const es: Translations = {
   "context.messages": "mensajes",
   "context.noMessages": "sin mensajes aún",
   "context.memories": "memorias",
-  "context.noMemories": "sin memorias extraídas aún",  "context.tier.hot": "hot — en prompt",
+  "context.noMemories": "sin memorias extraídas aún", "context.tier.hot": "hot — en prompt",
   "context.tier.warm": "warm — buscable",
   "context.chunks": "resumenes fragmentados",
   "context.noChunks": "sin chunks aun",
@@ -273,6 +286,12 @@ const es: Translations = {
 
   // Right Panel
   "rightPanel.placeholder": "panel próximamente",
+
+  "fileExplorer.title": "archivos",
+  "fileExplorer.empty": "proyecto vacío",
+  "fileExplorer.rename": "renombrar",
+  "fileExplorer.delete": "eliminar",
+  "fileExplorer.count": "archivos",
 };
 
 const ja: Translations = {
@@ -350,6 +369,12 @@ const ja: Translations = {
 
   // Right Panel
   "rightPanel.placeholder": "パネル準備中",
+
+  "fileExplorer.title": "ファイル",
+  "fileExplorer.empty": "空のプロジェクト",
+  "fileExplorer.rename": "名前変更",
+  "fileExplorer.delete": "削除",
+  "fileExplorer.count": "ファイル",
 };
 
 const zh: Translations = {
@@ -427,6 +452,12 @@ const zh: Translations = {
 
   // Right Panel
   "rightPanel.placeholder": "面板即将推出",
+
+  "fileExplorer.title": "文件",
+  "fileExplorer.empty": "空项目",
+  "fileExplorer.rename": "重命名",
+  "fileExplorer.delete": "删除",
+  "fileExplorer.count": "文件",
 };
 
 export const dict: Record<Locale, Translations> = {
