@@ -76,16 +76,30 @@ const AI_GLOBAL_NAMES = ["agentAi", "generateText", "text", "ai"];
 /**
  * Resolve the ai-text-plugin function across expected global names.
  *
- * In Perchance, importing `name = {import:ai-text-plugin}` in the list panel
- * makes `window.name` available as an async function. We check multiple names
- * to be flexible with whatever the user chose.
+ * In Perchance, importing `name = {import:ai-text-plugin}` in the list panel:
+ * - non-`ai` names (e.g. `agentAi`, `generateText`) → set as `window[name]` globally
+ * - `ai` name → ONLY set as `window.root.ai` (Perchance runtime root), NOT `window.ai`
+ *
+ * We check in order:
+ *   1. `window[name]`                         — works for non-ai names
+ *   2. `window.root[name]`                    — works for all names including `ai`
+ *   3. `window.parent?.root?.[name]`          — iframe fallback to parent's Perchance root
  */
 let _cachedAi: ((input: any, extraOpts?: any) => any) | null = null;
 
 function findAi(): ((input: any, extraOpts?: any) => any) | null {
   for (const name of AI_GLOBAL_NAMES) {
-    const fn = (window as any)[name];
+    // 1. Direct global (non-ai names like agentAi, generateText)
+    let fn = (window as any)[name];
     if (typeof fn === "function") return fn;
+
+    // 2. Perchance root object (all names including "ai")
+    const root = (window as any).root;
+    if (root && typeof root[name] === "function") return root[name];
+
+    // 3. Parent frame's Perchance root (iframe in HTML panel)
+    const parentRoot = (window as any).parent?.root;
+    if (parentRoot && typeof parentRoot[name] === "function") return parentRoot[name];
   }
   return null;
 }
