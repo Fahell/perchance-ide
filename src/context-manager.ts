@@ -7,18 +7,17 @@
  */
 
 import type { HistoryMessage } from "./agent-loop.js";
-import { getLastN, getMessageCount, getAllMessages, type ChatMessage } from "./message-store.js";
-import { storageGet, storageSet, storageDel } from "./storage.js";
+import { dbKvDel, dbKvGet, dbKvSet } from "./db.js";
+import { getAllMessages, getLastN, getMessageCount, type ChatMessage } from "./message-store.js";
 import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const CHARS_PER_TOKEN = 4;
 const MAX_CONTEXT_TOKENS = 3000;
 const MAX_RECENT_MESSAGES = 5;
-const SUMMARY_KEY = "agent:context_summary";
-const SUMMARY_UPDATED_KEY = "agent:context_summary_updated_at";
-const SUMMARY_MSG_COUNT_KEY = "agent:context_summary_msg_count";
-const CHUNKS_KEY = "agent:context_chunks";
+const SUMMARY_KEY = "context_summary";
+const SUMMARY_MSG_COUNT_KEY = "context_summary_msg_count";
+const CHUNKS_KEY = "context_chunks";
 
 // ─── Helpers ────────────────────────────────────────────────
 function msgToHistory(m: ChatMessage): HistoryMessage {
@@ -37,18 +36,18 @@ export interface ChunkSummary {
   tokenCount: number;
 }
 
-export function getChunkedSummaries(): ChunkSummary[] {
-  return storageGet<ChunkSummary[]>(CHUNKS_KEY) || [];
+export async function getChunkedSummaries(): Promise<ChunkSummary[]> {
+  return (await dbKvGet<ChunkSummary[]>(CHUNKS_KEY)) ?? [];
 }
 
-function persistChunk(chunk: ChunkSummary): void {
-  const chunks = (getChunkedSummaries()).slice();
+async function persistChunk(chunk: ChunkSummary): Promise<void> {
+  const chunks = (await getChunkedSummaries()).slice();
   chunks.push(chunk);
-  storageSet(CHUNKS_KEY, chunks);
+  await dbKvSet(CHUNKS_KEY, chunks);
 }
 
-export function clearChunkedSummaries(): void {
-  storageDel(CHUNKS_KEY);
+export async function clearChunkedSummaries(): Promise<void> {
+  await dbKvDel(CHUNKS_KEY);
 }
 
 // ─── Token Estimation ───────────────────────────────────────
@@ -57,20 +56,18 @@ export function estimateTokens(text: string): number {
 }
 
 // ─── Summary Persistence ────────────────────────────────────
-function persistSummary(summary: string, msgCount: number): void {
-  storageSet(SUMMARY_KEY, summary);
-  storageSet(SUMMARY_UPDATED_KEY, Date.now());
-  storageSet(SUMMARY_MSG_COUNT_KEY, msgCount);
+async function persistSummary(summary: string, msgCount: number): Promise<void> {
+  await dbKvSet(SUMMARY_KEY, summary);
+  await dbKvSet(SUMMARY_MSG_COUNT_KEY, msgCount);
 }
 
-export function loadSummary(): string | null {
-  return storageGet<string>(SUMMARY_KEY) || null;
+export async function loadSummary(): Promise<string | null> {
+  return (await dbKvGet<string>(SUMMARY_KEY)) ?? null;
 }
 
-export function clearSummary(): void {
-  storageDel(SUMMARY_KEY);
-  storageDel(SUMMARY_UPDATED_KEY);
-  storageDel(SUMMARY_MSG_COUNT_KEY);
+export async function clearSummary(): Promise<void> {
+  await dbKvDel(SUMMARY_KEY);
+  await dbKvDel(SUMMARY_MSG_COUNT_KEY);
 }
 
 // ─── Summarization ──────────────────────────────────────────
@@ -127,7 +124,7 @@ export async function buildContext(
   const currentMsgTokens = estimateTokens(currentUserMessage);
 
   // Load existing summary
-  const existingSummary = loadSummary();
+  const existingSummary = await loadSummary();
   const existingSummaryTokens = existingSummary ? estimateTokens(existingSummary) : 0;
 
   if (totalMsgTokens + currentMsgTokens + existingSummaryTokens <= MAX_CONTEXT_TOKENS) {
@@ -184,7 +181,7 @@ export async function buildContext(
   // Persist the updated summary
   const totalMsgs = getMessageCount();
   if (combinedSummary) {
-    persistSummary(combinedSummary, totalMsgs);
+    await persistSummary(combinedSummary, totalMsgs);
   }
 
   const finalTokens = estimateTokens(combinedSummary) + keptTokens + currentMsgTokens;
@@ -207,12 +204,12 @@ export interface ContextState {
   historyTokens: number;
 }
 
-export function getContextState(
+export async function getContextState(
   currentUserMessage: string
-): ContextState {
+): Promise<ContextState> {
   const recentMsgs = getLastN(MAX_RECENT_MESSAGES);
   const recentMessages = recentMsgs.map(msgToHistory);
-  const summary = loadSummary();
+  const summary = await loadSummary();
   const summaryTokens = summary ? estimateTokens(summary) : 0;
   const historyTokens = recentMessages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
   const currentMsgTokens = estimateTokens(currentUserMessage);

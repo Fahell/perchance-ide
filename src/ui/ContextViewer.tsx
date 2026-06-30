@@ -1,9 +1,9 @@
-import { h } from "preact";
-import { useState } from "preact/hooks";
-import { colors, fonts } from "./theme.js";
+import { useEffect, useState } from "preact/hooks";
+import type { ChunkSummary } from "../context-manager.js";
+import { clearChunkedSummaries, clearSummary, getChunkedSummaries, getContextState, getTotalMessageCount, type ContextState } from "../context-manager.js";
 import { t, type Locale } from "../i18n/index.js";
-import { getContextState, clearSummary, getChunkedSummaries, clearChunkedSummaries, getTotalMessageCount, type ContextState } from "../context-manager.js";
-import { getMemories, clearMemories, deleteMemory } from "../memory.js";
+import { clearMemories, deleteMemory, getMemories } from "../memory.js";
+import { colors, fonts } from "./theme.js";
 
 interface ContextViewerProps {
   isOpen: boolean;
@@ -17,14 +17,38 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
   const [searchResults, setSearchResults] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Async state
+  const [state, setState] = useState<ContextState | null>(null);
+  const [memories, setMemories] = useState<string[]>([]);
+  const [chunks, setChunks] = useState<ChunkSummary[]>([]);
+  const [totalMessages, setTotalMessages] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadData();
+  }, [isOpen]);
+
+  async function loadData() {
+    try {
+      const [ctx, mems, chks, total] = await Promise.all([
+        getContextState(""),
+        getMemories(),
+        getChunkedSummaries(),
+        Promise.resolve(getTotalMessageCount()),
+      ]);
+      setState(ctx);
+      setMemories(mems);
+      setChunks(chks);
+      setTotalMessages(total);
+    } catch (e) {
+      console.warn("[ContextViewer] load failed:", e);
+    }
+  }
+
   if (!isOpen) return null;
 
-  const state = getContextState("");
-  const memories = getMemories();
-  const chunks = getChunkedSummaries();
-  const totalMessages = getTotalMessageCount();
-  const usagePercent = Math.min(100, Math.round((state.totalTokens / state.maxTokens) * 100));
-  const isOverBudget = state.totalTokens > state.maxTokens;
+  const usagePercent = state ? Math.min(100, Math.round((state.totalTokens / state.maxTokens) * 100)) : 0;
+  const isOverBudget = state ? state.totalTokens > state.maxTokens : false;
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -94,7 +118,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
               {t("context.tokens", locale) || "tokens"}
             </span>
             <span style={{ color: isOverBudget ? colors.statusError : colors.textMuted, fontSize: "10px" }}>
-              {state.totalTokens.toLocaleString()} / {state.maxTokens.toLocaleString()}
+              {state ? state.totalTokens.toLocaleString() : "…"} / {state ? state.maxTokens.toLocaleString() : "…"}
             </span>
           </div>
           <div style={{ width: "100%", height: "4px", background: colors.surface3, position: "relative" }}>
@@ -110,7 +134,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
               {t("context.totalHistory", locale) || "total messages"}: {totalMessages}
             </span>
             <span style={{ color: colors.textMuted, fontSize: "9px" }}>
-              {t("context.messages", locale) || "messages"}: {state.recentMessages.length}
+              {t("context.messages", locale) || "messages"}: {state ? state.recentMessages.length : 0}
             </span>
           </div>
         </div>
@@ -119,14 +143,14 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
         <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
             <span style={{ color: colors.textSecondary, fontSize: "10px" }}>
-              {t("context.messages", locale) || "messages"} ({state.recentMessages.length})
+              {t("context.messages", locale) || "messages"} ({state ? state.recentMessages.length : 0})
             </span>
             <span style={{ color: colors.textMuted, fontSize: "9px", padding: "2px 6px", background: colors.surface2, border: `1px solid ${colors.border}` }}>
               {t("context.tier.hot", locale) || "hot — in prompt"}
             </span>
           </div>
           <div style={{ maxHeight: "120px", overflowY: "auto" }}>
-            {state.recentMessages.map((msg, i) => (
+            {state?.recentMessages.map((msg, i) => (
               <div key={i} style={{ marginBottom: "4px", fontSize: "9px" }}>
                 <span style={{ color: msg.role === "user" ? colors.text : colors.textSecondary }}>
                   {msg.role === "user" ? "You" : "Agent"}:
@@ -136,7 +160,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
                 </span>
               </div>
             ))}
-            {state.recentMessages.length === 0 && (
+            {(!state || state.recentMessages.length === 0) && (
               <div style={{ color: colors.textMuted, fontSize: "9px" }}>
                 {t("context.noMessages", locale) || "no messages yet"}
               </div>
@@ -148,11 +172,11 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
         <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
             <span style={{ color: colors.textSecondary, fontSize: "10px" }}>
-              {t("context.summary", locale) || "summary"} ({state.summaryTokens} {t("context.tokens", locale) || "tokens"})
+              {t("context.summary", locale) || "summary"} ({state ? state.summaryTokens : 0} {t("context.tokens", locale) || "tokens"})
             </span>
-            {state.summary && (
+            {state?.summary && (
               <span
-                onClick={() => { clearSummary(); onRefresh(); }}
+                onClick={async () => { await clearSummary(); loadData(); }}
                 style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
               >
                 [clear]
@@ -160,7 +184,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
             )}
           </div>
           <div style={{ color: colors.textMuted, fontSize: "10px", lineHeight: "1.5" }}>
-            {state.summary
+            {state?.summary
               ? state.summary.length > 200
                 ? state.summary.slice(0, 200) + "..."
                 : state.summary
@@ -181,7 +205,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
                   {t("context.tier.warm", locale) || "warm — searchable"}
                 </span>
                 <span
-                  onClick={() => { clearChunkedSummaries(); onRefresh(); }}
+                  onClick={async () => { await clearChunkedSummaries(); loadData(); }}
                   style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
                 >
                   [clear]
@@ -255,7 +279,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
             </span>
             {memories.length > 0 && (
               <span
-                onClick={() => { clearMemories(); onRefresh(); }}
+                onClick={async () => { await clearMemories(); loadData(); }}
                 style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px" }}
               >
                 [clear all]
@@ -269,7 +293,7 @@ export function ContextViewer({ isOpen, locale, onClose, onRefresh }: ContextVie
                   {mem.length > 100 ? mem.slice(0, 100) + "..." : mem}
                 </span>
                 <span
-                  onClick={() => { deleteMemory(i); onRefresh(); }}
+                  onClick={async () => { await deleteMemory(i); loadData(); }}
                   style={{ color: colors.textMuted, cursor: "pointer", fontSize: "9px", flexShrink: "0" }}
                 >
                   [x]

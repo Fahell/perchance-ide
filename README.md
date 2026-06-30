@@ -54,8 +54,10 @@ The `generator/` folder contains templates you can adapt:
 - **Tool-calling agent loop** — AI outputs `<tool_call>` XML, custom code executes and feeds results back (up to 8 iterations)
 - **Context window management** — token-aware summarization with 3-tier architecture (hot/warm/cold)
 - **Context tools** — agent can query its own history via `search_history` (BM25-lite) and `get_messages` (index retrieval)
-- **Persistent memory** — extracts timeless facts from conversations, stored across sessions
-- **Custom message store** — replaces `oc.thread.messages` for standalone use; persists to `customData`
+- **Persistent memory** — extracts timeless facts from conversations, stored across sessions via IndexedDB
+- **Custom message store** — in-memory message history persisted to IndexedDB (via `idb` v8)
+- **IndexedDB persistence** — messages, memories, and summaries stored in IndexedDB for reliable cross-session persistence
+- **Zustand state management** — vanilla Zustand store for IDE state (active file, editor history, layout, settings)
 - **i18n** — 5 languages (English, Português, Español, 日本語, 中文)
 - **Monochrome dark UI** — Preact-based 3-column panel with chat sidebar, code editor, and placeholder right panel
 - **FAQ panel** — built-in info modal with project links and usage notes
@@ -66,10 +68,12 @@ The `generator/` folder contains templates you can adapt:
 src/
 ├── index.ts              # Entry point — bootstrap, agent orchestration, send handler
 ├── agent-loop.ts         # Core agent loop — tool call detection, instruction building, window.ai calls
-├── context-manager.ts    # Token-aware context building, summarization, chunked summaries
-├── memory.ts             # Persistent memory extraction and retrieval
-├── storage.ts            # Persistent storage via oc.thread.customData
-├── message-store.ts      # Custom in-memory message store with customData persistence
+├── context-manager.ts    # Token-aware context building, summarization, chunked summaries (IndexedDB)
+├── db.ts                 # IndexedDB persistence layer (idb v8) — messages + kv stores
+├── memory.ts             # Persistent memory extraction and retrieval (IndexedDB)
+├── message-store.ts      # In-memory message cache + async IndexedDB persistence
+├── storage.ts            # localStorage wrapper for small config (API key, panel mode, locale)
+├── store.ts              # Zustand vanilla store — IDE state management
 ├── types.ts              # Perchance API types + window.ai type declarations
 │
 ├── tools/
@@ -118,7 +122,7 @@ The agent uses a **3-tier context architecture** to manage conversation history 
 │  BM25-lite keyword search across all history        │
 ├─────────────────────────────────────────────────────┤
 │  COLD — accessible via get_messages tool            │
-│  Full raw message history in oc.thread.messages     │
+│  Full raw message history                         │
 │  Index-based retrieval (by position or count)       │
 └─────────────────────────────────────────────────────┘
 ```
@@ -127,7 +131,7 @@ The agent uses a **3-tier context architecture** to manage conversation history 
 - **Memory extraction** runs in background after each exchange, capturing timeless facts (max 20)
 - **Context tools** let the agent search its own history when the user references earlier conversation
 - **ContextViewer** modal visualizes token usage, tiers, chunks, and memories
-- **Custom message store** replaces `oc.thread.messages` — messages stored in memory + persisted to `customData`
+- **Custom message store** — messages stored in memory + persisted to IndexedDB (via `db.ts`)
 
 ## Message Flow
 
@@ -152,10 +156,7 @@ User sends message
 
 | API | Purpose | Notes |
 |-----|---------|-------|
-| `window.ai()` | Call LLM via ai-text-plugin | Replaces `oc.generateText()` in agent loop |
-| `oc.generateText()` | Call LLM programmatically | Used only for summarization + memory extraction |
-| `oc.thread.customData` | Persistent key-value storage | ~1-2KB limit, persists across sessions |
-| `oc.thread.userCharacter?.name` | Get username (legacy) | 3-level fallback chain |
+| `window.ai()` / `root.ai()` | Call LLM via ai-text-plugin | Single API for all LLM operations |
 
 ## Tools
 
@@ -166,19 +167,143 @@ User sends message
 | `search_history` | Search conversation history by keyword (BM25-lite) | `{ query: string }` |
 | `get_messages` | Retrieve messages by position or count | `{ count?: number, from?: number, to?: number }` |
 
+## Storage API
+
+The project uses two persistence layers with different scopes:
+
+### localStorage (small config)
+
+Via `src/storage.ts` — preserved for small user settings:
+
+| Function | Description |
+|----------|-------------|
+| `storageGet<T>(key)` | Get a value by key |
+| `storageSet<T>(key, value)` | Set a value by key |
+| `storageDel(key)` | Delete a key |
+| `storageHas(key)` | Check if key exists |
+| `storageKeys()` | List all keys |
+| `storageClear()` | Remove all data |
+
+All keys use the `agent:` prefix internally to avoid collisions. Stores: API key, panel mode, UI locale, input enabled state.
+
+### IndexedDB (messages, memories, summaries)
+
+Via `src/db.ts` — powered by [`idb`](https://github.com/jakearchibald/idb) v8, with two object stores:
+
+| Store | Key | Contents |
+|-------|-----|----------|
+| `messages` | auto-increment `id` | Chat message history (indexed by `timestamp`) |
+| `kv` | `key` string | Generic key-value: memories, summaries, chunks |
+
+**Messages API:**
+
+| Function | Description |
+|----------|-------------|
+| `dbAddMessage(msg)` | Insert a message, returns new id |
+| `dbGetAllMessages()` | Retrieve all messages |
+| `dbGetLastN(n)` | Get the last N messages |
+| `dbGetMessageCount()` | Total message count |
+| `dbClearMessages()` | Delete all messages |
+| `dbGetMessagesByRange(from, to?)` | Query by timestamp range |
+
+**Key-Value API:**
+
+| Function | Description |
+|----------|-------------|
+| `dbKvGet<T>(key)` | Get a value by key |
+| `dbKvSet(key, value)` | Set a value by key |
+| `dbKvDel(key)` | Delete a key |
+| `dbKvClear()` | Remove all KV entries |
+| `dbKvKeys()` | List all keys |
+
+Both stores share a single IndexedDB connection (`getDb()`) opened lazily on first access.
+
+## Message Store
+
+Custom message store with in-memory cache + async IndexedDB persistence (`src/message-store.ts`):
+
+| Function | Description |
+|----------|-------------|
+| `initMessageStore()` | Load persisted messages from IndexedDB (async) |
+| `addMessage(msg)` | Append a message (role + content) and persist to IndexedDB (async) |
+| `getMessages()` | Get all messages (sync, from cache) |
+| `getLastN(n)` | Get the last N messages (sync) |
+| `getMessageCount()` | Total message count (sync) |
+| `clearMessages()` | Clear all messages from cache and IndexedDB (async) |
+
+Messages are cached in memory for fast access; writes are fire-and-forget persisted to the `messages` store in IndexedDB via `db.ts`.
+
+## State Management
+
+Vanilla Zustand store (`src/store.ts`) for IDE-wide state, created with `createStore` from `zustand/vanilla` and the `subscribeWithSelector` middleware:
+
+### State Slices
+
+| Slice | Key fields | Description |
+|-------|-----------|-------------|
+| **Files** | `activeFile`, `files[]` | Open file tabs and active selection |
+| **Editor** | `editorHistory{}` | Per-file undo/redo stacks (max 50) |
+| **Layout** | `panelMode`, `sidebarVisible` | 3-column layout state |
+| **Settings** | `settings` | Locale, font size, word wrap, tab size |
+| **Status** | `isProcessing`, `statusMessage` | Processing indicator |
+
+### Actions
+
+| Action | Description |
+|--------|-------------|
+| `setActiveFile(path)` | Switch active file tab |
+| `addFile(file)` | Add a file tab (no-ops if already present) |
+| `removeFile(path)` | Close a file tab |
+| `setFileDirty(path, dirty)` | Mark file as modified |
+| `pushEditorState(path, content)` | Push content onto undo stack |
+| `undoEditor(path)` / `redoEditor(path)` | Undo/redo for a file |
+| `setPanelMode(mode)` | Switch between chat, editor, split, settings |
+| `toggleSidebar()` | Show/hide sidebar |
+| `updateSettings(partial)` | Merge settings partial |
+| `setProcessing(bool, msg?)` | Toggle processing state |
+
+The store is runtime-only (no built-in persistence). Persistent state uses `storage.ts` (localStorage) for small config and `db.ts` (IndexedDB) for bulk data. Preact components can subscribe via `useSyncExternalStore`.
+
+## Setup & Configuration
+
+The first time the agent loads without an API key, a **Setup Screen** is shown:
+
+1. Enter your [Jina AI API key](https://jina.ai/?sui=apikey) (free tier)
+2. The key is saved to localStorage and the agent panel loads
+3. Change the key later via the Settings modal (gear icon)
+
+### Panel Modes
+
+- **Full** — Chat sidebar + code editor + placeholder right panel
+- **Tools-only** — Compact view showing only tool call history
+
+Switch modes in Settings. The selection persists across sessions.
+
+### Settings
+
+Accessible via the gear icon in the header:
+
+| Setting | Description |
+|---------|-------------|
+| **Jina API Key** | Web search & scrape API key |
+| **Panel Mode** | Full 3-column or tools-only |
+| **Language** | UI locale (en, pt, es, ja, zh) |
+| **Input Enabled** | Toggle chat input on/off |
+
 ## Critical Patterns
 
-- **LLM calls**: Agent loop uses `window.ai()` from ai-text-plugin. Fallback to `oc.generateText()` for summarization and memory extraction (internal operations).
-- **Custom message store**: Messages stored in-memory array + persisted to `customData["agent:messages"]`. Replaces `oc.thread.messages`.
-- **Storage**: Use `oc.thread.customData` for persistence — `localStorage` and `IndexedDB` are blocked in Perchance sandboxed iframes.
-- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → custom code detects, executes, feeds result back.
-- **UI**: All UI rendered by Preact into `document.body` — no chat window involved.
+- **LLM calls**: All operations (agent loop, summarization, memory extraction) use `window.ai()` / `root.ai()` from ai-text-plugin.
+- **Custom message store**: Messages cached in memory + persisted to IndexedDB (via `db.ts`).
+- **Storage**: Two layers — `storage.ts` (localStorage) for small config (API key, panel mode, locale), `db.ts` (IndexedDB) for messages, memories, and summaries.
+- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → code detects, executes, feeds result back.
+- **UI**: All UI rendered by Preact into `document.body`.
 - **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main`.
-- **Username fallback**: `oc.thread.userCharacter?.name` → `oc.character?.userCharacter?.name` → `oc.userCharacter?.name`
+- **API key**: Jina AI key stored in localStorage under `agent:jina_key`.
+- **Panel modes**: `"full"` (3-column) or `"tools-only"` — persisted in localStorage.
 
 ## Bundle
 
-~88KB minified (esbuild), served via jsDelivr CDN.
+~92KB minified (esbuild), served via jsDelivr CDN.
 
 ## License
 

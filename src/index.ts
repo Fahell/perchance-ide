@@ -4,15 +4,15 @@
  */
 
 import { agentLoop } from "./agent-loop.js";
-import { setApiKey, getApiKey, validateApiKey } from "./tools/web-search.js";
-import { initContextTools } from "./tools/index.js";
-import { storageGet, storageSet } from "./storage.js";
-import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
-import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
 import { buildContext } from "./context-manager.js";
+import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
 import { extractMemories, formatMemories } from "./memory.js";
-import { initMessageStore, addMessage } from "./message-store.js";
+import { addMessage, initMessageStore } from "./message-store.js";
+import { storageGet, storageSet } from "./storage.js";
+import { initContextTools } from "./tools/index.js";
+import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
+import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
 
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
@@ -82,7 +82,7 @@ async function handleSendMessage(text: string): Promise<void> {
   console.log("🤖 [Agent] Processing:", text.slice(0, 80));
 
   // Store user message
-  addMessage({ role: "user", content: text });
+  await addMessage({ role: "user", content: text });
   panel?.addUserMessage(text);
 
   // Build context with token-aware summarization
@@ -93,7 +93,7 @@ async function handleSendMessage(text: string): Promise<void> {
   const agentContext = {
     summary: ctx.summary,
     recentMessages: ctx.recentMessages,
-    memories: formatMemories(),
+    memories: await formatMemories(),
   };
 
   const response = await agentLoop(
@@ -145,16 +145,16 @@ async function handleSendMessage(text: string): Promise<void> {
   panel?.setResponse(response);
 
   // Store assistant message
-  addMessage({ role: "assistant", content: response });
+  await addMessage({ role: "assistant", content: response });
 
   // Extract memories in background (non-blocking)
-  extractMemories(text, response).catch(() => {});
+  extractMemories(text, response).catch(() => { });
 }
 
 // ─── Start Agent ─────────────────────────────────────────────
 function startAgent() {
   // Initialize message store (load persisted messages)
-  initMessageStore();
+  initMessageStore().catch((e) => console.warn("[Agent] initMessageStore failed:", e));
 
   // Render Preact panel
   panel = renderPanel(document.body, {

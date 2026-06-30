@@ -1,12 +1,11 @@
 /**
- * Message Store — custom in-memory message storage with customData persistence.
+ * Message Store — in-memory message storage with IndexedDB persistence.
  *
- * Replaces oc.thread.messages for standalone generator context.
- * Messages are stored in memory and persisted to oc.thread.customData
- * for survival across page reloads.
+ * Messages are cached in memory for fast access and persisted to IndexedDB
+ * via the db module for survival across page reloads.
  */
 
-import { storageGet, storageSet } from "./storage.js";
+import { dbAddMessage, dbClearMessages, dbGetAllMessages, dbGetLastN, dbGetMessageCount, type DbMessage } from "./db.js";
 
 // ─── Types ──────────────────────────────────────────────────
 export interface ChatMessage {
@@ -15,50 +14,32 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-// ─── Constants ──────────────────────────────────────────────
-const STORAGE_KEY = "agent:messages";
-
-// ─── In-Memory Store ───────────────────────────────────────
+// ─── In-Memory Cache ───────────────────────────────────────
 let messages: ChatMessage[] = [];
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let loaded = false;
 
-// ─── Persistence ────────────────────────────────────────────
-function persist(): void {
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    try {
-      storageSet(STORAGE_KEY, JSON.stringify(messages));
-    } catch (e) {
-      console.warn("[MessageStore] persist failed:", e);
-    }
-  }, 300);
-}
-
-function load(): void {
-  try {
-    const raw = storageGet<string>(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as ChatMessage[];
-      if (Array.isArray(parsed)) {
-        messages = parsed;
-      }
-    }
-  } catch (e) {
-    console.warn("[MessageStore] load failed:", e);
-    messages = [];
-  }
+// ─── Internal Helpers ──────────────────────────────────────
+function dbToChat(m: DbMessage): ChatMessage {
+  return { role: m.role, content: m.content, timestamp: m.timestamp };
 }
 
 // ─── API ────────────────────────────────────────────────────
-export function initMessageStore(): void {
+export async function initMessageStore(): Promise<void> {
   messages = [];
-  load();
+  try {
+    const all = await dbGetAllMessages();
+    messages = all.map(dbToChat);
+  } catch (e) {
+    console.warn("[MessageStore] load failed:", e);
+  }
+  loaded = true;
 }
 
-export function addMessage(msg: Omit<ChatMessage, "timestamp">): ChatMessage {
+export async function addMessage(msg: Omit<ChatMessage, "timestamp">): Promise<ChatMessage> {
   const full: ChatMessage = { ...msg, timestamp: Date.now() };
   messages.push(full);
-  persist();
+  // Fire-and-forget persistence
+  dbAddMessage(full).catch((e) => console.warn("[MessageStore] persist failed:", e));
   return full;
 }
 
@@ -74,17 +55,24 @@ export function getMessageCount(): number {
   return messages.length;
 }
 
-export function clearMessages(): void {
+export async function clearMessages(): Promise<void> {
   messages = [];
-  storageSet(STORAGE_KEY, "");
+  try {
+    await dbClearMessages();
+  } catch (e) {
+    console.warn("[MessageStore] clear failed:", e);
+  }
 }
 
-export function getMessagesByRange(fromIndex: number, toIndex?: number): ChatMessage[] {
+export function getMessagesByRange(fromIndex: number, toIndex?: number): (ChatMessage & { index: number })[] {
   const start = Math.max(0, fromIndex);
   const end = toIndex !== undefined ? Math.min(messages.length, toIndex) : messages.length;
-  return messages.slice(start, end).map((m, i) => ({ ...m, index: start + i } as ChatMessage & { index: number }));
+  return messages.slice(start, end).map((m, i) => ({ ...m, index: start + i }));
 }
 
 export function getAllMessages(): ChatMessage[] {
   return [...messages];
 }
+
+export { dbClearMessages, dbGetAllMessages, dbGetLastN, dbGetMessageCount };
+

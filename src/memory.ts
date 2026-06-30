@@ -2,42 +2,42 @@
  * Memory Extraction — persistent facts extracted from conversations.
  *
  * After each agent response, extracts 1-3 "timeless facts" using window.ai()
- * and stores them in localStorage via storage module.
+ * and stores them in IndexedDB via the db module.
  */
 
-import { storageGet, storageSet, storageDel } from "./storage.js";
+import { dbKvDel, dbKvGet, dbKvSet } from "./db.js";
 import { getAi } from "./types.js";
 
 // ─── Constants ──────────────────────────────────────────────
-const MEMORIES_KEY = "agent:memories";
+const MEMORIES_KEY = "memories";
 const MAX_MEMORIES = 20;
 const MIN_CONTENT_LENGTH = 50; // Skip trivial exchanges
 
 // ─── Memory Persistence ─────────────────────────────────────
-export function getMemories(): string[] {
-  const memories = storageGet<string[]>(MEMORIES_KEY);
+export async function getMemories(): Promise<string[]> {
+  const memories = await dbKvGet<string[]>(MEMORIES_KEY);
   if (!Array.isArray(memories)) return [];
   return memories.filter((m): m is string => typeof m === "string");
 }
 
-function saveMemories(memories: string[]): void {
-  storageSet(MEMORIES_KEY, memories.slice(-MAX_MEMORIES));
+async function saveMemories(memories: string[]): Promise<void> {
+  await dbKvSet(MEMORIES_KEY, memories.slice(-MAX_MEMORIES));
 }
 
-export function clearMemories(): void {
-  storageDel(MEMORIES_KEY);
+export async function clearMemories(): Promise<void> {
+  await dbKvDel(MEMORIES_KEY);
 }
 
-export function deleteMemory(index: number): void {
-  const memories = getMemories();
+export async function deleteMemory(index: number): Promise<void> {
+  const memories = await getMemories();
   if (index < 0 || index >= memories.length) return;
   memories.splice(index, 1);
-  saveMemories(memories);
+  await saveMemories(memories);
 }
 
 // ─── Format for Context Injection ───────────────────────────
-export function formatMemories(): string {
-  const memories = getMemories();
+export async function formatMemories(): Promise<string> {
+  const memories = await getMemories();
   if (memories.length === 0) return "";
   return memories.map((m) => `- ${m}`).join("\n");
 }
@@ -53,7 +53,7 @@ export async function extractMemories(
   }
 
   // Check for existing memories to avoid duplicates
-  const existing = getMemories();
+  const existing = await getMemories();
   const existingText = existing.join("\n");
 
   const instruction = `Extract 1-3 NEW facts from this conversation exchange that would be useful to remember in future conversations. Focus on:
@@ -110,7 +110,7 @@ New facts (one per line, or NONE):`;
 
     // Append and save
     const updated = [...existing, ...unique];
-    saveMemories(updated);
+    await saveMemories(updated);
     console.log("🧠 [Memory] Extracted", unique.length, "new fact(s). Total:", updated.length);
   } catch (err) {
     console.error("❌ [Memory] Extraction failed:", err);
