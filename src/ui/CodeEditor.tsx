@@ -43,7 +43,7 @@ function createDefaultTab(): TabData {
 
 // ─── Component ──────────────────────────────────────────────
 export function CodeEditor({ locale }: CodeEditorProps) {
-  const [tabs, setTabs] = useState<TabData[]>([createDefaultTab]);
+  const [tabs, setTabs] = useState<TabData[]>(() => [createDefaultTab()]);
   const [activeId, setActiveId] = useState<string>(tabs[0]!.id);
   const contentsRef = useRef<Map<string, string>>(new Map());
   const viewRef = useRef<import("codemirror").EditorView | null>(null);

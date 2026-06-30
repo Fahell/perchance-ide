@@ -10,17 +10,20 @@ export const cmTheme = EditorView.theme(
     "&": {
       backgroundColor: "#000",
       color: "#fff",
+      height: "100%",
     },
 
     ".cm-scroller": {
       fontFamily:
         "'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+      overflowY: "auto",
     },
 
     ".cm-content": {
       caretColor: "#fff",
       lineHeight: "1.5",
       fontSize: "13px",
+      textAlign: "left",
     },
 
     ".cm-cursor": {
