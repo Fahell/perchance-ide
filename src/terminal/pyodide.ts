@@ -11,6 +11,7 @@
  * Stdout/stderr are captured via batched handlers and returned as strings.
  */
 
+import { withTimeout } from "../agent-loop.js";
 import { dbSaveVfs } from "../db.js";
 import { vfsGetAll, vfsSnapshot, vfsWrite } from "../vfs.js";
 
@@ -44,10 +45,12 @@ let _loading: Promise<Pyodide> | null = null;
 let _loadError: string | null = null;
 
 // ─── Persistence ────────────────────────────────────────────
-function persistVfs(): void {
-  dbSaveVfs(vfsGetAll()).catch((e) =>
-    console.warn("[Pyodide] dbSaveVfs failed:", e)
-  );
+async function persistVfs(): Promise<void> {
+  try {
+    await dbSaveVfs(vfsGetAll());
+  } catch (e) {
+    console.warn("[Pyodide] dbSaveVfs failed:", e);
+  }
 }
 
 // ─── Loader ─────────────────────────────────────────────────
@@ -153,7 +156,7 @@ export async function syncFromPyodide(): Promise<void> {
   }
 
   if (changed > 0) {
-    persistVfs();
+    await persistVfs();
   }
 }
 
@@ -226,9 +229,15 @@ export async function executePython(code: string): Promise<PythonResult> {
   let exitCode = 0;
 
   try {
-    await pyodide.runPythonAsync(code);
+    await withTimeout(pyodide.runPythonAsync(code), 120_000, "runPythonAsync");
   } catch (err: any) {
-    stderrBuffer.push(String(err.message || err));
+    // Check if it was a timeout
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      const msg = "Python execution timed out after 120 seconds.";
+      stderrBuffer.push(msg);
+    } else {
+      stderrBuffer.push(String(err.message || err));
+    }
     exitCode = 1;
   }
 
@@ -250,15 +259,15 @@ export async function installPackage(name: string): Promise<string> {
 
   try {
     // Try pre-built package first
-    await pyodide.loadPackage(name);
+    await withTimeout(pyodide.loadPackage(name), 60_000, "loadPackage");
     return `Success: Package '${name}' installed.`;
   } catch {
     // Fallback to micropip for pure-Python wheels
     try {
-      await pyodide.runPythonAsync(`
+      await withTimeout(pyodide.runPythonAsync(`
         import micropip
         await micropip.install("${name.replace(/"/g, '\\"')}")
-      `);
+      `), 120_000, "micropip");
       return `Success: Package '${name}' installed via micropip.`;
     } catch (err: any) {
       return `Error: Failed to install '${name}': ${err.message || err}`;

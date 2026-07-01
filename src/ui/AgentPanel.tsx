@@ -3,6 +3,7 @@ import { t, type Locale } from "../i18n/index.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
+import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FaqModal } from "./FaqModal.js";
 import { Footer } from "./Footer.js";
 import { Header } from "./Header.js";
@@ -33,6 +34,7 @@ export interface AgentPanelProps {
   onInputEnabledChange: (enabled: boolean) => void;
   onLocaleChange: (locale: Locale) => void;
   onSendMessage: (text: string) => void;
+  onCancel?: () => void;
 }
 
 export interface AgentPanelRef {
@@ -43,7 +45,7 @@ export interface AgentPanelRef {
   setResponse(response: string): void;
 }
 
-export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, userName, locale: initialLocale, onSettingsSave, onPanelModeChange, inputEnabled: initialInputEnabled, onInputEnabledChange, onLocaleChange, onSendMessage }: AgentPanelProps) {
+export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, userName, locale: initialLocale, onSettingsSave, onPanelModeChange, inputEnabled: initialInputEnabled, onInputEnabledChange, onLocaleChange, onSendMessage, onCancel }: AgentPanelProps) {
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -184,7 +186,8 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         }}>
           {/* Messages area */}
           <div style={{ position: "relative", flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
-            <MessageList outerRef={scrollRef}>
+            <ErrorBoundary name="MessageList">
+              <MessageList outerRef={scrollRef}>
               {messages.length === 0 && (
                 <div style={{
                   display: "flex",
@@ -261,6 +264,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
               )}
 
             </MessageList>
+            </ErrorBoundary>
 
             {/* Scroll-to-bottom FAB */}
             <ScrollFAB scrollRef={scrollRef} />
@@ -276,20 +280,25 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
             inputEnabled={inputEnabled}
             onSend={onSendMessage}
             disabled={agentStatus !== "idle"}
+            onCancel={onCancel}
             locale={locale}
           />
         </div>
 
         {/* ── Middle: Code Editor ─────────────────────────── */}
         <div style={{ flex: "1", minWidth: "0" }}>
-          <CodeEditor
-            locale={locale}
-          />
+          <ErrorBoundary name="CodeEditor">
+            <CodeEditor
+              locale={locale}
+            />
+          </ErrorBoundary>
         </div>
 
         {/* ── Right: Placeholder panel ───────────────────── */}
         <div style={{ width: "300px", minWidth: "300px" }}>
-          <RightPanel locale={locale} />
+          <ErrorBoundary name="RightPanel">
+            <RightPanel locale={locale} />
+          </ErrorBoundary>
         </div>
       </div>
 

@@ -61,6 +61,8 @@ The `generator/` folder contains templates you can adapt:
 - **i18n** — 5 languages (English, Português, Español, 日本語, 中文)
 - **Monochrome dark UI** — Preact-based 3-column panel with chat sidebar, code editor, and placeholder right panel
 - **FAQ panel** — built-in info modal with project links and usage notes
+- **VFS agent tools** — read, write, search, list, delete, and rename files in a virtual file system
+- **Python execution via Pyodide** — run Python snippets, execute `.py` files from VFS, install packages via micropip (lazy-loaded, ~3.5MB gzip, 2-6s cold start)
 
 ## Architecture
 
@@ -79,7 +81,12 @@ src/
 ├── tools/
 │   ├── index.ts          # Tool registry + initContextTools()
 │   ├── context-tools.ts  # search_history (BM25-lite) + get_messages tools
+│   ├── vfs-tools.ts      # read_file, write_file, list_files, search_files, delete_file, rename_file
+│   ├── terminal-tools.ts # run_python, execute_script, install_package
 │   └── web-search.ts     # Jina API integration (search + scrape)
+│
+├── terminal/
+│   └── pyodide.ts        # Pyodide loader + VFS→MEMFS sync bridge
 │
 ├── i18n/
 │   ├── dict.ts           # Translation dictionaries (5 locales)
@@ -166,6 +173,15 @@ User sends message
 | `scrape_url` | Fetch full page content as markdown | `{ url: string, maxChars?: number }` |
 | `search_history` | Search conversation history by keyword (BM25-lite) | `{ query: string }` |
 | `get_messages` | Retrieve messages by position or count | `{ count?: number, from?: number, to?: number }` |
+| `read_file` | Read file contents from VFS | `{ path: string }` |
+| `write_file` | Create or overwrite a file in VFS | `{ path: string, content: string }` |
+| `list_files` | Show project tree structure | `{ path?: string }` |
+| `search_files` | Search files by name or content | `{ query: string, mode?: "name" \| "content" }` |
+| `delete_file` | Delete a file or folder recursively | `{ path: string }` |
+| `rename_file` | Rename or move a file/folder | `{ source: string, dest: string }` |
+| `run_python` | Execute a Python snippet, returns stdout/stderr | `{ code: string }` |
+| `execute_script` | Run a `.py` file from VFS | `{ path: string }` |
+| `install_package` | Install a Python package via micropip | `{ name: string }` |
 
 ## Storage API
 

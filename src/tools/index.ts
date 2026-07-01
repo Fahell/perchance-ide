@@ -12,6 +12,7 @@ export interface Tool {
   name: string;
   description: string;
   parameters: Record<string, string>;
+  timeoutMs?: number;
   execute: (args: Record<string, any>) => Promise<string>;
 }
 

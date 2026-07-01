@@ -25,6 +25,7 @@ declare const __BUILD_TIME__: string;
 let agentProcessing = false;
 let panel: AgentPanelRef | null = null;
 let currentToolCallId: string | null = null;
+let currentCancelController: AbortController | null = null;
 
 // ─── Version Banner ─────────────────────────────────────────
 function printBanner() {
@@ -80,7 +81,7 @@ function validateEnvironment(): boolean {
 }
 
 // ─── Agent Message Handler ───────────────────────────────────
-async function handleSendMessage(text: string): Promise<void> {
+async function handleSendMessage(text: string, signal?: AbortSignal): Promise<void> {
   console.log("🤖 [Agent] Processing:", text.slice(0, 80));
 
   // Store user message
@@ -90,6 +91,9 @@ async function handleSendMessage(text: string): Promise<void> {
   // Build context with token-aware summarization
   const ctx = await buildContext(text);
   console.log("🧠 [Agent] Context: ~" + ctx.totalTokens + " tokens, " + ctx.recentMessages.length + " messages" + (ctx.summarizedCount > 0 ? ", summarized " + ctx.summarizedCount + " older messages" : ""));
+
+  // Check for cancellation before starting agent loop
+  if (signal?.aborted) return;
 
   // Run agent loop with structured context
   const agentContext = {
@@ -138,7 +142,8 @@ async function handleSendMessage(text: string): Promise<void> {
         });
         currentToolCallId = null;
       }
-    }
+    },
+    signal
   );
 
   console.log("🤖 [Agent] Response:", response.slice(0, 100));
@@ -156,13 +161,15 @@ async function handleSendMessage(text: string): Promise<void> {
 // ─── Start Agent ─────────────────────────────────────────────
 function startAgent() {
   // Initialize message store (load persisted messages)
-  initMessageStore().catch((e) => console.warn("[Agent] initMessageStore failed:", e));
+  // Fire-and-forget: startup must not block rendering
+  initMessageStore().catch((e) => console.error("[Agent] initMessageStore failed:", e));
 
   // Restore VFS from IndexedDB
+  // Fire-and-forget: VFS loads incrementally, no need to block
   dbLoadVfs().then((entries) => {
     vfsLoadAll(entries);
     console.log("📁 [Agent] VFS restored: " + entries.length + " entries");
-  }).catch((e) => console.warn("[Agent] dbLoadVfs failed:", e));
+  }).catch((e) => console.error("[Agent] dbLoadVfs failed:", e));
 
   // Render Preact panel
   panel = renderPanel(document.body, {
@@ -200,16 +207,25 @@ function startAgent() {
         return;
       }
       agentProcessing = true;
+      currentCancelController = new AbortController();
       panel?.setStatus("thinking");
-      handleSendMessage(text)
+      handleSendMessage(text, currentCancelController.signal)
         .catch((err) => {
           console.error("❌ [Agent] Error:", err);
           panel?.setResponse(`Error: ${err instanceof Error ? err.message : String(err)}`);
         })
         .finally(() => {
           agentProcessing = false;
+          currentCancelController = null;
           panel?.setStatus("idle");
         });
+    },
+    onCancel: () => {
+      if (currentCancelController) {
+        console.log("🛑 [Agent] User requested cancellation");
+        currentCancelController.abort();
+        panel?.setStatus("idle");
+      }
     },
   });
 

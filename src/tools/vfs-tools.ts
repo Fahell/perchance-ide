@@ -23,10 +23,12 @@ import {
 import type { Tool } from "./index.js";
 
 // ─── Persistence ────────────────────────────────────────────
-function persistVfs(): void {
-  dbSaveVfs(vfsGetAll()).catch((e) =>
-    console.warn("[VfsTools] dbSaveVfs failed:", e)
-  );
+async function persistVfs(): Promise<void> {
+  try {
+    await dbSaveVfs(vfsGetAll());
+  } catch (e) {
+    console.warn("[VfsTools] dbSaveVfs failed:", e);
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -98,7 +100,7 @@ export function createVfsTools(): Record<string, Tool> {
           state.setFileDirty(path, true);
         }
 
-        persistVfs();
+        await persistVfs();
         const size = content.length;
         return `Success: ${isNew ? "Created" : "Updated"} ${path} (${size} byte${size === 1 ? "" : "s"})`;
       },
@@ -185,7 +187,7 @@ export function createVfsTools(): Record<string, Tool> {
           }
         }
 
-        persistVfs();
+        await persistVfs();
         const label = count > 1 ? ` (${count} entries)` : "";
         return `Success: Deleted ${path}${label}`;
       },
@@ -233,7 +235,7 @@ export function createVfsTools(): Record<string, Tool> {
           }
         }
 
-        persistVfs();
+        await persistVfs();
         return `Success: Renamed ${oldPath} → ${newPath}`;
       },
     },

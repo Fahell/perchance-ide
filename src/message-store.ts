@@ -38,8 +38,12 @@ export async function initMessageStore(): Promise<void> {
 export async function addMessage(msg: Omit<ChatMessage, "timestamp">): Promise<ChatMessage> {
   const full: ChatMessage = { ...msg, timestamp: Date.now() };
   messages.push(full);
-  // Fire-and-forget persistence
-  dbAddMessage(full).catch((e) => console.warn("[MessageStore] persist failed:", e));
+  // Persist to IndexedDB — await to ensure data survival
+  try {
+    await dbAddMessage(full);
+  } catch (e) {
+    console.warn("[MessageStore] persist failed:", e);
+  }
   return full;
 }
 

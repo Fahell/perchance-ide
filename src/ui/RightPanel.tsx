@@ -85,13 +85,15 @@ export function RightPanel({ locale }: RightPanelProps) {
     closeCtxMenu();
   }
 
-  function persistVfs() {
-    dbSaveVfs(vfsGetAll()).catch((e) =>
-      console.warn("[RightPanel] dbSaveVfs failed:", e)
-    );
+  async function persistVfs() {
+    try {
+      await dbSaveVfs(vfsGetAll());
+    } catch (e) {
+      console.warn("[RightPanel] dbSaveVfs failed:", e);
+    }
   }
 
-  function commitRename() {
+  async function commitRename() {
     if (!renaming || !renameValue.trim()) {
       setRenaming(null);
       return;
@@ -108,7 +110,7 @@ export function RightPanel({ locale }: RightPanelProps) {
           state.openFile(newPath, renameValue.trim(), newPath.split(".").pop()?.toLowerCase() ?? "js");
         }
       }
-      persistVfs();
+      await persistVfs();
       refresh();
     }
     setRenaming(null);
@@ -120,7 +122,7 @@ export function RightPanel({ locale }: RightPanelProps) {
     setCreateName("");
   }
 
-  function commitCreate() {
+  async function commitCreate() {
     if (!creatingIn || !createName.trim()) {
       setCreatingIn(null);
       return;
@@ -141,11 +143,11 @@ export function RightPanel({ locale }: RightPanelProps) {
       return next;
     });
     setCreatingIn(null);
-    persistVfs();
+    await persistVfs();
     refresh();
   }
 
-  function handleDelete(path: string) {
+  async function handleDelete(path: string) {
     vfsDeleteTree(path);
     // Close any open tabs with this path or descendants
     const state = ideStore.getState();
@@ -155,7 +157,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       }
     }
     closeCtxMenu();
-    persistVfs();
+    await persistVfs();
     refresh();
   }
 

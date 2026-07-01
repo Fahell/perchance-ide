@@ -1,7 +1,6 @@
-import { h } from "preact";
 import { useState } from "preact/hooks";
-import { colors, fonts } from "./theme.js";
 import { t, type Locale } from "../i18n/index.js";
+import { colors, fonts } from "./theme.js";
 
 interface FooterProps {
   onSettings: () => void;
@@ -9,10 +8,11 @@ interface FooterProps {
   inputEnabled: boolean;
   onSend: (text: string) => void;
   disabled: boolean;
+  onCancel?: () => void;
   locale?: Locale;
 }
 
-export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, locale }: FooterProps) {
+export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
   const placeholder = t("footer.waiting", locale);
   const [text, setText] = useState("");
 
@@ -32,7 +32,7 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
 
   return (
     <div style={{ borderTop: `1px solid ${colors.border}`, flexShrink: "0" }}>
-      {inputEnabled && (
+      {inputEnabled && !disabled && (
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -44,32 +44,29 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
             value={text}
             onInput={(e) => setText((e.target as HTMLInputElement).value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? placeholder : "> _"}
-            disabled={disabled}
+            placeholder="> _"
             style={{
               flex: "1",
               padding: "5px 8px",
               border: `1px solid ${colors.border}`,
-              background: disabled ? colors.surface1 : colors.surface2,
-              color: disabled ? colors.textMuted : colors.text,
+              background: colors.surface2,
+              color: colors.text,
               fontSize: "11px",
               fontFamily: fonts.mono,
               outline: "none",
-              opacity: disabled ? 0.5 : 1,
             }}
           />
           <button
             onClick={handleSend}
-            disabled={disabled || !text.trim()}
+            disabled={!text.trim()}
             style={{
               padding: "5px 8px",
-              border: `1px solid ${text.trim() && !disabled ? colors.text : colors.border}`,
+              border: `1px solid ${text.trim() ? colors.text : colors.border}`,
               background: "none",
-              color: text.trim() && !disabled ? colors.text : colors.textMuted,
+              color: text.trim() ? colors.text : colors.textMuted,
               fontSize: "11px",
               fontFamily: fonts.mono,
-              cursor: text.trim() && !disabled ? "pointer" : "default",
-              opacity: disabled ? 0.5 : 1,
+              cursor: text.trim() ? "pointer" : "default",
               flexShrink: "0",
             }}
           >
@@ -77,6 +74,41 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
           </button>
         </div>
       )}
+
+      {/* Cancel button shown during processing */}
+      {inputEnabled && disabled && onCancel && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "4px 8px",
+          gap: "6px",
+        }}>
+          <span style={{
+            fontSize: "10px",
+            color: colors.textMuted,
+            fontFamily: fonts.mono,
+          }}>
+            Processing...
+          </span>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "5px 8px",
+              border: `1px solid ${colors.textSecondary}`,
+              background: "none",
+              color: colors.textSecondary,
+              fontSize: "11px",
+              fontFamily: fonts.mono,
+              cursor: "pointer",
+              flexShrink: "0",
+            }}
+          >
+            [Cancel]
+          </button>
+        </div>
+      )}
+
       <div style={{
         display: "flex",
         justifyContent: "flex-end",

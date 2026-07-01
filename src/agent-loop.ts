@@ -15,6 +15,128 @@ import { getAi } from "./types.js";
 const MAX_ITERATIONS = 8;
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
+// ─── Timeout Helpers ────────────────────────────────────────
+
+/**
+ * Wrap a promise with a timeout via AbortSignal.
+ * If an existingSignal is provided, combines both — whichever fires first aborts.
+ * On timeout, rejects with DOMException 'AbortError'.
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  existingSignal?: AbortSignal
+): Promise<T> {
+  const timeoutSignal = AbortSignal.timeout(ms);
+  const signal = existingSignal
+    ? combineSignals(existingSignal, timeoutSignal)
+    : timeoutSignal;
+
+  if (signal.aborted) {
+    return Promise.reject(new DOMException(signal.reason?.message ?? `Timed out after ${ms}ms`, 'AbortError'));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new DOMException(
+        signal.reason?.message ?? `Operation "${label}" timed out after ${ms}ms`,
+        'AbortError'
+      ));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(e);
+      }
+    );
+  });
+}
+
+/**
+ * Combine multiple AbortSignals into one.
+ * The combined signal aborts when ANY constituent signal aborts.
+ * Falls back to manual combining if AbortSignal.any() is unavailable.
+ */
+function combineSignals(...signals: AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(signals);
+  }
+  // Manual fallback for older browsers
+  const controller = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+/**
+ * Wrapper around getAi() that supports AbortSignal cancellation.
+ * The Perchance ai-text-plugin doesn't support AbortSignal natively,
+ * so we listen to the signal and call result.stop() on abort.
+ * Returns the AiCallResult (which is thenable — can be awaited).
+ */
+export function aiCallWithSignal(
+  options: {
+    instruction: string;
+    stopSequences?: string[];
+  },
+  signal?: AbortSignal
+): Promise<any> {
+  const aiResult = getAi()(options);
+
+  if (!signal) {
+    return Promise.resolve(aiResult);
+  }
+
+  if (signal.aborted) {
+    aiResult.stop();
+    return Promise.reject(
+      new DOMException(signal.reason?.message ?? 'Aborted', 'AbortError')
+    );
+  }
+
+  return new Promise<any>((resolve, reject) => {
+    let settled = false;
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      aiResult.stop();
+      reject(
+        new DOMException(signal!.reason?.message ?? 'Aborted', 'AbortError')
+      );
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    // The thenable resolves/rejects when generation finishes
+    Promise.resolve(aiResult).then(
+      (val: any) => {
+        if (settled) return;
+        settled = true;
+        signal!.removeEventListener('abort', onAbort);
+        resolve(val);
+      },
+      (err: any) => {
+        if (settled) return;
+        settled = true;
+        signal!.removeEventListener('abort', onAbort);
+        reject(err);
+      }
+    );
+  });
+}
+
 // ─── System Prompt for Tools ────────────────────────────────
 function buildToolPrompt(): string {
   return `You are a research agent. Your job is to find accurate, up-to-date information using your tools.
@@ -121,7 +243,8 @@ export async function agentLoop(
   onStatus?: (status: string) => void,
   onToolResult?: (toolName: string, args: Record<string, any>, result: string) => void,
   onToolStart?: (toolName: string, args: Record<string, any>) => void,
-  onToolError?: (toolName: string, args: Record<string, any>, error: string) => void
+  onToolError?: (toolName: string, args: Record<string, any>, error: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const toolPrompt = buildToolPrompt();
 
@@ -156,11 +279,34 @@ export async function agentLoop(
     iteration++;
     onStatus?.(`Thinking... (step ${iteration})`);
 
-    // Call the LLM via ai-text-plugin
-    const result = await getAi()({
-      instruction: instruction,
-      stopSequences: ["</tool_call>"],
-    });
+    // Check for cancellation
+    if (signal?.aborted) {
+      return "The operation was cancelled.";
+    }
+
+    // Call the LLM via ai-text-plugin with timeout + cancellation
+    const llmSignal = signal
+      ? combineSignals(signal, AbortSignal.timeout(60_000))
+      : AbortSignal.timeout(60_000);
+    let result: any;
+    try {
+      result = await aiCallWithSignal(
+        {
+          instruction: instruction,
+          stopSequences: ["</tool_call>"],
+        },
+        llmSignal
+      );
+    } catch (err: any) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        const reason = signal?.aborted
+          ? "The operation was cancelled by the user."
+          : "The operation timed out after 60 seconds.";
+        onStatus?.(reason);
+        return reason;
+      }
+      throw err;
+    }
 
     const responseText = result.generatedText || result.text || result.toString();
 
@@ -189,7 +335,13 @@ export async function agentLoop(
       onToolStart?.(call.name, call.args);
 
       try {
-        const result = await tool.execute(call.args);
+        const timeoutMs = tool.timeoutMs ?? 30_000;
+        const result = await withTimeout(
+          tool.execute(call.args),
+          timeoutMs,
+          call.name,
+          signal
+        );
 
         // Notify about tool result
         onToolResult?.(call.name, call.args, result);

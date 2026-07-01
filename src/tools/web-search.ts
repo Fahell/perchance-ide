@@ -31,6 +31,7 @@ export async function validateApiKey(key: string): Promise<boolean> {
         Accept: "application/json",
       },
       body: JSON.stringify({ q: "test" }),
+      signal: AbortSignal.timeout(10_000),
     });
     return res.ok;
   } catch {
@@ -73,6 +74,7 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
     method: "POST",
     headers: jinaHeaders({ "X-Return-Format": "json" }),
     body: JSON.stringify({ q: query, num: limit }),
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!res.ok) {
@@ -103,6 +105,7 @@ export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeRes
     method: "POST",
     headers: jinaHeaders({ Accept: "text/markdown" }),
     body: JSON.stringify({ url }),
+    signal: AbortSignal.timeout(25_000),
   });
 
   if (!res.ok) {

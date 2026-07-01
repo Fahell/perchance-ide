@@ -22,6 +22,7 @@ export function createTerminalTools(): Record<string, Tool> {
       parameters: {
         code: "The Python source code to execute. Can include multiple statements, function definitions, etc.",
       },
+      timeoutMs: 120_000,
       execute: async (args) => {
         const code = String(args.code || "").trim();
         if (!code) return "Error: code is required.";
@@ -42,6 +43,7 @@ export function createTerminalTools(): Record<string, Tool> {
       parameters: {
         path: "Absolute path to a .py file in the VFS (e.g., /scripts/analyze.py). The file must exist and have a .py extension.",
       },
+      timeoutMs: 120_000,
       execute: async (args) => {
         const path = String(args.path || "");
         if (!path) return "Error: path is required.";
@@ -70,6 +72,7 @@ export function createTerminalTools(): Record<string, Tool> {
       parameters: {
         name: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).",
       },
+      timeoutMs: 60_000,
       execute: async (args) => {
         const name = String(args.name || "").trim();
         if (!name) return "Error: package name is required.";
