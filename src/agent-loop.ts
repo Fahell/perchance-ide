@@ -11,11 +11,13 @@
 import { getPyodideStatus } from "./terminal/pyodide.js";
 import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
 import { getAi } from "./types.js";
+import { truncateOutput } from "./utils/truncate.js";
 import { vfsGetAll } from "./vfs.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 8;
 const LLM_TIMEOUT_MS = 300_000; // 5 min — Perchance AI can be slow
+const MAX_TOOL_OUTPUT = 20_000; // Safety net for tool result truncation
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
 // ─── Timeout Helpers ────────────────────────────────────────
@@ -142,11 +144,22 @@ export function aiCallWithSignal(
 
 // ─── System Prompt for Tools ────────────────────────────────
 function buildToolPrompt(vfsFileCount?: number, pyodideLoaded?: boolean): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const cutoffYear = 2025;
+  const currentYear = now.getFullYear();
+
   return `You are a research agent. Your job is to find accurate, up-to-date information using your tools.
 
 IMPORTANT CONTEXT:
-- Your training data has a cutoff of early 2025. The current date is ${new Date().getFullYear()}.
-- If asked about events in 2025-2026, you MUST use web_search — do not say "it hasn't happened yet" or refuse.
+- Your training data has a cutoff of early ${cutoffYear}. The current date is ${dateStr} (${timezone}).
+- If asked about events in ${cutoffYear}-${currentYear}, you MUST use web_search — do not say "it hasn't happened yet" or refuse.
 
 PROJECT STATE:
 - Files in project: ${vfsFileCount ?? '?'}
@@ -162,7 +175,7 @@ RESEARCH WORKFLOW:
 4. SYNTHESIZE: Give your final answer based on the real page content you fetched.
 
 RULES:
-- Use web_search for any real-time data (prices, scores, news, weather, dates, events) or topics outside your 2025 training data.
+- Use web_search for any real-time data (prices, scores, news, weather, dates, events) or topics outside your ${cutoffYear} training data.
 - You may use web_search MULTIPLE times with different queries if the first search doesn't find what you need.
 - You may scrape up to 3-4 URLs total across iterations.
 - Always prefer scraping actual page content over answering from search snippets alone.
@@ -195,7 +208,8 @@ PYTHON EXECUTION RULES:
 To use a tool, output EXACTLY this format on its own line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
 
-You may output ONE tool_call per response, followed by a brief note.`;
+You may output MULTIPLE <tool_call> blocks in a single response. Tools are executed in parallel when possible.
+If a tool depends on the result of another (e.g., you need to read a file before editing it), output them in SEPARATE responses — output one tool, wait for the result, then output the next.`;
 }
 
 // ─── Conversation History ────────────────────────────────────
@@ -377,27 +391,46 @@ export async function agentLoop(
       }
     }
 
-    // Execute each tool call (usually just one)
-    for (const call of toolCalls) {
-      const tool = getTool(call.name);
-      if (!tool) continue;
+    // Execute all tool calls in parallel
+    const outcomes = await Promise.all(
+      toolCalls.map(async (call) => {
+        try {
+          const tool = getTool(call.name);
+          if (!tool) return { call, status: 'fulfilled' as const, result: undefined as string | undefined, error: undefined as string | undefined };
 
-      onStatus?.(`Using ${call.name}...`);
-      onToolStart?.(call.name, call.args);
+          onStatus?.(`Using ${call.name}...`);
+          onToolStart?.(call.name, call.args);
 
-      try {
-        const timeoutMs = tool.timeoutMs ?? 30_000;
-        const result = await withTimeout(
-          tool.execute(call.args),
-          timeoutMs,
-          call.name,
-          signal
-        );
+          const timeoutMs = tool.timeoutMs ?? 30_000;
+          let result = await withTimeout(
+            tool.execute(call.args),
+            timeoutMs,
+            call.name,
+            signal
+          );
 
-        // Notify about tool result
-        onToolResult?.(call.name, call.args, result);
+          // Safety net truncation (from 8.6)
+          if (result.length > MAX_TOOL_OUTPUT) {
+            result = truncateOutput(result, MAX_TOOL_OUTPUT);
+          }
 
-        // Feed result back as context for next iteration with dynamic guidance
+          onToolResult?.(call.name, call.args, result);
+          return { call, status: 'fulfilled' as const, result, error: undefined };
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Agent] Tool ${call.name} failed:`, errorMsg);
+          onToolError?.(call.name, call.args, errorMsg);
+          return { call, status: 'rejected' as const, result: undefined, error: errorMsg };
+        }
+      })
+    );
+
+    // Process in ORIGINAL order for instructionParts + repetition detection
+    for (const outcome of outcomes) {
+      const { call } = outcome;
+
+      if (outcome.status === 'fulfilled' && outcome.result !== undefined) {
+        // Dynamic next-step guidance
         let nextStep = "";
         if (call.name === "web_search") {
           nextStep = "Analyze these search results. Pick the 1-2 most relevant URLs and use scrape_url to read their full content. If the results don't look relevant, try a different search query instead.";
@@ -406,23 +439,21 @@ export async function agentLoop(
         } else {
           nextStep = "Now respond to the user based on this information.";
         }
-        const toolResult = `[Tool Result - ${call.name}]:\n${result}\n\n${nextStep}`;
+        instructionParts.push(`[Tool Result - ${call.name}]:\n${outcome.result}\n\n${nextStep}`);
 
-        // For next iteration, include the tool result
-        instructionParts.push(toolResult);
-
-        // Check for repetitive tool calls
+        // Repetition detection (in original order)
         const repStatus = detector.check(call.name, call.args);
         if (repStatus === 'warn') {
           instructionParts.push(`[System]: You have called ${call.name} with the same arguments multiple times in a row. This appears to be repetitive. Try a different approach or synthesize the answer from information you already have.`);
         } else if (repStatus === 'interrupt') {
           return `The agent was interrupted because it appeared to be stuck in a loop (called ${call.name} with identical arguments too many times). Here's what was accomplished so far. Please try rephrasing your request.`;
         }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[Agent] Tool ${call.name} failed:`, errorMsg);
-        onToolError?.(call.name, call.args, errorMsg);
-        instructionParts.push(`[Tool Error - ${call.name}]: ${errorMsg}\n\nThe tool failed. Respond to the user explaining the issue.`);
+      } else {
+        // Tool failed or returned no result (tool not found)
+        if (outcome.error) {
+          instructionParts.push(`[Tool Error - ${call.name}]: ${outcome.error}\n\nThe tool failed. Respond to the user explaining the issue.`);
+        }
+        // If !outcome.error && !outcome.result: tool not found — skip silently
       }
     }
   }

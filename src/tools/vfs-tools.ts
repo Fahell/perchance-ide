@@ -10,6 +10,7 @@
 
 import { dbSaveVfs } from "../db.js";
 import { ideStore } from "../store.js";
+import { truncateOutput } from "../utils/truncate.js";
 import {
   vfsDeleteTree,
   vfsExists,
@@ -67,10 +68,7 @@ export function createVfsTools(): Record<string, Tool> {
         if (content === null) return `Error: ${path} is a directory, not a file.`;
         const maxLen = 5000;
         if (content.length > maxLen) {
-          return (
-            content.slice(0, maxLen) +
-            `\n\n... (${content.length - maxLen} more characters omitted)`
-          );
+          return truncateOutput(content, maxLen);
         }
         return content;
       },
@@ -125,7 +123,7 @@ export function createVfsTools(): Record<string, Tool> {
         for (const node of tree) {
           result += formatTreeNode(node);
         }
-        return result.trimEnd();
+        return truncateOutput(result.trimEnd(), 100, 'lines');
       },
     },
 

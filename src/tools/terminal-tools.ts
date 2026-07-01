@@ -9,6 +9,7 @@
  */
 
 import { executePython, installPackage } from "../terminal/pyodide.js";
+import { truncateOutput } from "../utils/truncate.js";
 import { vfsExists, vfsRead } from "../vfs.js";
 import type { Tool } from "./index.js";
 
@@ -94,8 +95,10 @@ function formatPythonResult(result: {
   stderr: string;
   exitCode: number;
 }): string {
-  const out = result.stdout || "(empty)";
-  const err = result.stderr || "(empty)";
+  const maxStdout = 10_000;
+  const maxStderr = 5_000;
+  const out = result.stdout ? truncateOutput(result.stdout, maxStdout) : "(empty)";
+  const err = result.stderr ? truncateOutput(result.stderr, maxStderr) : "(empty)";
   return [
     `Exit code: ${result.exitCode}`,
     `stdout:\n${out}`,
