@@ -5,10 +5,11 @@
  * Right-click for rename/delete. "+" button for new file/folder.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
+import { serializeProject } from "../utils/vfs-io.js";
 import {
     vfsDeleteTree,
     vfsExists, vfsGetAll, vfsMkdir,
@@ -46,8 +47,72 @@ export function RightPanel({ locale }: RightPanelProps) {
   const [ctxTarget, setCtxTarget] = useState<string | null>(null);
   const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
 
+  // ── Download / Upload refs (11.4) ─────────────────────
+  const downloadRef = useRef<HTMLAnchorElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+
   function refresh() {
     forceUpdate((n) => n + 1);
+  }
+
+  // ── Download / Upload handlers (11.4) ──────────────────
+  function handleDownload() {
+    const json = serializeProject();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = downloadRef.current;
+    if (a) {
+      a.href = url;
+      a.click();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  async function handleUploadFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const content = await file.text();
+      vfsWrite("/" + file.name, content);
+      ideStore.getState().bumpVfsVersion();
+      await persistVfs();
+      refresh();
+    } catch (err) {
+      console.warn("[RightPanel] Upload failed:", err);
+    }
+    input.value = "";
+  }
+
+  async function handleUploadFolder(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const files = input.files;
+    if (!files || files.length === 0) return;
+
+    let count = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]!;
+      const relPath = file.webkitRelativePath;
+      const parts = relPath.split("/");
+      parts.shift(); // Remove top-level folder name
+      const vfsPath = "/" + parts.join("/");
+      if (!vfsPath || vfsPath === "/") continue;
+      try {
+        const content = await file.text();
+        vfsWrite(vfsPath, content);
+        count++;
+      } catch (err) {
+        console.warn(`[RightPanel] Failed to upload ${relPath}:`, err);
+      }
+    }
+
+    if (count > 0) {
+      ideStore.getState().bumpVfsVersion();
+      await persistVfs();
+      refresh();
+    }
+    input.value = "";
   }
 
   // ── Handlers ──────────────────────────────────────────
@@ -339,13 +404,30 @@ export function RightPanel({ locale }: RightPanelProps) {
             </div>
           )}
 
-          {/* Counter */}
+          {/* Download / Upload toolbar + Counter (11.4) */}
           <div style={{
             borderTop: `1px solid ${colors.border}`,
             padding: "4px 8px", fontSize: "9px",
             color: colors.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
-            {t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}
+            <div style={{ display: "flex", gap: "4px" }}>
+              <a ref={downloadRef} download="project.json" style={{ display: "none" }} />
+              <input ref={fileInputRef} type="file" style={{ display: "none" }}
+                onChange={handleUploadFile} />
+              <input ref={folderInputRef} type="file" {...{webkitdirectory: true}} style={{ display: "none" }}
+                onChange={handleUploadFolder} />
+              <button onClick={handleDownload}
+                title={t("vfs.download", locale) || "download project"}
+                style={btnStyle}>⬇</button>
+              <button onClick={() => fileInputRef.current?.click()}
+                title={t("vfs.uploadFile", locale) || "upload file"}
+                style={btnStyle}>⬆</button>
+              <button onClick={() => folderInputRef.current?.click()}
+                title={t("vfs.uploadFolder", locale) || "upload folder"}
+                style={btnStyle}>⬆d</button>
+            </div>
+            <span>{t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}</span>
           </div>
         </>
       ) : activeTab === "preview" ? (

@@ -150,6 +150,12 @@ const en: Translations = {
   "output.stderr": "stderr",
   "output.copy": "copy",
   "output.copied": "copied!",
+
+  // VFS download/upload (11.4)
+  "vfs.download": "download project",
+  "vfs.uploadFile": "upload file",
+  "vfs.uploadFolder": "upload folder",
+  "vfs.uploaded": "uploaded {n} files",
 };
 
 const ptBR: Translations = {
@@ -282,6 +288,12 @@ const ptBR: Translations = {
   "output.stderr": "erro padrão",
   "output.copy": "copiar",
   "output.copied": "copiado!",
+
+  // VFS download/upload (11.4)
+  "vfs.download": "baixar projeto",
+  "vfs.uploadFile": "enviar arquivo",
+  "vfs.uploadFolder": "enviar pasta",
+  "vfs.uploaded": "{n} arquivos enviados",
 };
 
 const es: Translations = {
@@ -400,6 +412,12 @@ const es: Translations = {
   "output.stderr": "error estándar",
   "output.copy": "copiar",
   "output.copied": "copiado!",
+
+  // VFS download/upload (11.4)
+  "vfs.download": "descargar proyecto",
+  "vfs.uploadFile": "subir archivo",
+  "vfs.uploadFolder": "subir carpeta",
+  "vfs.uploaded": "{n} archivos subidos",
 };
 
 const ja: Translations = {
@@ -519,6 +537,12 @@ const ja: Translations = {
   "output.stderr": "標準エラー出力",
   "output.copy": "コピー",
   "output.copied": "コピーしました!",
+
+  // VFS download/upload (11.4)
+  "vfs.download": "プロジェクトをダウンロード",
+  "vfs.uploadFile": "ファイルをアップロード",
+  "vfs.uploadFolder": "フォルダをアップロード",
+  "vfs.uploaded": "{n} 個のファイルをアップロードしました",
 };
 
 const zh: Translations = {
@@ -638,6 +662,12 @@ const zh: Translations = {
   "output.stderr": "标准错误",
   "output.copy": "复制",
   "output.copied": "已复制!",
+
+  // VFS download/upload (11.4)
+  "vfs.download": "下载项目",
+  "vfs.uploadFile": "上传文件",
+  "vfs.uploadFolder": "上传文件夹",
+  "vfs.uploaded": "已上传 {n} 个文件",
 };
 
 export const dict: Record<Locale, Translations> = {

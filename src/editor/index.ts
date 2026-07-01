@@ -6,7 +6,7 @@
  */
 
 import { indentUnit, type LanguageSupport } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { EditorView, basicSetup } from "codemirror";
 import { cmTheme } from "./theme.js";
@@ -31,6 +31,8 @@ export interface EditorConfig {
   wordWrap?: boolean;
   /** Read-only mode (default: false) */
   readonly?: boolean;
+  /** Additional CM6 extensions (e.g., Emmet) */
+  extraExtensions?: Extension[];
 }
 
 // ─── Factory ────────────────────────────────────────────────
@@ -44,6 +46,7 @@ export function createEditor(config: EditorConfig): EditorView {
     tabSize = 2,
     wordWrap = false,
     readonly = false,
+    extraExtensions = [],
   } = config;
 
   const extensions = [
@@ -67,6 +70,9 @@ export function createEditor(config: EditorConfig): EditorView {
       // Escape: blur the editor (useful to trigger global shortcuts)
       { key: "Escape", run: (view) => { view.contentDOM.blur(); return true; } },
     ]),
+
+    // Additional extensions (e.g., Emmet)
+    ...extraExtensions,
 
     // Change listener
     EditorView.updateListener.of((update) => {

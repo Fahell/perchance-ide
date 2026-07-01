@@ -11,6 +11,8 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { dbSaveVfs } from "../db.js";
+import { getEmmetSyntax } from "../editor/emmet-langs.js";
+import { getEmmetExtensions } from "../editor/emmet.js";
 import { setCurrentView } from "../editor/view-store.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
@@ -90,10 +92,15 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       ]);
       if (cancelled || !containerRef.current) return;
 
+      // Lazy-load Emmet for eligible file types (11.5)
+      const emmetSyntax = getEmmetSyntax(path);
+      const emmetExts = emmetSyntax ? await getEmmetExtensions(emmetSyntax) : [];
+
       viewRef.current = createEditor({
         parent: containerRef.current,
         doc: content,
         language: getLanguageSupport(path),
+        extraExtensions: emmetExts,
         fontSize,
         tabSize,
         wordWrap,
