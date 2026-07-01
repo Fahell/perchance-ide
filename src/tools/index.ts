@@ -24,6 +24,7 @@ const tools: Record<string, Tool> = {
     parameters: {
       query: "The search query string. Be specific — include topic, year, or context when relevant.",
     },
+    timeoutMs: 30_000,
     execute: async (args) => {
       const result = await webSearch(args.query, 5);
       return result.raw || "No results found.";
@@ -37,6 +38,7 @@ const tools: Record<string, Tool> = {
       url: "The full URL to scrape (must start with http:// or https://)",
       maxChars: "Maximum characters to return (default 3000). Use higher values for detailed articles.",
     },
+    timeoutMs: 30_000,
     execute: async (args) => {
       const maxChars = typeof args.maxChars === "number" ? args.maxChars : 3000;
       const result = await scrapeUrl(args.url, maxChars);

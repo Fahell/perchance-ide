@@ -8,11 +8,14 @@
  *   4. Repeat until LLM gives a final answer (no tool_call)
  */
 
+import { getPyodideStatus } from "./terminal/pyodide.js";
 import { getTool, getToolDescriptions, hasTool } from "./tools/index.js";
 import { getAi } from "./types.js";
+import { vfsGetAll } from "./vfs.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 8;
+const LLM_TIMEOUT_MS = 300_000; // 5 min — Perchance AI can be slow
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
 // ─── Timeout Helpers ────────────────────────────────────────
@@ -138,12 +141,16 @@ export function aiCallWithSignal(
 }
 
 // ─── System Prompt for Tools ────────────────────────────────
-function buildToolPrompt(): string {
+function buildToolPrompt(vfsFileCount?: number, pyodideLoaded?: boolean): string {
   return `You are a research agent. Your job is to find accurate, up-to-date information using your tools.
 
 IMPORTANT CONTEXT:
-- Your training data has a cutoff of early 2025. The current date is 2026.
+- Your training data has a cutoff of early 2025. The current date is ${new Date().getFullYear()}.
 - If asked about events in 2025-2026, you MUST use web_search — do not say "it hasn't happened yet" or refuse.
+
+PROJECT STATE:
+- Files in project: ${vfsFileCount ?? '?'}
+- Python runtime: ${pyodideLoaded ? '● Loaded and ready' : '○ Not loaded (will load on first use)'}
 
 Available tools:
 ${getToolDescriptions()}
@@ -236,6 +243,42 @@ function cleanResponse(text: string): string {
   return text.replace(TOOL_CALL_REGEX, "").trim();
 }
 
+// ─── Repetition Detector ────────────────────────────────────
+interface ToolCallFingerprint {
+  toolName: string;
+  argsHash: string;
+}
+
+class RepetitionDetector {
+  private recent: ToolCallFingerprint[] = [];
+  private consecutiveIdentical = 0;
+
+  private hash(args: Record<string, any>): string {
+    return JSON.stringify(args, Object.keys(args).sort());
+  }
+
+  /**
+   * Check if the current tool call is repetitive.
+   * Returns 'ok' if no repetition, 'warn' if 3+ consecutive identical, 'interrupt' if 5+.
+   */
+  check(toolName: string, args: Record<string, any>): 'ok' | 'warn' | 'interrupt' {
+    const fp: ToolCallFingerprint = { toolName, argsHash: this.hash(args) };
+
+    const last = this.recent[this.recent.length - 1];
+    if (last && last.toolName === fp.toolName && last.argsHash === fp.argsHash) {
+      this.consecutiveIdentical++;
+    } else {
+      this.consecutiveIdentical = 1;
+    }
+
+    this.recent.push(fp);
+
+    if (this.consecutiveIdentical >= 5) return 'interrupt';
+    if (this.consecutiveIdentical >= 3) return 'warn';
+    return 'ok';
+  }
+}
+
 // ─── Agent Loop ─────────────────────────────────────────────
 export async function agentLoop(
   userMessage: string,
@@ -246,32 +289,40 @@ export async function agentLoop(
   onToolError?: (toolName: string, args: Record<string, any>, error: string) => void,
   signal?: AbortSignal
 ): Promise<string> {
-  const toolPrompt = buildToolPrompt();
+  // Gather dynamic state for the system prompt
+  const pyodideStatus = getPyodideStatus();
+  const vfsFileCount = vfsGetAll().filter(e => e.type === 'file').length;
+  const toolPrompt = buildToolPrompt(vfsFileCount, pyodideStatus.loaded);
 
   // Build the instruction for the LLM with structured context
-  let instruction = toolPrompt + "\n\n";
+  const instructionParts: string[] = [];
+
+  instructionParts.push(toolPrompt);
 
   // Add summary if available
   if (context.summary) {
-    instruction += `[Earlier conversation summary]:\n${context.summary}\n\n`;
+    instructionParts.push(`[Earlier conversation summary]:\n${context.summary}`);
   }
 
   // Add recent messages
   if (context.recentMessages.length > 0) {
-    instruction += "[Recent messages]:\n";
+    let recentBlock = "[Recent messages]:\n";
     for (const msg of context.recentMessages) {
       const role = msg.role === "user" ? "User" : "Assistant";
-      instruction += `${role}: ${msg.content}\n`;
+      recentBlock += `${role}: ${msg.content}\n`;
     }
-    instruction += "\n";
+    instructionParts.push(recentBlock);
   }
 
   // Add memories if available
   if (context.memories) {
-    instruction += `[Key facts from conversation]:\n${context.memories}\n\n`;
+    instructionParts.push(`[Key facts from conversation]:\n${context.memories}`);
   }
 
-  instruction += `User message: ${userMessage}`;
+  instructionParts.push(`User message: ${userMessage}`);
+
+  // Initialize repetition detector
+  const detector = new RepetitionDetector();
 
   let iteration = 0;
 
@@ -286,13 +337,13 @@ export async function agentLoop(
 
     // Call the LLM via ai-text-plugin with timeout + cancellation
     const llmSignal = signal
-      ? combineSignals(signal, AbortSignal.timeout(60_000))
-      : AbortSignal.timeout(60_000);
+      ? combineSignals(signal, AbortSignal.timeout(LLM_TIMEOUT_MS))
+      : AbortSignal.timeout(LLM_TIMEOUT_MS);
     let result: any;
     try {
       result = await aiCallWithSignal(
         {
-          instruction: instruction,
+          instruction: instructionParts.join("\n\n"),
           stopSequences: ["</tool_call>"],
         },
         llmSignal
@@ -301,7 +352,7 @@ export async function agentLoop(
       if (err instanceof DOMException && err.name === 'AbortError') {
         const reason = signal?.aborted
           ? "The operation was cancelled by the user."
-          : "The operation timed out after 60 seconds.";
+          : `The operation timed out after ${LLM_TIMEOUT_MS / 1000} seconds.`;
         onStatus?.(reason);
         return reason;
       }
@@ -321,7 +372,7 @@ export async function agentLoop(
       // Empty response — retry with explicit instruction (once)
       if (iteration < MAX_ITERATIONS) {
         onStatus?.("Retrying — empty response...");
-        instruction += "\n\nYour previous response was empty. Write a clear, concise answer to the user's question using the information above. Do NOT output tool_call XML — just write your answer directly.";
+        instructionParts.push("Your previous response was empty. Write a clear, concise answer to the user's question using the information above. Do NOT output tool_call XML — just write your answer directly.");
         continue;
       }
     }
@@ -355,15 +406,23 @@ export async function agentLoop(
         } else {
           nextStep = "Now respond to the user based on this information.";
         }
-        const toolResult = `\n\n[Tool Result - ${call.name}]:\n${result}\n\n${nextStep}`;
+        const toolResult = `[Tool Result - ${call.name}]:\n${result}\n\n${nextStep}`;
 
         // For next iteration, include the tool result
-        instruction += toolResult;
+        instructionParts.push(toolResult);
+
+        // Check for repetitive tool calls
+        const repStatus = detector.check(call.name, call.args);
+        if (repStatus === 'warn') {
+          instructionParts.push(`[System]: You have called ${call.name} with the same arguments multiple times in a row. This appears to be repetitive. Try a different approach or synthesize the answer from information you already have.`);
+        } else if (repStatus === 'interrupt') {
+          return `The agent was interrupted because it appeared to be stuck in a loop (called ${call.name} with identical arguments too many times). Here's what was accomplished so far. Please try rephrasing your request.`;
+        }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         console.error(`[Agent] Tool ${call.name} failed:`, errorMsg);
         onToolError?.(call.name, call.args, errorMsg);
-        instruction += `\n\n[Tool Error - ${call.name}]: ${errorMsg}\n\nThe tool failed. Respond to the user explaining the issue.`;
+        instructionParts.push(`[Tool Error - ${call.name}]: ${errorMsg}\n\nThe tool failed. Respond to the user explaining the issue.`);
       }
     }
   }

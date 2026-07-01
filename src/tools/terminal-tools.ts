@@ -72,7 +72,7 @@ export function createTerminalTools(): Record<string, Tool> {
       parameters: {
         name: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).",
       },
-      timeoutMs: 60_000,
+      timeoutMs: 120_000,
       execute: async (args) => {
         const name = String(args.name || "").trim();
         if (!name) return "Error: package name is required.";

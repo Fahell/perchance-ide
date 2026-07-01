@@ -58,6 +58,7 @@ export function createVfsTools(): Record<string, Tool> {
       parameters: {
         path: "Absolute path of the file to read (e.g., /src/index.ts). Must start with /.",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const path = String(args.path || "");
         if (!path) return "Error: path is required.";
@@ -83,6 +84,7 @@ export function createVfsTools(): Record<string, Tool> {
         path: "Absolute path of the file to write (e.g., /src/utils/helpers.ts). Must start with /.",
         content: "The full text content to write to the file.",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const path = String(args.path || "");
         const content = String(args.content || "");
@@ -113,6 +115,7 @@ export function createVfsTools(): Record<string, Tool> {
       parameters: {
         dir: "Directory path to list (default: /). Example: /src",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const dir = String(args.dir || "/");
         if (!vfsExists(dir)) return `Error: Directory not found: ${dir}`;
@@ -134,6 +137,7 @@ export function createVfsTools(): Record<string, Tool> {
         query: "The text to search for in file names and file contents (case-insensitive).",
         maxResults: "Maximum number of results to return (default 10, max 20).",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const query = String(args.query || "").toLowerCase();
         if (!query.trim()) return "Error: query is required.";
@@ -170,6 +174,7 @@ export function createVfsTools(): Record<string, Tool> {
       parameters: {
         path: "Absolute path of the file or folder to delete (e.g., /src/old-file.ts). Cannot delete root (/).",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const path = String(args.path || "");
         if (!path) return "Error: path is required.";
@@ -201,6 +206,7 @@ export function createVfsTools(): Record<string, Tool> {
         oldPath: "Current absolute path of the file or folder (e.g., /src/old-name.ts).",
         newPath: "New absolute path (e.g., /src/new-name.ts). Must not already exist.",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const oldPath = String(args.oldPath || "");
         const newPath = String(args.newPath || "");

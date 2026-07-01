@@ -5,8 +5,8 @@
  * (index-based retrieval). Reads from the custom message store.
  */
 
+import { getAllMessages } from "../message-store.js";
 import type { Tool } from "./index.js";
-import { getAllMessages, getMessageCount } from "../message-store.js";
 
 // ─── Stopwords (minimal set for BM25-lite) ──────────────────
 const STOPWORDS = new Set([
@@ -105,6 +105,7 @@ export function createContextTools(): Record<string, Tool> {
       parameters: {
         query: "Keywords to search for. Use specific terms from what the user is asking about.",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         const query = String(args.query || "");
         if (!query.trim()) return "Error: query is required.";
@@ -137,6 +138,7 @@ export function createContextTools(): Record<string, Tool> {
         from: "Start index (0-based, inclusive). Example: 5",
         to: "End index (0-based, exclusive). Example: 15",
       },
+      timeoutMs: 15_000,
       execute: async (args) => {
         // Get all messages from our custom message store
         const allMessages = getAllMessages().map((m) => ({
