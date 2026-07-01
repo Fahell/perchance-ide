@@ -35,6 +35,17 @@ export interface EditorHistoryEntry {
   future: string[];
 }
 
+export interface OutputEntry {
+  id: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timestamp: number;
+}
+
+const MAX_OUTPUTS = 20;
+
 export interface FileTab {
   path: string;
   name: string;
@@ -70,14 +81,20 @@ export interface IdeState {
   messages: PanelMessage[];
   agentStatus: AgentStatus;
 
-  // Right panel tab (10.1)
-  rightPanelTab: "files" | "outline";
+  // Right panel tab (10.1 / 11.2 / 11.3)
+  rightPanelTab: "files" | "outline" | "preview" | "output";
 
   // Active EditorView ref (10.1)
   editorView: EditorView | null;
 
   // Settings version — incremented on update to trigger editor recreation (10.4)
   settingsVersion: number;
+
+  // VFS version counter — incremented on file writes for preview reactivity (11.2)
+  vfsVersion: number;
+
+  // Output history for OutputPanel (11.3)
+  outputs: OutputEntry[];
 
   // ─── Actions ──────────────────────────────────────────
   setActiveFile: (path: string | null) => void;
@@ -100,7 +117,7 @@ export interface IdeState {
   toggleSidebar: () => void;
 
   // Right panel tab
-  setRightPanelTab: (tab: "files" | "outline") => void;
+  setRightPanelTab: (tab: "files" | "outline" | "preview" | "output") => void;
   setEditorView: (view: EditorView | null) => void;
 
   // File rename (10.3)
@@ -112,6 +129,13 @@ export interface IdeState {
   // Status
   setProcessing: (processing: boolean, message?: string) => void;
   setStatusMessage: (message: string | null) => void;
+
+  // VFS version bump (11.2)
+  bumpVfsVersion: () => void;
+
+  // Output panel (11.3)
+  addOutput: (entry: Omit<OutputEntry, "id" | "timestamp">) => void;
+  clearOutputs: () => void;
 
   // Panel actions (replaces window.__agentPanelActions)
   addUserMessage: (content: string) => void;
@@ -146,9 +170,11 @@ export const ideStore = createStore<IdeState>()(
     pyodideError: null,
     messages: [],
     agentStatus: "idle" as AgentStatus,
-    rightPanelTab: "files" as "files" | "outline",
+    rightPanelTab: "files" as "files" | "outline" | "preview" | "output",
     editorView: null as EditorView | null,
     settingsVersion: 0,
+    vfsVersion: 0,
+    outputs: [] as OutputEntry[],
 
     // ── Actions ────────────────────────────────────────
 
@@ -333,6 +359,23 @@ export const ideStore = createStore<IdeState>()(
       }),
 
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),
+
+    bumpVfsVersion: () => set((s) => ({ vfsVersion: s.vfsVersion + 1 })),
+
+    addOutput: (entry) =>
+      set((s) => {
+        const id = `out-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const full: OutputEntry = {
+          ...entry,
+          id,
+          timestamp: Date.now(),
+        };
+        return {
+          outputs: [...s.outputs, full].slice(-MAX_OUTPUTS),
+        };
+      }),
+
+    clearOutputs: () => set({ outputs: [] }),
 
     setPyodideStatus: (status, error) =>
       set({ pyodideStatus: status, pyodideError: error ?? null }),

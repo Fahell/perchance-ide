@@ -16,7 +16,8 @@ import {
     vfsWrite,
     type VfsTreeNode
 } from "../vfs.js";
-import { OutlinePanel } from "./OutlinePanel.js";
+import { OutputPanel } from "./OutputPanel.js";
+import { PreviewPanel } from "./PreviewPanel.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -217,7 +218,7 @@ export function RightPanel({ locale }: RightPanelProps) {
   }, [selectedPath, renaming]);
 
   const tree = vfsTree("/");
-  const activeTab: "files" | "outline" = (ideStore.getState() as any).rightPanelTab ?? "files";
+  const activeTab: "files" | "outline" | "preview" | "output" = (ideStore.getState() as any).rightPanelTab ?? "files";
 
   return (
     <div style={{
@@ -226,27 +227,34 @@ export function RightPanel({ locale }: RightPanelProps) {
       fontFamily: fonts.mono, fontSize: "11px",
       color: colors.textSecondary, userSelect: "none",
     }}>
-      {/* Tab bar: Files | Outline */}
+      {/* Tab bar: Files | Outline | Preview | Output */}
       <div style={{
         display: "flex", borderBottom: `1px solid ${colors.border}`,
         flexShrink: 0,
       }}>
-        {["files", "outline"].map((tab) => (
-          <div key={tab}
-            onClick={() => (ideStore.getState() as any).setRightPanelTab(tab)}
-            style={{
-              padding: "6px 10px", fontSize: "9px", textTransform: "uppercase",
-              letterSpacing: "0.5px", cursor: "pointer", userSelect: "none",
-              color: activeTab === tab ? colors.text : colors.textMuted,
-              background: activeTab === tab ? colors.bg : "transparent",
-              borderBottom: activeTab === tab ? `1px solid ${colors.text}` : "1px solid transparent",
-              marginBottom: "-1px",
-            }}>
-            {tab === "files"
-              ? (t("fileExplorer.title", locale) || "files")
-              : (t("outline.title", locale) || "outline")}
-          </div>
-        ))}
+        {["files", "outline", "preview", "output"].map((tab) => {
+          const label = tab === "files"
+            ? (t("fileExplorer.title", locale) || "files")
+            : tab === "outline"
+              ? (t("outline.title", locale) || "outline")
+              : tab === "preview"
+                ? (t("preview.title", locale) || "preview")
+                : (t("output.title", locale) || "output");
+          return (
+            <div key={tab}
+              onClick={() => (ideStore.getState() as any).setRightPanelTab(tab)}
+              style={{
+                padding: "6px 10px", fontSize: "9px", textTransform: "uppercase",
+                letterSpacing: "0.5px", cursor: "pointer", userSelect: "none",
+                color: activeTab === tab ? colors.text : colors.textMuted,
+                background: activeTab === tab ? colors.bg : "transparent",
+                borderBottom: activeTab === tab ? `1px solid ${colors.text}` : "1px solid transparent",
+                marginBottom: "-1px",
+              }}>
+              {label}
+            </div>
+          );
+        })}
       </div>
 
       {activeTab === "files" ? (
@@ -340,9 +348,13 @@ export function RightPanel({ locale }: RightPanelProps) {
             {t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}
           </div>
         </>
+      ) : activeTab === "preview" ? (
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <PreviewPanel locale={locale} />
+        </div>
       ) : (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <OutlinePanel locale={locale} />
+          <OutputPanel locale={locale} />
         </div>
       )}
     </div>

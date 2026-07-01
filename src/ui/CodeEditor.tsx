@@ -107,6 +107,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             vfsWrite(path, doc);
             ideStore.getState().setFileDirty(path, false);
             ideStore.getState().setFileSaveStatus(path, "saved");
+            ideStore.getState().bumpVfsVersion();
             schedulePersist();
             // Auto-clear save status after 2s
             window.setTimeout(() => {
@@ -138,6 +139,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       vfsWrite(path, viewRef.current.state.doc.toString());
       ideStore.getState().setFileDirty(path, false);
       ideStore.getState().setFileSaveStatus(path, "saved");
+      ideStore.getState().bumpVfsVersion();
       // Auto-clear save status after 2s
       window.setTimeout(() => {
         if (!mountedRef.current) return;

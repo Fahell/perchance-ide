@@ -135,6 +135,21 @@ const en: Translations = {
   "fileSearch.noResults": "no results",
   "fileSearch.noFiles": "no files in project",
   "fileSearch.results": "{n} results",
+
+  // Preview (11.2)
+  "preview.title": "preview",
+  "preview.noFile": "no file open",
+  "preview.noHtml": "open an HTML file to preview",
+
+  // Output (11.3)
+  "output.title": "output",
+  "output.empty": "no outputs yet",
+  "output.clear": "clear",
+  "output.exitCode": "exit code: {code}",
+  "output.stdout": "stdout",
+  "output.stderr": "stderr",
+  "output.copy": "copy",
+  "output.copied": "copied!",
 };
 
 const ptBR: Translations = {
@@ -252,6 +267,21 @@ const ptBR: Translations = {
   "fileSearch.noResults": "nenhum resultado",
   "fileSearch.noFiles": "nenhum arquivo no projeto",
   "fileSearch.results": "{n} resultados",
+
+  // Preview (11.2)
+  "preview.title": "visualização",
+  "preview.noFile": "nenhum arquivo aberto",
+  "preview.noHtml": "abra um arquivo HTML para visualizar",
+
+  // Output (11.3)
+  "output.title": "saída",
+  "output.empty": "nenhuma saída ainda",
+  "output.clear": "limpar",
+  "output.exitCode": "código de saída: {code}",
+  "output.stdout": "saída padrão",
+  "output.stderr": "erro padrão",
+  "output.copy": "copiar",
+  "output.copied": "copiado!",
 };
 
 const es: Translations = {
@@ -355,6 +385,21 @@ const es: Translations = {
   "fileSearch.noResults": "sin resultados",
   "fileSearch.noFiles": "sin archivos en el proyecto",
   "fileSearch.results": "{n} resultados",
+
+  // Preview (11.2)
+  "preview.title": "vista previa",
+  "preview.noFile": "sin archivo abierto",
+  "preview.noHtml": "abre un archivo HTML para previsualizar",
+
+  // Output (11.3)
+  "output.title": "salida",
+  "output.empty": "sin salidas aún",
+  "output.clear": "limpiar",
+  "output.exitCode": "código de salida: {code}",
+  "output.stdout": "salida estándar",
+  "output.stderr": "error estándar",
+  "output.copy": "copiar",
+  "output.copied": "copiado!",
 };
 
 const ja: Translations = {
@@ -459,6 +504,21 @@ const ja: Translations = {
   "fileSearch.noResults": "結果なし",
   "fileSearch.noFiles": "プロジェクトにファイルがありません",
   "fileSearch.results": "{n}件",
+
+  // Preview (11.2)
+  "preview.title": "プレビュー",
+  "preview.noFile": "ファイルが開かれていません",
+  "preview.noHtml": "プレビューするにはHTMLファイルを開いてください",
+
+  // Output (11.3)
+  "output.title": "出力",
+  "output.empty": "出力はまだありません",
+  "output.clear": "クリア",
+  "output.exitCode": "終了コード: {code}",
+  "output.stdout": "標準出力",
+  "output.stderr": "標準エラー出力",
+  "output.copy": "コピー",
+  "output.copied": "コピーしました!",
 };
 
 const zh: Translations = {
@@ -563,6 +623,21 @@ const zh: Translations = {
   "fileSearch.noResults": "无结果",
   "fileSearch.noFiles": "项目中无文件",
   "fileSearch.results": "{n}个结果",
+
+  // Preview (11.2)
+  "preview.title": "预览",
+  "preview.noFile": "未打开文件",
+  "preview.noHtml": "打开HTML文件以预览",
+
+  // Output (11.3)
+  "output.title": "输出",
+  "output.empty": "暂无输出",
+  "output.clear": "清除",
+  "output.exitCode": "退出代码: {code}",
+  "output.stdout": "标准输出",
+  "output.stderr": "标准错误",
+  "output.copy": "复制",
+  "output.copied": "已复制!",
 };
 
 export const dict: Record<Locale, Translations> = {

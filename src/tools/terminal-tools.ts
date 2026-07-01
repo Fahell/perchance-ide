@@ -8,6 +8,7 @@
  * Each tool returns descriptive strings (success or error) — never throws.
  */
 
+import { ideStore } from "../store.js";
 import { executePython, installPackage } from "../terminal/pyodide.js";
 import { truncateOutput } from "../utils/truncate.js";
 import { vfsExists, vfsRead } from "../vfs.js";
@@ -30,8 +31,21 @@ export function createTerminalTools(): Record<string, Tool> {
 
         try {
           const result = await executePython(code);
+          // Emit output for OutputPanel (11.3)
+          ideStore.getState().addOutput({
+            command: code.slice(0, 200),
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          });
           return formatPythonResult(result);
         } catch (err: any) {
+          ideStore.getState().addOutput({
+            command: code.slice(0, 200),
+            stdout: "",
+            stderr: err.message || String(err),
+            exitCode: 1,
+          });
           return `Error: Failed to execute Python: ${err.message || err}`;
         }
       },
@@ -59,8 +73,21 @@ export function createTerminalTools(): Record<string, Tool> {
 
         try {
           const result = await executePython(content);
+          // Emit output for OutputPanel (11.3)
+          ideStore.getState().addOutput({
+            command: `execute_script: ${path}`,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          });
           return formatPythonResult(result);
         } catch (err: any) {
+          ideStore.getState().addOutput({
+            command: `execute_script: ${path}`,
+            stdout: "",
+            stderr: err.message || String(err),
+            exitCode: 1,
+          });
           return `Error: Failed to execute script: ${err.message || err}`;
         }
       },

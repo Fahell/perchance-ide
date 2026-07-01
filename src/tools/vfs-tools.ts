@@ -10,6 +10,7 @@
 
 import { dbSaveVfs } from "../db.js";
 import { ideStore } from "../store.js";
+import { setDiff } from "../utils/diff-cache.js";
 import { truncateOutput } from "../utils/truncate.js";
 import {
   vfsDeleteTree,
@@ -89,10 +90,15 @@ export function createVfsTools(): Record<string, Tool> {
         if (!path) return "Error: path is required.";
         if (!path.startsWith("/")) return "Error: path must be absolute (start with /).";
 
-        const before = vfsGetAll().length;
+        // Capture before content for diff view (11.1)
+        const oldContent = vfsRead(path);
+
         vfsWrite(path, content);
-        const after = vfsGetAll().length;
-        const isNew = after > before;
+
+        // Store diff data if file was modified
+        if (oldContent !== null && oldContent !== content) {
+          setDiff(path, oldContent, content);
+        }
 
         // Mark tab as dirty if file is open in editor
         const state = ideStore.getState();
@@ -100,8 +106,11 @@ export function createVfsTools(): Record<string, Tool> {
           state.setFileDirty(path, true);
         }
 
+        state.bumpVfsVersion();
+
         await persistVfs();
         const size = content.length;
+        const isNew = oldContent === null;
         return `Success: ${isNew ? "Created" : "Updated"} ${path} (${size} byte${size === 1 ? "" : "s"})`;
       },
     },

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { ideStore, type IdeState } from "../store.js";
+import { getDiff } from "../utils/diff-cache.js";
+import { DiffView } from "./DiffView.js";
 import { colors, fonts } from "./theme.js";
 import type { ToolCallEntry } from "./types.js";
 
@@ -163,6 +165,21 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
               )}
             </div>
           )}
+
+          {/* Diff view for write_file (11.1) */}
+          {toolCall.name === "write_file" && toolCall.status === "success" && toolCall.args?.path && typeof toolCall.args.path === "string" && (() => {
+            const diff = getDiff(toolCall.args.path as string);
+            if (!diff) return null;
+            return (
+              <>
+                <div style={{ borderTop: `1px solid ${colors.border}`, margin: "6px 0", }} />
+                <div style={{ fontSize: "9px", color: colors.textMuted, marginBottom: "4px", }}>
+                  diff:
+                </div>
+                <DiffView before={diff.before} after={diff.after} />
+              </>
+            );
+          })()}
 
           {/* Error */}
           {toolCall.error && (
