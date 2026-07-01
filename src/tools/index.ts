@@ -54,6 +54,39 @@ const tools: Record<string, Tool> = {
   },
 };
 
+// ─── Argument Validation ────────────────────────────────────
+
+/**
+ * Validate tool arguments against the tool's parameter schema.
+ * Returns null if valid, or a descriptive error string if invalid.
+ */
+export function validateToolArgs(
+  tool: Tool,
+  args: Record<string, unknown>
+): string | null {
+  const errors: string[] = [];
+
+  for (const [key, meta] of Object.entries(tool.parameters)) {
+    const value = args[key];
+
+    if (meta.required && (value === undefined || value === null)) {
+      errors.push(`missing required field '${key}' (${meta.type})`);
+      continue;
+    }
+
+    if (value !== undefined && value !== null) {
+      const actualType = typeof value;
+      if (actualType !== meta.type) {
+        errors.push(`field '${key}' expected ${meta.type} but got ${actualType}`);
+      }
+    }
+  }
+
+  return errors.length > 0
+    ? `Invalid arguments for ${tool.name}: ${errors.join("; ")}`
+    : null;
+}
+
 // ─── Public API ─────────────────────────────────────────────
 export function getTool(name: string): Tool | undefined {
   return tools[name];
