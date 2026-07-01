@@ -3,6 +3,7 @@
  */
 
 import { createContextTools } from "./context-tools.js";
+import { createTerminalTools } from "./terminal-tools.js";
 import { createVfsTools } from "./vfs-tools.js";
 import { scrapeUrl, webSearch } from "./web-search.js";
 
@@ -70,4 +71,11 @@ export function initVfsTools(): void {
   const vfsTools = createVfsTools();
   Object.assign(tools, vfsTools);
   console.log("📁 [Tools] VFS tools registered:", Object.keys(vfsTools).join(", "));
+}
+
+// ─── Terminal Tools ───────────────────────────────────────────
+export function initTerminalTools(): void {
+  const terminalTools = createTerminalTools();
+  Object.assign(tools, terminalTools);
+  console.log("🐍 [Tools] Terminal tools registered:", Object.keys(terminalTools).join(", "));
 }

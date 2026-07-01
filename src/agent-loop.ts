@@ -54,6 +54,15 @@ FILE ACCESS RULES:
 - Use list_files to explore the project structure before making changes.
 - Use delete_file to remove files (only when explicitly asked).
 
+PYTHON EXECUTION RULES:
+- You can execute Python code using run_python or execute_script.
+- Use run_python for quick snippets, calculations, or one-off Python tasks.
+- Use execute_script to run a .py file from the VFS (it must exist first).
+- The VFS is automatically synced to Pyodide's filesystem before execution and synced back after — Python can read/write any project file.
+- Use install_package to install Python packages (e.g., numpy, pandas, requests) before using them in code.
+- Python runs in the browser via WebAssembly — no external server needed.
+- Both stdout and stderr are captured and returned with the exit code.
+
 To use a tool, output EXACTLY this format on its own line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
 

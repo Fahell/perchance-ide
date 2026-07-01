@@ -10,7 +10,7 @@ import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index
 import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
-import { initContextTools, initVfsTools } from "./tools/index.js";
+import { initContextTools, initTerminalTools, initVfsTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
@@ -218,6 +218,9 @@ function startAgent() {
 
   // Register VFS tools (read_file, write_file, etc.)
   initVfsTools();
+
+  // Register terminal tools (run_python, execute_script, install_package)
+  initTerminalTools();
 
   console.log("✅ [Agent] Ready!");
   console.log("💡 [Agent] Type in the sidebar panel to start.");
