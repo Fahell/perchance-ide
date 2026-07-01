@@ -25,6 +25,9 @@ export function MessageList({ children, outerRef }: MessageListProps) {
   return (
     <div
       ref={containerRef}
+      role="log"
+      aria-live="polite"
+      aria-label="Chat messages"
       style={{
         flex: "1",
         minHeight: "0",

@@ -1,6 +1,6 @@
-import { h } from "preact";
-import { colors, fonts } from "./theme.js";
 import { t, type Locale } from "../i18n/index.js";
+import { Modal } from "./Modal.js";
+import { colors, fonts } from "./theme.js";
 
 interface FaqModalProps {
   isOpen: boolean;
@@ -32,50 +32,9 @@ const FAQ_ITEMS = [
 ];
 
 export function FaqModal({ isOpen, locale, onClose }: FaqModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        top: "0",
-        left: "0",
-        right: "0",
-        bottom: "0",
-        background: "rgba(0,0,0,0.85)",
-        zIndex: "1000",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: colors.bg,
-          padding: "16px",
-          maxWidth: "400px",
-          width: "92%",
-          maxHeight: "80vh",
-          overflowY: "auto",
-          border: `1px solid ${colors.border}`,
-          fontFamily: fonts.mono,
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-          <h3 style={{ margin: "0", color: colors.textSecondary, fontSize: "11px", letterSpacing: "1px", textTransform: "uppercase" }}>
-            {t("faq.title", locale) || "faq"}
-          </h3>
-          <span
-            onClick={onClose}
-            style={{ color: colors.textMuted, cursor: "pointer", fontSize: "11px" }}
-          >
-            [x]
-          </span>
-        </div>
-
+    <Modal isOpen={isOpen} onClose={onClose} title={t("faq.title", locale) || "faq"} wide>
+      <div style={{ fontFamily: fonts.mono }}>
         {/* FAQ Items */}
         {FAQ_ITEMS.map((item, i) => (
           <div key={i} style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
@@ -88,6 +47,6 @@ export function FaqModal({ isOpen, locale, onClose }: FaqModalProps) {
           </div>
         ))}
       </div>
-    </div>
+    </Modal>
   );
 }

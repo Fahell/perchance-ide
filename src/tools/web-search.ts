@@ -8,6 +8,30 @@
 
 import { retryWithBackoff } from "../utils/retry.js";
 
+// ─── Typed Error ────────────────────────────────────────────
+class FetchError extends Error {
+  response: Response;
+  constructor(message: string, response: Response) {
+    super(message);
+    this.name = "FetchError";
+    this.response = response;
+  }
+}
+
+// ─── Jina API Response Types ────────────────────────────────
+interface JinaSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  content?: string;
+}
+
+interface JinaSearchResponse {
+  code?: number;
+  data?: JinaSearchResult[];
+  detail?: string;
+}
+
 // ─── API Key Management ─────────────────────────────────────
 let currentApiKey = "";
 
@@ -83,17 +107,15 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
       signal: AbortSignal.timeout(20_000),
     });
     if (!r.ok) {
-      const err = new Error(`Jina search failed: ${r.status} ${r.statusText}`);
-      (err as any).response = r;
-      throw err;
+      throw new FetchError(`Jina search failed: ${r.status} ${r.statusText}`, r);
     }
     return r;
   }, { maxRetries: 3 });
 
-  const data = await res.json();
+  const response: JinaSearchResponse = await res.json();
 
   // Jina returns an array of results
-  const results: SearchResult[] = (data.data || data || []).slice(0, limit).map((item: any) => ({
+  const results: SearchResult[] = (response.data || []).slice(0, limit).map((item: JinaSearchResult) => ({
     title: item.title || "",
     url: item.url || "",
     description: item.description || "",
@@ -118,9 +140,7 @@ export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeRes
       signal: AbortSignal.timeout(25_000),
     });
     if (!r.ok) {
-      const err = new Error(`Jina scrape failed: ${r.status} ${r.statusText}`);
-      (err as any).response = r;
-      throw err;
+      throw new FetchError(`Jina scrape failed: ${r.status} ${r.statusText}`, r);
     }
     return r;
   }, { maxRetries: 3 });

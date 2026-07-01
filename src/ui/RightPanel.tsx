@@ -293,7 +293,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       color: colors.textSecondary, userSelect: "none",
     }}>
       {/* Tab bar: Files | Outline | Preview | Output */}
-      <div style={{
+      <div role="tablist" aria-label="Panels" style={{
         display: "flex", borderBottom: `1px solid ${colors.border}`,
         flexShrink: 0,
       }}>
@@ -307,7 +307,11 @@ export function RightPanel({ locale }: RightPanelProps) {
                 : (t("output.title", locale) || "output");
           return (
             <div key={tab}
+              role="tab"
+              aria-selected={activeTab === tab}
+              tabIndex={activeTab === tab ? 0 : -1}
               onClick={() => (ideStore.getState() as any).setRightPanelTab(tab)}
+              onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (ideStore.getState() as any).setRightPanelTab(tab); } }}
               style={{
                 padding: "6px 10px", fontSize: "9px", textTransform: "uppercase",
                 letterSpacing: "0.5px", cursor: "pointer", userSelect: "none",
@@ -343,7 +347,7 @@ export function RightPanel({ locale }: RightPanelProps) {
           </div>
 
           {/* Tree */}
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "2px 0" }}>
+          <div role="tree" aria-label="File explorer" style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "2px 0" }}>
             {tree.length === 0 && (
               <div style={{ padding: "12px 8px", color: colors.textMuted, fontSize: "10px", fontStyle: "italic" }}>
                 {t("fileExplorer.empty", locale) || "empty project"}
@@ -478,7 +482,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu, onSt
   }
 
   return (
-    <div>
+    <div role="treeitem" aria-expanded={isDir ? isExpanded : undefined}>
       <div onClick={handleClick}
         onContextMenu={(e: MouseEvent) => onContextMenu(node.path, e)}
         onMouseEnter={() => setRowHover(true)}
@@ -498,6 +502,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu, onSt
         {isRenaming ? (
           <input
             value={renameValue}
+            aria-label="Rename file"
             onInput={(e: any) => onRenameChange(e.currentTarget.value)}
             onKeyDown={(e: KeyboardEvent) => {
               if (e.key === "Enter") onRenameCommit();
@@ -595,6 +600,7 @@ function CreateInput({ isDir, value, onChange, onCommit, onCancel, depth = 0 }: 
       </span>
       <input
         value={value}
+        aria-label={isDir ? "New folder name" : "New file name"}
         onInput={(e: any) => onChange(e.currentTarget.value)}
         onKeyDown={(e: KeyboardEvent) => {
           if (e.key === "Enter") onCommit();

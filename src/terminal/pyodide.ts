@@ -37,7 +37,10 @@ interface Pyodide {
     set: (name: string, value: any) => void;
     delete: (name: string) => void;
   };
-  [key: string]: any;
+  /** Register a JavaScript module so it can be imported from Python. */
+  registerJsModule?: (name: string, module: Record<string, unknown>) => void;
+  /** Unregister a JavaScript module. */
+  unregisterJsModule?: (name: string) => void;
 }
 
 // ─── Singleton ──────────────────────────────────────────────
@@ -236,13 +239,13 @@ export async function executePython(code: string): Promise<PythonResult> {
 
   try {
     await withTimeout(pyodide.runPythonAsync(code), 120_000, "runPythonAsync");
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Check if it was a timeout
     if (err instanceof DOMException && err.name === 'AbortError') {
       const msg = "Python execution timed out after 120 seconds.";
       stderrBuffer.push(msg);
     } else {
-      stderrBuffer.push(String(err.message || err));
+      stderrBuffer.push(err instanceof Error ? err.message : String(err));
     }
     exitCode = 1;
   }
@@ -267,8 +270,9 @@ export async function installPackage(name: string): Promise<string> {
     // Try pre-built package first
     await withTimeout(pyodide.loadPackage(name), 60_000, "loadPackage");
     return `Success: Package '${name}' installed.`;
-  } catch {
+  } catch (err: unknown) {
     // Fallback to micropip for pure-Python wheels
+    console.warn("[Pyodide] loadPackage failed, trying micropip:", err instanceof Error ? err.message : String(err));
     try {
       await withTimeout(pyodide.runPythonAsync(`
         import micropip

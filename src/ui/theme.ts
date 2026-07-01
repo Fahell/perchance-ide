@@ -16,7 +16,7 @@ export const colors = {
   // Text
   text: "#ffffff",
   textSecondary: "#888888",
-  textMuted: "#444444",
+  textMuted: "#757575",
   textHighlight: "#cccccc",
 
   // Status

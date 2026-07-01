@@ -7,7 +7,9 @@
     "build": "node esbuild.config.mjs",
     "build:watch": "node esbuild.config.mjs --watch",
     "dev": "node esbuild.config.mjs --watch",
-    "deploy": "bash deploy.sh"
+    "deploy": "bash deploy.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "perchance",
@@ -17,7 +19,9 @@
   "license": "MIT",
   "devDependencies": {
     "esbuild": "^0.28.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.0",
+    "jsdom": "^27.2.0"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

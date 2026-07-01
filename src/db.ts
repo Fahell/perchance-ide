@@ -133,6 +133,25 @@ export async function dbKvGet<T = unknown>(key: string): Promise<T | undefined> 
   return (entry?.value as T) ?? undefined;
 }
 
+/**
+ * Like `dbKvGet<T>` but validates the stored value with a runtime type guard.
+ * Returns `undefined` (with a warning) if the stored data doesn't match the expected shape.
+ * Use this instead of `dbKvGet` for data that must be structurally correct.
+ */
+export async function dbKvGetValidated<T>(
+  key: string,
+  validator: (value: unknown) => value is T
+): Promise<T | undefined> {
+  const db = await getDb();
+  const entry = await db.get("kv", key);
+  if (entry?.value === undefined) return undefined;
+  if (!validator(entry.value)) {
+    console.warn(`[db] Validation failed for key "${key}" — stored data shape mismatch`);
+    return undefined;
+  }
+  return entry.value;
+}
+
 export async function dbKvSet(key: string, value: unknown): Promise<void> {
   const db = await getDb();
   await db.put("kv", { key, value });

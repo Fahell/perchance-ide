@@ -22,11 +22,11 @@ export function createTerminalTools(): Record<string, Tool> {
       description:
         "Execute Python code in the browser via Pyodide (WebAssembly). Returns stdout, stderr, and exit code. The VFS is automatically synced to Python's filesystem before execution, and any file changes made by Python are synced back afterwards. Use this for calculations, data processing, testing code snippets, or any Python task. Supports most standard library modules and popular packages like numpy, pandas, requests (via install_package first).",
       parameters: {
-        code: "The Python source code to execute. Can include multiple statements, function definitions, etc.",
+        code: { description: "The Python source code to execute. Can include multiple statements, function definitions, etc.", type: "string", required: true },
       },
       timeoutMs: 120_000,
       execute: async (args) => {
-        const code = String(args.code || "").trim();
+        const code = String(args.code ?? "").trim();
         if (!code) return "Error: code is required.";
 
         try {
@@ -39,14 +39,15 @@ export function createTerminalTools(): Record<string, Tool> {
             exitCode: result.exitCode,
           });
           return formatPythonResult(result);
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
           ideStore.getState().addOutput({
             command: code.slice(0, 200),
             stdout: "",
-            stderr: err.message || String(err),
+            stderr: msg,
             exitCode: 1,
           });
-          return `Error: Failed to execute Python: ${err.message || err}`;
+          return `Error: Failed to execute Python: ${msg}`;
         }
       },
     },
@@ -56,7 +57,7 @@ export function createTerminalTools(): Record<string, Tool> {
       description:
         "Execute a .py file from the virtual file system using Pyodide (WebAssembly Python). Reads the file, runs it, and returns stdout, stderr, and exit code. The VFS is automatically synced before execution and synced back afterwards (so Python can read/write project files). Use this to run existing Python scripts in the project.",
       parameters: {
-        path: "Absolute path to a .py file in the VFS (e.g., /scripts/analyze.py). The file must exist and have a .py extension.",
+        path: { description: "Absolute path to a .py file in the VFS (e.g., /scripts/analyze.py). The file must exist and have a .py extension.", type: "string", required: true },
       },
       timeoutMs: 120_000,
       execute: async (args) => {
@@ -81,14 +82,15 @@ export function createTerminalTools(): Record<string, Tool> {
             exitCode: result.exitCode,
           });
           return formatPythonResult(result);
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
           ideStore.getState().addOutput({
             command: `execute_script: ${path}`,
             stdout: "",
-            stderr: err.message || String(err),
+            stderr: msg,
             exitCode: 1,
           });
-          return `Error: Failed to execute script: ${err.message || err}`;
+          return `Error: Failed to execute script: ${msg}`;
         }
       },
     },
@@ -98,7 +100,7 @@ export function createTerminalTools(): Record<string, Tool> {
       description:
         "Install a Python package in the Pyodide runtime. Tries pre-compiled packages first (numpy, pandas, matplotlib, etc.), then falls back to micropip for pure-Python wheels from PyPI. The package is available for all subsequent run_python and execute_script calls. Use this before running code that imports external libraries.",
       parameters: {
-        name: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).",
+        name: { description: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).", type: "string", required: true },
       },
       timeoutMs: 120_000,
       execute: async (args) => {
@@ -108,8 +110,9 @@ export function createTerminalTools(): Record<string, Tool> {
         try {
           const result = await installPackage(name);
           return result;
-        } catch (err: any) {
-          return `Error: ${err.message || err}`;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return `Error: ${msg}`;
         }
       },
     },

@@ -58,11 +58,11 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Read the contents of a file from the project's virtual file system. Returns the file content (max 5000 characters). Use this to examine code, configs, documentation, or any text file in the project.",
       parameters: {
-        path: "Absolute path of the file to read (e.g., /src/index.ts). Must start with /.",
+        path: { description: "Absolute path of the file to read (e.g., /src/index.ts). Must start with /.", type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const path = String(args.path || "");
+        const path = String(args.path ?? "");
         if (!path) return "Error: path is required.";
         if (!vfsExists(path)) return `Error: File not found: ${path}`;
         const content = vfsRead(path);
@@ -80,13 +80,13 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Create a new file or overwrite an existing file in the project's virtual file system. Parent directories are created automatically. The file will be persisted to IndexedDB. If the file is currently open in the editor, it will be marked as modified (dirty).",
       parameters: {
-        path: "Absolute path of the file to write (e.g., /src/utils/helpers.ts). Must start with /.",
-        content: "The full text content to write to the file.",
+        path: { description: "Absolute path of the file to write (e.g., /src/utils/helpers.ts). Must start with /.", type: "string", required: true },
+        content: { description: "The full text content to write to the file.", type: "string" },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const path = String(args.path || "");
-        const content = String(args.content || "");
+        const path = String(args.path ?? "");
+        const content = String(args.content ?? "");
         if (!path) return "Error: path is required.";
         if (!path.startsWith("/")) return "Error: path must be absolute (start with /).";
 
@@ -120,11 +120,11 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "List files and folders in a directory of the virtual file system. Returns a formatted tree view with icons (📁 for folders, 📄 for files). Use this to explore the project structure.",
       parameters: {
-        dir: "Directory path to list (default: /). Example: /src",
+        dir: { description: "Directory path to list (default: /). Example: /src", type: "string" },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const dir = String(args.dir || "/");
+        const dir = String(args.dir ?? "/");
         if (!vfsExists(dir)) return `Error: Directory not found: ${dir}`;
         const tree = vfsTree(dir);
         if (tree.length === 0) return `(empty directory: ${dir})`;
@@ -141,12 +141,12 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Search for files in the virtual file system by name or content (case-insensitive). Returns matching file paths with a content snippet (first 200 characters). Useful for finding where a function, variable, or concept is used in the project.",
       parameters: {
-        query: "The text to search for in file names and file contents (case-insensitive).",
-        maxResults: "Maximum number of results to return (default 10, max 20).",
+        query: { description: "The text to search for in file names and file contents (case-insensitive).", type: "string", required: true },
+        maxResults: { description: "Maximum number of results to return (default 10, max 20).", type: "number" },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const query = String(args.query || "").toLowerCase();
+        const query = String(args.query ?? "").toLowerCase();
         if (!query.trim()) return "Error: query is required.";
         const maxResults = Math.min(20, Math.max(1, Number(args.maxResults) || 10));
 
@@ -179,11 +179,11 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Delete a file or folder (recursively) from the virtual file system. If any open editor tabs point to the deleted path, they will be closed automatically. Changes are persisted to IndexedDB. Use with caution — this operation cannot be undone.",
       parameters: {
-        path: "Absolute path of the file or folder to delete (e.g., /src/old-file.ts). Cannot delete root (/).",
+        path: { description: "Absolute path of the file or folder to delete (e.g., /src/old-file.ts). Cannot delete root (/).", type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const path = String(args.path || "");
+        const path = String(args.path ?? "");
         if (!path) return "Error: path is required.";
         if (!vfsExists(path)) return `Error: Path not found: ${path}`;
 
@@ -210,13 +210,13 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Rename or move a file or folder within the virtual file system. If the renamed file is currently open in the editor, its tab will be updated to reflect the new path. Cannot overwrite an existing path. Changes are persisted to IndexedDB.",
       parameters: {
-        oldPath: "Current absolute path of the file or folder (e.g., /src/old-name.ts).",
-        newPath: "New absolute path (e.g., /src/new-name.ts). Must not already exist.",
+        oldPath: { description: "Current absolute path of the file or folder (e.g., /src/old-name.ts).", type: "string", required: true },
+        newPath: { description: "New absolute path (e.g., /src/new-name.ts). Must not already exist.", type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const oldPath = String(args.oldPath || "");
-        const newPath = String(args.newPath || "");
+        const oldPath = String(args.oldPath ?? "");
+        const newPath = String(args.newPath ?? "");
         if (!oldPath) return "Error: oldPath is required.";
         if (!newPath) return "Error: newPath is required.";
         if (!vfsExists(oldPath)) return `Error: Path not found: ${oldPath}`;

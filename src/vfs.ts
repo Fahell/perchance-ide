@@ -186,6 +186,8 @@ export function vfsRename(oldPath: string, newPath: string): boolean {
   const nnew = normalize(newPath);
   if (nold === "/" || !_entries.has(nold)) return false;
   if (_entries.has(nnew)) return false; // target exists
+  // Destination parent directory must exist
+  if (!_entries.has(parentDir(nnew))) return false;
 
   const entry = _entries.get(nold)!;
   const now = Date.now();

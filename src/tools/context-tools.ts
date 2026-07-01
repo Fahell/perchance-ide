@@ -103,7 +103,7 @@ export function createContextTools(): Record<string, Tool> {
       description:
         "Search your conversation history by keyword. USE this when the user references something from earlier in the conversation that is NOT in the recent messages above. Returns the most relevant matching messages with their positions.",
       parameters: {
-        query: "Keywords to search for. Use specific terms from what the user is asking about.",
+        query: { description: "Keywords to search for. Use specific terms from what the user is asking about.", type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
@@ -134,9 +134,9 @@ export function createContextTools(): Record<string, Tool> {
       description:
         "Get raw messages by position or count from your conversation history. USE this when you need exact quotes, full context, or specific messages. Returns formatted messages with author and position.",
       parameters: {
-        count: "Number of recent messages to retrieve (default 10). Example: 10",
-        from: "Start index (0-based, inclusive). Example: 5",
-        to: "End index (0-based, exclusive). Example: 15",
+        count: { description: "Number of recent messages to retrieve (default 10).", type: "number" },
+        from: { description: "Start index (0-based, inclusive). Example: 5", type: "number" },
+        to: { description: "End index (0-based, exclusive). Example: 15", type: "number" },
       },
       timeoutMs: 15_000,
       execute: async (args) => {

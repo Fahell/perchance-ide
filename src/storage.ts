@@ -30,7 +30,8 @@ function setData(data: Record<string, unknown>): void {
 export function storageGet<T = unknown>(key: string): T | undefined {
   try {
     const data = getData();
-    return (data[key] as T) ?? undefined;
+    if (!(key in data)) return undefined;
+    return data[key] as T;
   } catch (e) {
     console.warn('[Storage] get(' + key + ') failed:', e);
     return undefined;
@@ -71,10 +72,7 @@ export function storageKeys(): string[] {
 
 export function storageClear(): void {
   try {
-    const data = getData();
-    for (const key of Object.keys(data)) {
-      delete data[key];
-    }
+    setData({});
   } catch (e) {
     console.warn('[Storage] clear() failed:', e);
   }

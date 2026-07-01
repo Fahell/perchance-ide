@@ -22,20 +22,20 @@ export function Header({ version, commit, onFaq, onClear }: HeaderProps) {
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         {onClear && (
-          <span
+          <button
             onClick={onClear}
-            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px" }}
+            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
           >
             [clear]
-          </span>
+          </button>
         )}
         {onFaq && (
-          <span
+          <button
             onClick={onFaq}
-            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px" }}
+            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
           >
             [?]
-          </span>
+          </button>
         )}
         <span style={{ fontSize: "10px", color: colors.textSecondary, fontFamily: fonts.mono }}>
           v{version}+{commit}

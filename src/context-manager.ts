@@ -7,12 +7,12 @@
  */
 
 import type { HistoryMessage } from "./agent-loop.js";
-import { dbKvDel, dbKvGet, dbKvSet } from "./db.js";
+import { dbKvDel, dbKvGet, dbKvGetValidated, dbKvSet } from "./db.js";
 import { getAllMessages, getLastN, getMessageCount, type ChatMessage } from "./message-store.js";
 import { getAi } from "./types.js";
+import { isArrayOf, validateShape } from "./utils/validate.js";
 
 // ─── Constants ──────────────────────────────────────────────
-const CHARS_PER_TOKEN = 4;
 const MAX_CONTEXT_TOKENS = 3000;
 const MAX_RECENT_MESSAGES = 5;
 const SUMMARY_KEY = "context_summary";
@@ -36,8 +36,22 @@ export interface ChunkSummary {
   tokenCount: number;
 }
 
+const isChunkSummary = validateShape<{
+  from: number;
+  to: number;
+  summary: string;
+  tokenCount: number;
+}>({
+  from: (v): v is number => typeof v === "number",
+  to: (v): v is number => typeof v === "number",
+  summary: (v): v is string => typeof v === "string",
+  tokenCount: (v): v is number => typeof v === "number",
+});
+
+const isChunkSummaryArray = isArrayOf(isChunkSummary);
+
 export async function getChunkedSummaries(): Promise<ChunkSummary[]> {
-  return (await dbKvGet<ChunkSummary[]>(CHUNKS_KEY)) ?? [];
+  return (await dbKvGetValidated<ChunkSummary[]>(CHUNKS_KEY, isChunkSummaryArray)) ?? [];
 }
 
 async function persistChunk(chunk: ChunkSummary): Promise<void> {
@@ -51,8 +65,24 @@ export async function clearChunkedSummaries(): Promise<void> {
 }
 
 // ─── Token Estimation ───────────────────────────────────────
+/**
+ * Estimate token count for a text string.
+ * Uses UTF-8 byte length divided by 4 as baseline.
+ * If >15% of characters are code operators/brackets, uses divisor 3.0
+ * (code tokens are denser than natural language).
+ *
+ * This is an approximation — actual tokenization depends on the model.
+ */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+  if (!text) return 1;
+  const bytes = new TextEncoder().encode(text).length;
+  // Heuristic: detect code-heavy content by counting operator/bracket chars
+  const codePattern = /[{}[\]()=+\-*/<>&|!?:;]/g;
+  const codeCharCount = (text.match(codePattern)?.length ?? 0);
+  const codeCharRatio = codeCharCount / text.length;
+  // Code is typically ~3 chars/token, text ~4 chars/token
+  const divisor = codeCharRatio > 0.15 ? 3.0 : 4.0;
+  return Math.max(1, Math.ceil(bytes / divisor));
 }
 
 // ─── Summary Persistence ────────────────────────────────────
