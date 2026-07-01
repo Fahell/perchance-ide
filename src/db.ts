@@ -99,18 +99,20 @@ export async function dbGetMessagesByRange(
 
 export async function dbGetLastN(n: number): Promise<DbMessage[]> {
   const db = await getDb();
-  const index = db.transaction("messages").store.index("by-timestamp");
-  // Get all keys in reverse order, take N
-  const allKeys = await index.getAllKeys();
-  const count = allKeys.length;
-  if (count === 0) return [];
-  const start = Math.max(0, count - n);
-  const keys = allKeys.slice(start);
+  const tx = db.transaction("messages");
+  const index = tx.store.index("by-timestamp");
   const results: DbMessage[] = [];
-  for (const id of keys) {
-    const msg = await db.get("messages", id);
-    if (msg) results.push(msg);
+
+  // Traverse index in reverse to collect only the last N entries,
+  // avoiding getAllKeys() + N individual gets (N+1 pattern).
+  let cursor = await index.openCursor(null, "prev");
+  while (cursor && results.length < n) {
+    results.push(cursor.value);
+    cursor = await cursor.continue();
   }
+
+  // Restore ascending timestamp order (cursor traverses in reverse)
+  results.reverse();
   return results;
 }
 
