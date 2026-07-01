@@ -93,6 +93,7 @@ export interface IdeState {
   addToolCall: (name: string, args: Record<string, unknown>) => string;
   updateToolCall: (id: string, updates: Partial<ToolCallEntry>) => void;
   appendAgentResponse: (response: string) => void;
+  clearMessages: () => void;
 }
 
 // ─── Defaults ────────────────────────────────────────────────
@@ -291,5 +292,7 @@ export const ideStore = createStore<IdeState>()(
           agentStatus: "idle",
         };
       }),
+
+    clearMessages: () => set({ messages: [], agentStatus: "idle" }),
   }))
 );

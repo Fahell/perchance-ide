@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
+import { clearMessages as clearPersistedMessages } from "../message-store.js";
 import type { IdeState } from "../store.js";
 import { ideStore } from "../store.js";
+import { vfsGetAll } from "../vfs.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
@@ -71,6 +74,103 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     onLocaleChange(l);
   };
 
+  const handleClearConversation = async () => {
+    if (agentStatus !== "idle") return;
+    if (!confirm("Clear all messages? This cannot be undone.")) return;
+    ideStore.getState().clearMessages();
+    await clearPersistedMessages();
+  };
+
+  // ── Global keyboard shortcuts ──────────────────────────
+  const shortcutRef = useRef({
+    settingsOpen,
+    contextOpen,
+    faqOpen,
+    agentStatus,
+    setSettingsOpen,
+    setContextOpen,
+    setFaqOpen,
+  });
+  // Keep ref up to date
+  shortcutRef.current = {
+    settingsOpen,
+    contextOpen,
+    faqOpen,
+    agentStatus,
+    setSettingsOpen,
+    setContextOpen,
+    setFaqOpen,
+  };
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const meta = e.metaKey || e.ctrlKey;
+      const s = shortcutRef.current;
+
+      // ── Ctrl+S / Cmd+S: Save active file ──────────────
+      if (meta && e.key === "s") {
+        e.preventDefault();
+        const activeFile = ideStore.getState().activeFile;
+        if (activeFile) {
+          // Dispatch event so CodeEditor can flush pending writes
+          document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
+        }
+        // Force persist VFS to IndexedDB
+        dbSaveVfs(vfsGetAll()).catch((err: unknown) => console.warn("[Shortcuts] persist failed:", err));
+        return;
+      }
+
+      // ── Ctrl+P / Cmd+P: File search placeholder ──────
+      if (meta && e.key === "p") {
+        e.preventDefault();
+        // Placeholder — full modal comes in 10.5
+        const files = vfsGetAll();
+        if (files.length > 0) {
+          console.log("[Shortcuts] Ctrl+P — file search coming in Phase 10. Files:", files.length);
+        }
+        return;
+      }
+
+      // ── Ctrl+W / Cmd+W: Close active tab ─────────────
+      if (meta && e.key === "w") {
+        e.preventDefault();
+        const activeFile = ideStore.getState().activeFile;
+        if (activeFile) {
+          // Flush editor save before closing
+          document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
+          ideStore.getState().closeFile(activeFile);
+        }
+        return;
+      }
+
+      // ── Escape: Close modals or cancel rename ────────
+      if (e.key === "Escape") {
+        if (s.faqOpen) { s.setFaqOpen(false); return; }
+        if (s.contextOpen) { s.setContextOpen(false); return; }
+        if (s.settingsOpen) { s.setSettingsOpen(false); return; }
+        // Cancel rename in explorer
+        document.dispatchEvent(new Event("explorer:cancel-rename"));
+        return;
+      }
+
+      // ── Delete: Delete selected file ─────────────────
+      if (e.key === "Delete" && !isInput) {
+        document.dispatchEvent(new Event("explorer:delete-selected"));
+        return;
+      }
+
+      // ── F2: Rename selected file ─────────────────────
+      if (e.key === "F2" && !isInput) {
+        document.dispatchEvent(new Event("explorer:rename-selected"));
+        return;
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
     <div style={{
       fontFamily: fonts.mono,
@@ -85,7 +185,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
       boxSizing: "border-box",
       overflow: "hidden",
     }}>
-      <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} />
+      <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} onClear={handleClearConversation} />
 
       {/* ─── 3-Column Layout ──────────────────────────────── */}
       <div style={{
@@ -158,7 +258,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
                     elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
                   }
                   if (msg.role === "user") {
-                    elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} />);
+                    elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} timestamp={msg.timestamp} />);
                   } else {
                     elements.push(
                       <AgentMessage

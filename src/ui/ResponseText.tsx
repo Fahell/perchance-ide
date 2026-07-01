@@ -1,8 +1,7 @@
-import { h } from "preact";
-import { useState } from "preact/hooks";
-import { colors, fonts } from "./theme.js";
-import { renderMarkdown } from "./markdown.js";
+import { useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
+import { renderMarkdown } from "./markdown.js";
+import { colors, fonts } from "./theme.js";
 
 interface ResponseTextProps {
   content: string;
@@ -14,6 +13,9 @@ const TRUNCATE_HEIGHT = 150;
 
 export function ResponseText({ content, loading, locale }: ResponseTextProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showCopy, setShowCopy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
 
   if (loading && !content) {
     return (
@@ -36,22 +38,71 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
 
   const isLong = content.length > 500;
 
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      // Fallback for HTTP (Perchance)
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = content;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch (e) {
+        console.warn("[ResponseText] copy failed:", e);
+        return;
+      }
+    }
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopied(true);
+    copyTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <div style={{
-      margin: "4px 0",
-      padding: "8px 12px",
-      background: colors.surface1,
-      borderLeft: `2px solid ${colors.borderEmphasis}`,
-      fontSize: "13px",
-      lineHeight: "1.5",
-      color: colors.text,
-      fontFamily: fonts.mono,
-      wordBreak: "break-word",
-      animation: "fade-in 0.3s ease-out",
-    }}>
+    <div
+      style={{
+        margin: "4px 0",
+        padding: "8px 12px",
+        background: colors.surface1,
+        borderLeft: `2px solid ${colors.borderEmphasis}`,
+        fontSize: "13px",
+        lineHeight: "1.5",
+        color: colors.text,
+        fontFamily: fonts.mono,
+        wordBreak: "break-word",
+        animation: "fade-in 0.3s ease-out",
+        position: "relative",
+      }}
+      onMouseEnter={() => setShowCopy(true)}
+      onMouseLeave={() => setShowCopy(false)}
+    >
       <div style={{ color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
         agent
       </div>
+
+      {/* Copy button */}
+      <button
+        onClick={handleCopy}
+        style={{
+          position: "absolute",
+          top: "4px",
+          right: "8px",
+          background: "none",
+          border: "none",
+          color: copied ? colors.text : colors.textMuted,
+          fontSize: "9px",
+          cursor: "pointer",
+          fontFamily: fonts.mono,
+          opacity: showCopy ? 1 : 0,
+          transition: "opacity 0.15s",
+          padding: "2px 4px",
+        }}
+      >
+        {copied ? "[copied!]" : "[copy]"}
+      </button>
+
       <div style={{
         maxHeight: !expanded && isLong ? `${TRUNCATE_HEIGHT}px` : undefined,
         overflow: !expanded && isLong ? "hidden" : undefined,

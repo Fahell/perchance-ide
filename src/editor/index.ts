@@ -7,6 +7,7 @@
 
 import { indentUnit, type LanguageSupport } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
 import { EditorView, basicSetup } from "codemirror";
 import { cmTheme } from "./theme.js";
 
@@ -60,6 +61,12 @@ export function createEditor(config: EditorConfig): EditorView {
 
     // Read-only
     readonly ? EditorView.editable.of(false) : [],
+
+    // Custom keymap
+    keymap.of([
+      // Escape: blur the editor (useful to trigger global shortcuts)
+      { key: "Escape", run: (view) => { view.contentDOM.blur(); return true; } },
+    ]),
 
     // Change listener
     EditorView.updateListener.of((update) => {

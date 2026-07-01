@@ -1,14 +1,15 @@
-import { h } from "preact";
-import { colors, fonts } from "./theme.js";
 import { t, type Locale } from "../i18n/index.js";
+import { formatAbsoluteTime, formatRelativeTime } from "./formatRelativeTime.js";
+import { colors, fonts } from "./theme.js";
 
 interface UserMessageProps {
   content: string;
   userName?: string;
   locale?: Locale;
+  timestamp?: number;
 }
 
-export function UserMessage({ content, userName, locale }: UserMessageProps) {
+export function UserMessage({ content, userName, locale, timestamp }: UserMessageProps) {
   return (
     <div style={{
       display: "flex",
@@ -30,6 +31,14 @@ export function UserMessage({ content, userName, locale }: UserMessageProps) {
           {userName || t("user.you", locale)}
         </div>
         <div>{content}</div>
+        {timestamp && (
+          <div
+            title={formatAbsoluteTime(timestamp, locale)}
+            style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}
+          >
+            {formatRelativeTime(timestamp, locale)}
+          </div>
+        )}
       </div>
     </div>
   );

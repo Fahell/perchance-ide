@@ -10,12 +10,12 @@ import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import {
-  vfsDeleteTree,
-  vfsExists, vfsGetAll, vfsMkdir,
-  vfsRename,
-  vfsTree,
-  vfsWrite,
-  type VfsTreeNode
+    vfsDeleteTree,
+    vfsExists, vfsGetAll, vfsMkdir,
+    vfsRename,
+    vfsTree,
+    vfsWrite,
+    type VfsTreeNode
 } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
@@ -61,6 +61,7 @@ export function RightPanel({ locale }: RightPanelProps) {
 
   function openFile(path: string) {
     if (!vfsExists(path)) return;
+    setSelectedPath(path);
     const name = path.split("/").filter(Boolean).pop() ?? path;
     const ext = path.split(".").pop()?.toLowerCase() ?? "js";
     ideStore.getState().openFile(path, name, ext);
@@ -147,7 +148,22 @@ export function RightPanel({ locale }: RightPanelProps) {
     refresh();
   }
 
+  // ── Selected path (for keyboard shortcuts) ────────────
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
   async function handleDelete(path: string) {
+    closeCtxMenu();
+
+    const name = path.split("/").filter(Boolean).pop() ?? path;
+    const children = vfsTree(path);
+    const isDirectory = children.length > 0;
+
+    const message = isDirectory
+      ? `Delete folder "${name}" and all its files?`
+      : `Delete file "${name}"?`;
+
+    if (!confirm(message)) return;
+
     vfsDeleteTree(path);
     // Close any open tabs with this path or descendants
     const state = ideStore.getState();
@@ -156,7 +172,7 @@ export function RightPanel({ locale }: RightPanelProps) {
         state.closeFile(f.path);
       }
     }
-    closeCtxMenu();
+    if (selectedPath === path) setSelectedPath(null);
     await persistVfs();
     refresh();
   }
@@ -168,6 +184,29 @@ export function RightPanel({ locale }: RightPanelProps) {
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, [ctxTarget]);
+
+  // Listen for keyboard shortcut custom events (from AgentPanel)
+  useEffect(() => {
+    function handleDeleteSelected() {
+      const target = selectedPath ?? ideStore.getState().activeFile;
+      if (target) handleDelete(target);
+    }
+    function handleRenameSelected() {
+      const target = selectedPath ?? ideStore.getState().activeFile;
+      if (target) startRename(target);
+    }
+    function handleCancelRename() {
+      if (renaming) setRenaming(null);
+    }
+    document.addEventListener("explorer:delete-selected", handleDeleteSelected);
+    document.addEventListener("explorer:rename-selected", handleRenameSelected);
+    document.addEventListener("explorer:cancel-rename", handleCancelRename);
+    return () => {
+      document.removeEventListener("explorer:delete-selected", handleDeleteSelected);
+      document.removeEventListener("explorer:rename-selected", handleRenameSelected);
+      document.removeEventListener("explorer:cancel-rename", handleCancelRename);
+    };
+  }, [selectedPath, renaming]);
 
   const tree = vfsTree("/");
 

@@ -112,6 +112,25 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     };
   }, [activeFile]);
 
+  // ── Listen for flush-save event (from Ctrl+S shortcut) ─
+  useEffect(() => {
+    function handleFlushSave(e: Event) {
+      const { path } = (e as CustomEvent).detail as { path: string };
+      if (!viewRef.current) return;
+      // Flush debounced write
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      vfsWrite(path, viewRef.current.state.doc.toString());
+      ideStore.getState().setFileDirty(path, false);
+      // Trigger persist
+      if (persistRef.current) clearTimeout(persistRef.current);
+      dbSaveVfs(vfsGetAll()).catch((err: unknown) =>
+        console.warn("[CodeEditor] flush-save persist failed:", err)
+      );
+    }
+    document.addEventListener("editor:flush-save", handleFlushSave);
+    return () => document.removeEventListener("editor:flush-save", handleFlushSave);
+  }, []);
+
   // ── Cleanup on unmount ──────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;

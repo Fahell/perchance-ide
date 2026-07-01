@@ -1,13 +1,13 @@
-import { h } from "preact";
 import { colors, fonts } from "./theme.js";
 
 interface HeaderProps {
   version: string;
   commit: string;
   onFaq?: () => void;
+  onClear?: () => void;
 }
 
-export function Header({ version, commit, onFaq }: HeaderProps) {
+export function Header({ version, commit, onFaq, onClear }: HeaderProps) {
   return (
     <div style={{
       display: "flex",
@@ -21,6 +21,14 @@ export function Header({ version, commit, onFaq }: HeaderProps) {
         agent
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        {onClear && (
+          <span
+            onClick={onClear}
+            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px" }}
+          >
+            [clear]
+          </span>
+        )}
         {onFaq && (
           <span
             onClick={onFaq}
