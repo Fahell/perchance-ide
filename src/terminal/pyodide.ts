@@ -66,9 +66,9 @@ export async function getPyodide(): Promise<Pyodide> {
 
   _loading = (async () => {
     try {
-      // Dynamic import from CDN
-      const PYODIDE_CDN = "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js";
-      const pyodideModule: any = await import(PYODIDE_CDN);
+      // Dynamic import from CDN — use .mjs for proper ESM exports
+      const PYODIDE_MJS = "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.mjs";
+      const pyodideModule: any = await import(PYODIDE_MJS);
       const pyodide = await pyodideModule.loadPyodide({
         indexURL: "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/",
       });
