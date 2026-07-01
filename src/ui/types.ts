@@ -29,11 +29,3 @@ export interface AgentPanelProps {
   onToolResult?: (toolName: string, args: Record<string, unknown>, result: string) => void;
   onResponse?: (response: string) => void;
 }
-
-export interface AgentPanelActions {
-  addUserMessage(content: string): void;
-  setStatus(status: AgentStatus): void;
-  addToolCall(toolName: string, args: Record<string, unknown>): string;
-  updateToolCall(id: string, updates: Partial<ToolCallEntry>): void;
-  setResponse(response: string): void;
-}

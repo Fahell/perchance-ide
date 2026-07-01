@@ -6,6 +6,8 @@
  * Auth: Bearer token required
  */
 
+import { retryWithBackoff } from "../utils/retry.js";
+
 // ─── API Key Management ─────────────────────────────────────
 let currentApiKey = "";
 
@@ -23,16 +25,19 @@ export function hasApiKey(): boolean {
 
 export async function validateApiKey(key: string): Promise<boolean> {
   try {
-    const res = await fetch("https://s.jina.ai/", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ q: "test" }),
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await retryWithBackoff(async () => {
+      const r = await fetch("https://s.jina.ai/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ q: "test" }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      return r;
+    }, { maxRetries: 2 });
     return res.ok;
   } catch {
     return false;
@@ -70,16 +75,20 @@ export interface ScrapeResponse {
 
 // ─── Search ─────────────────────────────────────────────────
 export async function webSearch(query: string, limit = 5): Promise<SearchResponse> {
-  const res = await fetch("https://s.jina.ai/", {
-    method: "POST",
-    headers: jinaHeaders({ "X-Return-Format": "json" }),
-    body: JSON.stringify({ q: query, num: limit }),
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Jina search failed: ${res.status} ${res.statusText}`);
-  }
+  const res = await retryWithBackoff(async () => {
+    const r = await fetch("https://s.jina.ai/", {
+      method: "POST",
+      headers: jinaHeaders({ "X-Return-Format": "json" }),
+      body: JSON.stringify({ q: query, num: limit }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!r.ok) {
+      const err = new Error(`Jina search failed: ${r.status} ${r.statusText}`);
+      (err as any).response = r;
+      throw err;
+    }
+    return r;
+  }, { maxRetries: 3 });
 
   const data = await res.json();
 
@@ -101,16 +110,20 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
 
 // ─── Scrape URL ─────────────────────────────────────────────
 export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeResponse> {
-  const res = await fetch("https://r.jina.ai/", {
-    method: "POST",
-    headers: jinaHeaders({ Accept: "text/markdown" }),
-    body: JSON.stringify({ url }),
-    signal: AbortSignal.timeout(25_000),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Jina scrape failed: ${res.status} ${res.statusText}`);
-  }
+  const res = await retryWithBackoff(async () => {
+    const r = await fetch("https://r.jina.ai/", {
+      method: "POST",
+      headers: jinaHeaders({ Accept: "text/markdown" }),
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!r.ok) {
+      const err = new Error(`Jina scrape failed: ${r.status} ${r.statusText}`);
+      (err as any).response = r;
+      throw err;
+    }
+    return r;
+  }, { maxRetries: 3 });
 
   const content = await res.text();
 

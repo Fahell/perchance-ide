@@ -9,6 +9,13 @@
 
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
+import type { AgentStatus, PanelMessage, ToolCallEntry } from "./ui/types.js";
+
+// ─── Helpers ──────────────────────────────────────────────────
+let msgCounter = 0;
+function nextId(): string {
+  return `msg-${++msgCounter}-${Date.now()}`;
+}
 
 // ─── Types ──────────────────────────────────────────────────
 export type PanelMode = "chat" | "editor" | "split" | "settings";
@@ -51,6 +58,10 @@ export interface IdeState {
   isProcessing: boolean;
   statusMessage: string | null;
 
+  // Panel / agent state
+  messages: PanelMessage[];
+  agentStatus: AgentStatus;
+
   // ─── Actions ──────────────────────────────────────────
   setActiveFile: (path: string | null) => void;
   setFiles: (files: FileTab[]) => void;
@@ -75,6 +86,13 @@ export interface IdeState {
   // Status
   setProcessing: (processing: boolean, message?: string) => void;
   setStatusMessage: (message: string | null) => void;
+
+  // Panel actions (replaces window.__agentPanelActions)
+  addUserMessage: (content: string) => void;
+  setAgentStatus: (status: AgentStatus) => void;
+  addToolCall: (name: string, args: Record<string, unknown>) => string;
+  updateToolCall: (id: string, updates: Partial<ToolCallEntry>) => void;
+  appendAgentResponse: (response: string) => void;
 }
 
 // ─── Defaults ────────────────────────────────────────────────
@@ -97,6 +115,8 @@ export const ideStore = createStore<IdeState>()(
     settings: { ...DEFAULT_SETTINGS },
     isProcessing: false,
     statusMessage: null,
+    messages: [],
+    agentStatus: "idle" as AgentStatus,
 
     // ── Actions ────────────────────────────────────────
 
@@ -203,5 +223,73 @@ export const ideStore = createStore<IdeState>()(
       set({ isProcessing, statusMessage: message ?? null }),
 
     setStatusMessage: (statusMessage) => set({ statusMessage }),
+
+    // ── Panel actions ──────────────────────────────────
+
+    addUserMessage: (content) =>
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          { id: nextId(), role: "user", content, toolCalls: [], timestamp: Date.now() },
+        ],
+      })),
+
+    setAgentStatus: (agentStatus) => set({ agentStatus }),
+
+    addToolCall: (name, args) => {
+      const tcId = `tc-${++msgCounter}-${Date.now()}`;
+      const entry: ToolCallEntry = { id: tcId, name, args, status: "running" };
+      set((s) => {
+        const last = s.messages[s.messages.length - 1];
+        if (last && last.role === "agent") {
+          const updated = [...s.messages];
+          updated[updated.length - 1] = {
+            ...last,
+            toolCalls: [...last.toolCalls, entry],
+          };
+          return { messages: updated };
+        }
+        return {
+          messages: [
+            ...s.messages,
+            { id: nextId(), role: "agent", content: "", toolCalls: [entry], timestamp: Date.now() },
+          ],
+        };
+      });
+      return tcId;
+    },
+
+    updateToolCall: (id, updates) =>
+      set((s) => {
+        const last = s.messages[s.messages.length - 1];
+        if (last && last.role === "agent") {
+          const updated = [...s.messages];
+          updated[updated.length - 1] = {
+            ...last,
+            toolCalls: last.toolCalls.map((tc) =>
+              tc.id === id ? { ...tc, ...updates } : tc
+            ),
+          };
+          return { messages: updated };
+        }
+        return s;
+      }),
+
+    appendAgentResponse: (response) =>
+      set((s) => {
+        const last = s.messages[s.messages.length - 1];
+        if (last && last.role === "agent") {
+          const updated = [...s.messages];
+          updated[updated.length - 1] = { ...last, content: response };
+          return { messages: updated, agentStatus: "idle" };
+        }
+        return {
+          messages: [
+            ...s.messages,
+            { id: nextId(), role: "agent", content: response, toolCalls: [], timestamp: Date.now() },
+          ],
+          agentStatus: "idle",
+        };
+      }),
   }))
 );

@@ -4,6 +4,7 @@
 
 import { h, render } from "preact";
 import type { Locale } from "../i18n/index.js";
+import { ideStore } from "../store.js";
 import type { AgentPanelRef } from "./AgentPanel.js";
 import { AgentPanel, type AgentPanelProps } from "./AgentPanel.js";
 import { injectAnimations } from "./animations.js";
@@ -16,22 +17,22 @@ export function renderPanel(container: HTMLElement, props: AgentPanelProps & { o
   injectAnimations();
   render(h(ErrorBoundary, { name: "AgentPanel", fallback: fullPageFallback }, h(AgentPanel, props)), container);
 
-  // Return actions that index.ts can call
+  // Return actions that index.ts can call — directly via store
   return {
     addUserMessage(content: string) {
-      (window as any).__agentPanelActions?.addUserMessage(content);
+      ideStore.getState().addUserMessage(content);
     },
     setStatus(status: any) {
-      (window as any).__agentPanelActions?.setStatus(status);
+      ideStore.getState().setAgentStatus(status);
     },
     addToolCall(name: string, args: Record<string, unknown>): string {
-      return (window as any).__agentPanelActions?.addToolCall(name, args) ?? "";
+      return ideStore.getState().addToolCall(name, args);
     },
     updateToolCall(id: string, updates: any) {
-      (window as any).__agentPanelActions?.updateToolCall(id, updates);
+      ideStore.getState().updateToolCall(id, updates);
     },
     setResponse(response: string) {
-      (window as any).__agentPanelActions?.setResponse(response);
+      ideStore.getState().appendAgentResponse(response);
     },
   };
 }

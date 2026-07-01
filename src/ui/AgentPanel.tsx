@@ -1,5 +1,7 @@
-import { useCallback, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
+import type { IdeState } from "../store.js";
+import { ideStore } from "../store.js";
 import { AgentMessage } from "./AgentMessage.js";
 import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
@@ -13,13 +15,8 @@ import { ScrollFAB } from "./ScrollFAB.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { colors, fonts } from "./theme.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
-import type { AgentStatus, PanelMessage, PanelMode, ToolCallEntry } from "./types.js";
+import type { AgentStatus, PanelMode, ToolCallEntry } from "./types.js";
 import { UserMessage } from "./UserMessage.js";
-
-let msgCounter = 0;
-function nextId(): string {
-  return `msg-${++msgCounter}-${Date.now()}`;
-}
 
 export interface AgentPanelProps {
   version: string;
@@ -46,8 +43,10 @@ export interface AgentPanelRef {
 }
 
 export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, userName, locale: initialLocale, onSettingsSave, onPanelModeChange, inputEnabled: initialInputEnabled, onInputEnabledChange, onLocaleChange, onSendMessage, onCancel }: AgentPanelProps) {
-  const [messages, setMessages] = useState<PanelMessage[]>([]);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
+  const [store, setStore] = useState<IdeState>(ideStore.getState());
+  useEffect(() => ideStore.subscribe((s) => setStore(s)), []);
+  const { messages, agentStatus } = store;
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
@@ -71,86 +70,6 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     setLocale(l);
     onLocaleChange(l);
   };
-
-  // ── Exposed actions (used via ref from index.ts) ────────
-  const addUserMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: nextId(), role: "user", content, toolCalls: [], timestamp: Date.now() },
-    ]);
-  }, []);
-
-  const setStatus = useCallback((status: AgentStatus) => {
-    setAgentStatus(status);
-  }, []);
-
-  const addToolCall = useCallback((name: string, args: Record<string, unknown>): string => {
-    const tcId = `tc-${++msgCounter}-${Date.now()}`;
-    const entry: ToolCallEntry = { id: tcId, name, args, status: "running" };
-
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "agent") {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...last,
-          toolCalls: [...last.toolCalls, entry],
-        };
-        return updated;
-      }
-      // Create new agent message
-      return [
-        ...prev,
-        { id: nextId(), role: "agent", content: "", toolCalls: [entry], timestamp: Date.now() },
-      ];
-    });
-
-    return tcId;
-  }, []);
-
-  const updateToolCall = useCallback((id: string, updates: Partial<ToolCallEntry>) => {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "agent") {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...last,
-          toolCalls: last.toolCalls.map((tc) =>
-            tc.id === id ? { ...tc, ...updates } : tc
-          ),
-        };
-        return updated;
-      }
-      return prev;
-    });
-  }, []);
-
-  const setResponse = useCallback((response: string) => {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "agent") {
-        const updated = [...prev];
-        updated[updated.length - 1] = { ...last, content: response };
-        return updated;
-      }
-      return [
-        ...prev,
-        { id: nextId(), role: "agent", content: response, toolCalls: [], timestamp: Date.now() },
-      ];
-    });
-    setAgentStatus("idle");
-  }, []);
-
-  // Store actions on a global for index.ts to access
-  if (typeof window !== "undefined") {
-    (window as any).__agentPanelActions = {
-      addUserMessage,
-      setStatus,
-      addToolCall,
-      updateToolCall,
-      setResponse,
-    } satisfies AgentPanelRef;
-  }
 
   return (
     <div style={{
