@@ -87,6 +87,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     contextOpen,
     faqOpen,
     agentStatus,
+    locale,
     setSettingsOpen,
     setContextOpen,
     setFaqOpen,
@@ -97,6 +98,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     contextOpen,
     faqOpen,
     agentStatus,
+    locale,
     setSettingsOpen,
     setContextOpen,
     setFaqOpen,
@@ -137,6 +139,11 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         e.preventDefault();
         const activeFile = ideStore.getState().activeFile;
         if (activeFile) {
+          // Check for unsaved changes
+          const tab = ideStore.getState().files.find((f) => f.path === activeFile);
+          if (tab?.dirty) {
+            if (!confirm(t("editor.unsavedConfirm", s.locale))) return;
+          }
           // Flush editor save before closing
           document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
           ideStore.getState().closeFile(activeFile);

@@ -37,6 +37,7 @@ export interface FileTab {
   name: string;
   language: string;
   dirty: boolean;
+  saveStatus: "idle" | "saving" | "saved";
 }
 
 export interface IdeState {
@@ -58,6 +59,10 @@ export interface IdeState {
   isProcessing: boolean;
   statusMessage: string | null;
 
+  // Pyodide runtime
+  pyodideStatus: "idle" | "loading" | "loaded" | "error";
+  pyodideError: string | null;
+
   // Panel / agent state
   messages: PanelMessage[];
   agentStatus: AgentStatus;
@@ -68,8 +73,10 @@ export interface IdeState {
   addFile: (file: FileTab) => void;
   removeFile: (path: string) => void;
   setFileDirty: (path: string, dirty: boolean) => void;
+  setFileSaveStatus: (path: string, status: "idle" | "saving" | "saved") => void;
   openFile: (path: string, name: string, language: string) => void;
   closeFile: (path: string) => void;
+  setPyodideStatus: (status: "idle" | "loading" | "loaded" | "error", error?: string) => void;
 
   // Editor history
   pushEditorState: (path: string, content: string) => void;
@@ -116,6 +123,8 @@ export const ideStore = createStore<IdeState>()(
     settings: { ...DEFAULT_SETTINGS },
     isProcessing: false,
     statusMessage: null,
+    pyodideStatus: "idle" as "idle" | "loading" | "loaded" | "error",
+    pyodideError: null,
     messages: [],
     agentStatus: "idle" as AgentStatus,
 
@@ -143,6 +152,11 @@ export const ideStore = createStore<IdeState>()(
         files: s.files.map((f) => (f.path === path ? { ...f, dirty } : f)),
       })),
 
+    setFileSaveStatus: (path, saveStatus) =>
+      set((s) => ({
+        files: s.files.map((f) => (f.path === path ? { ...f, saveStatus } : f)),
+      })),
+
     openFile: (path, name, language) =>
       set((s) => {
         // If already open, just set as active
@@ -150,7 +164,7 @@ export const ideStore = createStore<IdeState>()(
           return { activeFile: path };
         }
         return {
-          files: [...s.files, { path, name, language, dirty: false }],
+          files: [...s.files, { path, name, language, dirty: false, saveStatus: "idle" }],
           activeFile: path,
         };
       }),
@@ -294,5 +308,8 @@ export const ideStore = createStore<IdeState>()(
       }),
 
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),
+
+    setPyodideStatus: (status, error) =>
+      set({ pyodideStatus: status, pyodideError: error ?? null }),
   }))
 );

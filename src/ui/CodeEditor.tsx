@@ -94,13 +94,20 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         wordWrap: false,
         onChange: (doc) => {
           if (!mountedRef.current) return;
+          ideStore.getState().setFileSaveStatus(path, "saving");
           // Debounce save to VFS
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = window.setTimeout(() => {
             if (!mountedRef.current) return;
             vfsWrite(path, doc);
             ideStore.getState().setFileDirty(path, false);
+            ideStore.getState().setFileSaveStatus(path, "saved");
             schedulePersist();
+            // Auto-clear save status after 2s
+            window.setTimeout(() => {
+              if (!mountedRef.current) return;
+              ideStore.getState().setFileSaveStatus(path, "idle");
+            }, 2000);
           }, 500);
           ideStore.getState().setFileDirty(path, true);
         },
@@ -121,6 +128,12 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       vfsWrite(path, viewRef.current.state.doc.toString());
       ideStore.getState().setFileDirty(path, false);
+      ideStore.getState().setFileSaveStatus(path, "saved");
+      // Auto-clear save status after 2s
+      window.setTimeout(() => {
+        if (!mountedRef.current) return;
+        ideStore.getState().setFileSaveStatus(path, "idle");
+      }, 2000);
       // Trigger persist
       if (persistRef.current) clearTimeout(persistRef.current);
       dbSaveVfs(vfsGetAll()).catch((err: unknown) =>
@@ -167,6 +180,12 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 
   function closeTab(path: string, e: MouseEvent) {
     e.stopPropagation();
+    // Check for unsaved changes
+    const tab = files.find((f) => f.path === path);
+    if (tab?.dirty) {
+      if (!confirm(t("editor.unsavedConfirm", locale))) return;
+    }
+    // Save content before closing
     if (viewRef.current && path === activeFile) {
       vfsWrite(path, viewRef.current.state.doc.toString());
       schedulePersist();
@@ -257,6 +276,16 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd }: {
                   width: "6px", height: "6px", borderRadius: "50%",
                   background: "#888", display: "inline-block",
                 }} />
+              )}
+              {tab.saveStatus === "saving" && (
+                <span style={{ color: colors.textMuted, fontSize: "8px", marginLeft: "2px" }}>
+                  {t("editor.saving")}
+                </span>
+              )}
+              {tab.saveStatus === "saved" && (
+                <span style={{ color: colors.statusDone, fontSize: "8px", marginLeft: "2px" }}>
+                  {t("editor.saved")}
+                </span>
               )}
               <span onClick={(e: MouseEvent) => onClose(tab.path, e)}
                 style={{

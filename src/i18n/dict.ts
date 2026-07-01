@@ -104,6 +104,9 @@ const en: Translations = {
   "editor.placeholder": "// write code or text here...",
   "editor.clear": "clear",
   "editor.send": "send →",
+  "editor.unsavedConfirm": "Unsaved changes. Discard changes?",
+  "editor.saving": "Saving…",
+  "editor.saved": "Saved",
 
   // Right Panel
   "rightPanel.placeholder": "panel coming soon",
@@ -114,6 +117,10 @@ const en: Translations = {
   "fileExplorer.rename": "rename",
   "fileExplorer.delete": "delete",
   "fileExplorer.count": "files",
+
+  // Tool cards
+  "tool.loadingPyodide": "Loading Python runtime (3.5 MB)…",
+  "tool.pyodideError": "Python runtime failed to load",
 };
 
 const ptBR: Translations = {
@@ -201,6 +208,9 @@ const ptBR: Translations = {
   "editor.placeholder": "// escreva código ou texto aqui...",
   "editor.clear": "limpar",
   "editor.send": "enviar →",
+  "editor.unsavedConfirm": "Alterações não salvas. Descartar alterações?",
+  "editor.saving": "Salvando…",
+  "editor.saved": "Salvo",
 
   // Right Panel
   "rightPanel.placeholder": "painel em breve",
@@ -210,6 +220,10 @@ const ptBR: Translations = {
   "fileExplorer.rename": "renomear",
   "fileExplorer.delete": "excluir",
   "fileExplorer.count": "arquivos",
+
+  // Tool cards
+  "tool.loadingPyodide": "Carregando Python runtime (3.5 MB)…",
+  "tool.pyodideError": "Falha ao carregar Python runtime",
 };
 
 const es: Translations = {
@@ -283,6 +297,9 @@ const es: Translations = {
   "editor.placeholder": "// escribe código o texto aquí...",
   "editor.clear": "limpiar",
   "editor.send": "enviar →",
+  "editor.unsavedConfirm": "¿Cambios sin guardar. Descartar cambios?",
+  "editor.saving": "Guardando…",
+  "editor.saved": "Guardado",
 
   // Right Panel
   "rightPanel.placeholder": "panel próximamente",
@@ -292,6 +309,10 @@ const es: Translations = {
   "fileExplorer.rename": "renombrar",
   "fileExplorer.delete": "eliminar",
   "fileExplorer.count": "archivos",
+
+  // Tool cards
+  "tool.loadingPyodide": "Cargando Python runtime (3.5 MB)…",
+  "tool.pyodideError": "Error al cargar Python runtime",
 };
 
 const ja: Translations = {
@@ -366,6 +387,9 @@ const ja: Translations = {
   "editor.placeholder": "// コードまたはテキストをここに書く...",
   "editor.clear": "クリア",
   "editor.send": "送信 →",
+  "editor.unsavedConfirm": "未保存の変更があります。破棄しますか？",
+  "editor.saving": "保存中…",
+  "editor.saved": "保存完了",
 
   // Right Panel
   "rightPanel.placeholder": "パネル準備中",
@@ -375,6 +399,10 @@ const ja: Translations = {
   "fileExplorer.rename": "名前変更",
   "fileExplorer.delete": "削除",
   "fileExplorer.count": "ファイル",
+
+  // Tool cards
+  "tool.loadingPyodide": "Pythonランタイムを読み込み中 (3.5 MB)…",
+  "tool.pyodideError": "Pythonランタイムの読み込みに失敗しました",
 };
 
 const zh: Translations = {
@@ -449,6 +477,9 @@ const zh: Translations = {
   "editor.placeholder": "// 在这里编写代码或文本...",
   "editor.clear": "清除",
   "editor.send": "发送 →",
+  "editor.unsavedConfirm": "有未保存的更改。放弃更改？",
+  "editor.saving": "保存中…",
+  "editor.saved": "已保存",
 
   // Right Panel
   "rightPanel.placeholder": "面板即将推出",
@@ -458,6 +489,10 @@ const zh: Translations = {
   "fileExplorer.rename": "重命名",
   "fileExplorer.delete": "删除",
   "fileExplorer.count": "文件",
+
+  // Tool cards
+  "tool.loadingPyodide": "正在加载 Python 运行时 (3.5 MB)…",
+  "tool.pyodideError": "Python 运行时加载失败",
 };
 
 export const dict: Record<Locale, Translations> = {

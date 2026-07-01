@@ -13,6 +13,7 @@
 
 import { withTimeout } from "../agent-loop.js";
 import { dbSaveVfs } from "../db.js";
+import { ideStore } from "../store.js";
 import { vfsGetAll, vfsSnapshot, vfsWrite } from "../vfs.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -67,6 +68,9 @@ export async function getPyodide(): Promise<Pyodide> {
   if (_loadError) throw new Error(_loadError);
   if (_loading) return _loading;
 
+  // Notify store that loading has started
+  ideStore.getState().setPyodideStatus("loading");
+
   _loading = (async () => {
     try {
       // Dynamic import from CDN — use .mjs for proper ESM exports
@@ -76,10 +80,12 @@ export async function getPyodide(): Promise<Pyodide> {
         indexURL: "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/",
       });
       _pyodide = pyodide;
+      ideStore.getState().setPyodideStatus("loaded");
       console.log("🐍 [Pyodide] Loaded successfully (v314.0.2)");
       return pyodide;
     } catch (err: any) {
       _loadError = String(err.message || err);
+      ideStore.getState().setPyodideStatus("error", _loadError);
       console.error("🐍 [Pyodide] Failed to load:", _loadError);
       throw err;
     }

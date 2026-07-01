@@ -1,5 +1,5 @@
-import { h } from "preact";
-import { useState, useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
+import { ideStore, type IdeState } from "../store.js";
 import { colors, fonts } from "./theme.js";
 import type { ToolCallEntry } from "./types.js";
 
@@ -10,6 +10,7 @@ interface ToolCallCardProps {
 const TOOL_LABELS: Record<string, string> = {
   web_search: "web_search",
   scrape_url: "scrape_url",
+  run_python: "run_python",
 };
 
 const BRAILLE = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -25,6 +26,12 @@ function Spinner() {
 
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
+  // Subscribe to store for pyodide status
+  const [store, setStore] = useState<IdeState>(ideStore.getState());
+  useEffect(() => {
+    return ideStore.subscribe((s) => setStore(s));
+  }, []);
+  const { pyodideStatus, pyodideError } = store;
   const label = TOOL_LABELS[toolCall.name] ?? toolCall.name;
   const isRunning = toolCall.status === "running";
 
@@ -41,6 +48,10 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const queryPreview = typeof query === "string"
     ? (query.length > 60 ? query.slice(0, 60) + "..." : query)
     : String(query);
+
+  // Show Pyodide loading message when running Python and Pyodide is still loading
+  const isPyodideLoading = isRunning && toolCall.name === "run_python" && pyodideStatus === "loading";
+  const isPyodideError = !isRunning && toolCall.name === "run_python" && pyodideStatus === "error";
 
   const headerContent = (
     <div
@@ -66,9 +77,13 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         whiteSpace: "nowrap",
         fontFamily: fonts.mono,
       }}>
-        {isRunning
-          ? <span className="skeleton-line" style={{ display: "inline-block", width: "80px", height: "10px", margin: 0, verticalAlign: "middle" }} />
-          : queryPreview}
+        {isPyodideLoading
+          ? "Loading Python runtime (3.5 MB)…"
+          : isPyodideError
+            ? "Python runtime failed to load"
+            : isRunning
+              ? <span className="skeleton-line" style={{ display: "inline-block", width: "80px", height: "10px", margin: 0, verticalAlign: "middle" }} />
+              : queryPreview}
       </span>
       <span style={{
         fontSize: "12px",

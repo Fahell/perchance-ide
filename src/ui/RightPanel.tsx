@@ -71,7 +71,23 @@ export function RightPanel({ locale }: RightPanelProps) {
     e.preventDefault();
     e.stopPropagation();
     setCtxTarget(path);
-    setCtxPos({ x: e.clientX, y: e.clientY });
+
+    // Boundary detection — prevent menu from overflowing viewport
+    const MENU_WIDTH = 140;
+    const MENU_HEIGHT = 56;
+    const PAD = 8;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (x + MENU_WIDTH + PAD > window.innerWidth) {
+      x = window.innerWidth - MENU_WIDTH - PAD;
+    }
+    if (y + MENU_HEIGHT + PAD > window.innerHeight) {
+      y = window.innerHeight - MENU_HEIGHT - PAD;
+    }
+    x = Math.max(PAD, x);
+    y = Math.max(PAD, y);
+
+    setCtxPos({ x, y });
   }
 
   function closeCtxMenu() {
