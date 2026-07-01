@@ -171,9 +171,25 @@ export async function syncFromPyodide(): Promise<void> {
 
 /**
  * Walk Pyodide's MEMFS recursively, returning all file paths.
+ * Protected against circular symlinks and excessive depth.
  */
-function walkMemfs(pyodide: Pyodide, dir: string): string[] {
+
+/** Maximum recursion depth for MEMFS walk to prevent stack overflow. */
+const MAX_WALK_DEPTH = 100;
+
+function walkMemfs(
+  pyodide: Pyodide,
+  dir: string,
+  _depth: number = 0,
+  _visited: Set<string> = new Set(),
+): string[] {
   const results: string[] = [];
+
+  if (_depth > MAX_WALK_DEPTH || _visited.has(dir)) {
+    return results;
+  }
+  _visited.add(dir);
+
   let entries: string[];
   try {
     entries = pyodide.FS.readdir(dir);
@@ -187,7 +203,7 @@ function walkMemfs(pyodide: Pyodide, dir: string): string[] {
     try {
       const stat = pyodide.FS.stat(fullPath);
       if (stat.isDirectory) {
-        results.push(...walkMemfs(pyodide, fullPath));
+        results.push(...walkMemfs(pyodide, fullPath, _depth + 1, _visited));
       } else {
         results.push(fullPath);
       }
