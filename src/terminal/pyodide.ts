@@ -260,10 +260,29 @@ export async function executePython(code: string): Promise<PythonResult> {
   };
 }
 
+// ─── Package Name Validation ─────────────────────────────────
+
+/**
+ * Validates a Python package name according to PEP 508.
+ * Only allows alphanumeric characters, dots, underscores, and hyphens.
+ * Must start and end with alphanumeric character.
+ */
+function isValidPackageName(name: string): boolean {
+  const PACKAGE_NAME_REGEX = /^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$/i;
+  return PACKAGE_NAME_REGEX.test(name);
+}
+
+// ─── Package Installation ────────────────────────────────────
+
 /**
  * Install a Python package via Pyodide's loadPackage or micropip.
  */
 export async function installPackage(name: string): Promise<string> {
+  // Validate package name BEFORE any use to prevent Python code injection
+  if (!isValidPackageName(name)) {
+    return `Error: Invalid package name '${name}'. Package names must match PEP 508: only letters, numbers, dots, underscores, and hyphens allowed, and must start/end with alphanumeric character.`;
+  }
+
   const pyodide = await getPyodide();
 
   try {
@@ -274,9 +293,10 @@ export async function installPackage(name: string): Promise<string> {
     // Fallback to micropip for pure-Python wheels
     console.warn("[Pyodide] loadPackage failed, trying micropip:", err instanceof Error ? err.message : String(err));
     try {
+      // Safe interpolation: name is already validated against PEP 508
       await withTimeout(pyodide.runPythonAsync(`
         import micropip
-        await micropip.install("${name.replace(/"/g, '\\"')}")
+        await micropip.install("${name}")
       `), 120_000, "micropip");
       return `Success: Package '${name}' installed via micropip.`;
     } catch (err: any) {
