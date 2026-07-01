@@ -135,24 +135,6 @@ export function vfsMkdir(path: string): void {
   });
 }
 
-/** Delete a file or empty directory. Recursive remove via vfsDeleteTree. */
-export function vfsDelete(path: string): boolean {
-  const npath = normalize(path);
-  if (npath === "/") return false; // cannot delete root
-  const entry = _entries.get(npath);
-  if (!entry) return false;
-
-  // If directory, refuse unless empty
-  if (entry.type === "dir") {
-    for (const p of _entries.keys()) {
-      if (isDescendantOf(p, npath)) return false; // not empty
-    }
-  }
-
-  _entries.delete(npath);
-  return true;
-}
-
 /** Recursively delete a path (file or directory tree). */
 export function vfsDeleteTree(path: string): boolean {
   const npath = normalize(path);
@@ -165,21 +147,6 @@ export function vfsDeleteTree(path: string): boolean {
     }
   }
   return true;
-}
-
-/** List direct children of a directory. Returns basenames. */
-export function vfsList(dir: string): string[] {
-  const ndir = normalize(dir) === "/" ? "/" : normalize(dir) + "/";
-  const children = new Set<string>();
-
-  for (const p of _entries.keys()) {
-    if (p.startsWith(ndir) && p !== ndir) {
-      const rest = p.slice(ndir.length);
-      const child = rest.split("/")[0];
-      if (child) children.add(child);
-    }
-  }
-  return [...children].sort();
 }
 
 /** Build a nested tree structure for the file explorer. */

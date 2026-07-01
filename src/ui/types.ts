@@ -21,11 +21,3 @@ export interface PanelMessage {
   toolCalls: ToolCallEntry[];
   timestamp: number;
 }
-
-export interface AgentPanelProps {
-  version: string;
-  commit: string;
-  onStatus?: (status: string) => void;
-  onToolResult?: (toolName: string, args: Record<string, unknown>, result: string) => void;
-  onResponse?: (response: string) => void;
-}

@@ -30,11 +30,6 @@ export interface IdeSettings {
   tabSize: number;
 }
 
-export interface EditorHistoryEntry {
-  past: string[];
-  future: string[];
-}
-
 export interface OutputEntry {
   id: string;
   command: string;
@@ -58,9 +53,6 @@ export interface IdeState {
   // Active file / editor
   activeFile: string | null;
   files: FileTab[];
-
-  // Editor undo/redo history per file
-  editorHistory: Record<string, EditorHistoryEntry>;
 
   // Layout
   panelMode: PanelMode;
@@ -106,11 +98,6 @@ export interface IdeState {
   openFile: (path: string, name: string, language: string) => void;
   closeFile: (path: string) => void;
   setPyodideStatus: (status: "idle" | "loading" | "loaded" | "error", error?: string) => void;
-
-  // Editor history
-  pushEditorState: (path: string, content: string) => void;
-  undoEditor: (path: string) => string | null;
-  redoEditor: (path: string) => string | null;
 
   // Layout
   setPanelMode: (mode: PanelMode) => void;
@@ -160,7 +147,6 @@ export const ideStore = createStore<IdeState>()(
     // ── State ──────────────────────────────────────────
     activeFile: null,
     files: [],
-    editorHistory: {},
     panelMode: "chat",
     sidebarVisible: true,
     settings: { ...DEFAULT_SETTINGS },
@@ -229,51 +215,6 @@ export const ideStore = createStore<IdeState>()(
         }
         return { files: remaining, activeFile: newActive };
       }),
-
-    pushEditorState: (path, content) =>
-      set((s) => {
-        const history = s.editorHistory[path] ?? { past: [], future: [] };
-        return {
-          editorHistory: {
-            ...s.editorHistory,
-            [path]: {
-              past:
-                history.past.length > 50
-                  ? [...history.past.slice(-49), content]
-                  : [...history.past, content],
-              future: [],
-            },
-          },
-        };
-      }),
-
-    undoEditor: (path) => {
-      const history = get().editorHistory[path];
-      if (!history || history.past.length === 0) return null;
-      const prev = history.past[history.past.length - 1];
-      const newPast = history.past.slice(0, -1);
-      set((s) => ({
-        editorHistory: {
-          ...s.editorHistory,
-          [path]: { past: newPast, future: [prev, ...history.future] },
-        },
-      }));
-      return prev;
-    },
-
-    redoEditor: (path) => {
-      const history = get().editorHistory[path];
-      if (!history || history.future.length === 0) return null;
-      const next = history.future[0];
-      const newFuture = history.future.slice(1);
-      set((s) => ({
-        editorHistory: {
-          ...s.editorHistory,
-          [path]: { past: [...history.past, next], future: newFuture },
-        },
-      }));
-      return next;
-    },
 
     setPanelMode: (panelMode) => set({ panelMode }),
 

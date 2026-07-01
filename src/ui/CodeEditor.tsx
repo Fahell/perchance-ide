@@ -42,6 +42,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const viewRef = useRef<import("codemirror").EditorView | null>(null);
   const debounceRef = useRef<number | null>(null);
   const persistRef = useRef<number | null>(null);
+  const saveStatusTimerRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
 
@@ -53,6 +54,16 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         console.warn("[CodeEditor] dbSaveVfs failed:", e)
       );
     }, 2000);
+  }
+
+  // Auto-clear save status after a delay (replaces orphan setTimeout calls)
+  function scheduleSaveStatusClear(path: string, delay = 2000) {
+    if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    saveStatusTimerRef.current = window.setTimeout(() => {
+      if (!mountedRef.current) return;
+      ideStore.getState().setFileSaveStatus(path, "idle");
+      saveStatusTimerRef.current = null;
+    }, delay);
   }
 
   // ── Mount / remount editor when activeFile changes ─────
@@ -116,11 +127,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             ideStore.getState().setFileSaveStatus(path, "saved");
             ideStore.getState().bumpVfsVersion();
             schedulePersist();
-            // Auto-clear save status after 2s
-            window.setTimeout(() => {
-              if (!mountedRef.current) return;
-              ideStore.getState().setFileSaveStatus(path, "idle");
-            }, 2000);
+            scheduleSaveStatusClear(path);
           }, 500);
           ideStore.getState().setFileDirty(path, true);
         },
@@ -147,11 +154,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       ideStore.getState().setFileDirty(path, false);
       ideStore.getState().setFileSaveStatus(path, "saved");
       ideStore.getState().bumpVfsVersion();
-      // Auto-clear save status after 2s
-      window.setTimeout(() => {
-        if (!mountedRef.current) return;
-        ideStore.getState().setFileSaveStatus(path, "idle");
-      }, 2000);
+      scheduleSaveStatusClear(path);
       // Trigger persist
       if (persistRef.current) clearTimeout(persistRef.current);
       dbSaveVfs(vfsGetAll()).catch((err: unknown) =>
@@ -170,6 +173,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       setCurrentView(null);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (persistRef.current) clearTimeout(persistRef.current);
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       if (viewRef.current) {
         const currentFile = activeFile;
         if (currentFile) {

@@ -5,7 +5,7 @@
  * via the db module for survival across page reloads.
  */
 
-import { dbAddMessage, dbClearMessages, dbGetAllMessages, dbGetLastN, dbGetMessageCount, type DbMessage } from "./db.js";
+import { dbAddMessage, dbClearMessages, dbGetAllMessages, dbGetMessageCount, type DbMessage } from "./db.js";
 
 // ─── Types ──────────────────────────────────────────────────
 export interface ChatMessage {
@@ -78,5 +78,5 @@ export function getAllMessages(): ChatMessage[] {
   return [...messages];
 }
 
-export { dbClearMessages, dbGetAllMessages, dbGetLastN, dbGetMessageCount };
+export { dbClearMessages, dbGetAllMessages, dbGetMessageCount };
 

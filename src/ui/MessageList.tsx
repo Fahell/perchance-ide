@@ -1,6 +1,5 @@
-import { h, ComponentChildren } from "preact";
-import { useRef, useEffect } from "preact/hooks";
-import { colors } from "./theme.js";
+import { ComponentChildren, toChildArray } from "preact";
+import { useEffect, useRef } from "preact/hooks";
 
 interface MessageListProps {
   children: ComponentChildren;
@@ -10,13 +9,18 @@ interface MessageListProps {
 export function MessageList({ children, outerRef }: MessageListProps) {
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = outerRef ?? internalRef;
+  const childrenCountRef = useRef(0);
+  const childrenLen = toChildArray(children).length;
 
   useEffect(() => {
     const el = containerRef.current;
-    if (el) {
+    if (!el) return;
+    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
+    if (childrenLen > childrenCountRef.current || isNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
-  });
+    childrenCountRef.current = childrenLen;
+  }, [childrenLen]);
 
   return (
     <div
