@@ -7,9 +7,12 @@
  * Runtime state only — persistence lives in db.ts / storage.ts.
  */
 
+import type { EditorView } from "codemirror";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
+import { dbSaveVfs } from "./db.js";
 import type { AgentStatus, PanelMessage, ToolCallEntry } from "./ui/types.js";
+import { vfsGetAll, vfsRename } from "./vfs.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
 let msgCounter = 0;
@@ -67,6 +70,15 @@ export interface IdeState {
   messages: PanelMessage[];
   agentStatus: AgentStatus;
 
+  // Right panel tab (10.1)
+  rightPanelTab: "files" | "outline";
+
+  // Active EditorView ref (10.1)
+  editorView: EditorView | null;
+
+  // Settings version — incremented on update to trigger editor recreation (10.4)
+  settingsVersion: number;
+
   // ─── Actions ──────────────────────────────────────────
   setActiveFile: (path: string | null) => void;
   setFiles: (files: FileTab[]) => void;
@@ -86,6 +98,13 @@ export interface IdeState {
   // Layout
   setPanelMode: (mode: PanelMode) => void;
   toggleSidebar: () => void;
+
+  // Right panel tab
+  setRightPanelTab: (tab: "files" | "outline") => void;
+  setEditorView: (view: EditorView | null) => void;
+
+  // File rename (10.3)
+  renameFile: (oldPath: string, newPath: string) => void;
 
   // Settings
   updateSettings: (partial: Partial<IdeSettings>) => void;
@@ -127,6 +146,9 @@ export const ideStore = createStore<IdeState>()(
     pyodideError: null,
     messages: [],
     agentStatus: "idle" as AgentStatus,
+    rightPanelTab: "files" as "files" | "outline",
+    editorView: null as EditorView | null,
+    settingsVersion: 0,
 
     // ── Actions ────────────────────────────────────────
 
@@ -232,7 +254,10 @@ export const ideStore = createStore<IdeState>()(
     toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
 
     updateSettings: (partial) =>
-      set((s) => ({ settings: { ...s.settings, ...partial } })),
+      set((s) => ({
+        settings: { ...s.settings, ...partial },
+        settingsVersion: s.settingsVersion + 1,
+      })),
 
     setProcessing: (isProcessing, message) =>
       set({ isProcessing, statusMessage: message ?? null }),
@@ -311,5 +336,68 @@ export const ideStore = createStore<IdeState>()(
 
     setPyodideStatus: (status, error) =>
       set({ pyodideStatus: status, pyodideError: error ?? null }),
+
+    setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+
+    setEditorView: (view) => set({ editorView: view }),
+
+    renameFile: (oldPath, newPath) => {
+      if (!vfsRename(oldPath, newPath)) return;
+      const state = get();
+      const oldTab = state.files.find((f) => f.path === oldPath);
+      if (oldTab) {
+        const name = newPath.split("/").filter(Boolean).pop() ?? newPath;
+        const ext =
+          newPath.split(".").pop()?.toLowerCase() ?? "js";
+        set((s) => ({
+          files: s.files.map((f) =>
+            f.path === oldPath
+              ? { ...f, path: newPath, name, language: ext }
+              : f
+          ),
+          activeFile:
+            s.activeFile === oldPath ? newPath : s.activeFile,
+        }));
+      }
+      // Fire-and-forget persist
+      dbSaveVfs(vfsGetAll()).catch((e) =>
+        console.warn("[Store] renameFile persist failed:", e)
+      );
+    },
   }))
+);
+
+// ─── Settings persistence ────────────────────────────────────
+
+/**
+ * Load editor settings from localStorage and apply to store.
+ * Called once during bootstrap.
+ */
+export function loadSettings(): void {
+  try {
+    const raw = localStorage.getItem("agent:editor_settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        ideStore.getState().updateSettings(parsed);
+      }
+    }
+  } catch {
+    // Ignore corrupt data
+  }
+}
+
+// Auto-persist settings on change
+ideStore.subscribe(
+  (s: any) => s.settings,
+  (settings: any) => {
+    try {
+      localStorage.setItem(
+        "agent:editor_settings",
+        JSON.stringify(settings)
+      );
+    } catch {
+      // Storage full or unavailable — ignore
+    }
+  }
 );

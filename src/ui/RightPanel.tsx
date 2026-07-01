@@ -12,11 +12,11 @@ import { ideStore } from "../store.js";
 import {
     vfsDeleteTree,
     vfsExists, vfsGetAll, vfsMkdir,
-    vfsRename,
     vfsTree,
     vfsWrite,
     type VfsTreeNode
 } from "../vfs.js";
+import { OutlinePanel } from "./OutlinePanel.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export function RightPanel({ locale }: RightPanelProps) {
     }
   }
 
-  async function commitRename() {
+  function commitRename() {
     if (!renaming || !renameValue.trim()) {
       setRenaming(null);
       return;
@@ -118,16 +118,8 @@ export function RightPanel({ locale }: RightPanelProps) {
     const parts = renaming.split("/").filter(Boolean);
     parts.pop();
     const newPath = "/" + [...parts, renameValue.trim()].join("/");
-    if (newPath !== renaming && vfsRename(renaming, newPath)) {
-      // Update store tabs that reference the old path
-      const state = ideStore.getState();
-      for (const f of state.files) {
-        if (f.path === renaming) {
-          state.removeFile(renaming);
-          state.openFile(newPath, renameValue.trim(), newPath.split(".").pop()?.toLowerCase() ?? "js");
-        }
-      }
-      await persistVfs();
+    if (newPath !== renaming) {
+      ideStore.getState().renameFile(renaming, newPath);
       refresh();
     }
     setRenaming(null);
@@ -225,6 +217,7 @@ export function RightPanel({ locale }: RightPanelProps) {
   }, [selectedPath, renaming]);
 
   const tree = vfsTree("/");
+  const activeTab: "files" | "outline" = (ideStore.getState() as any).rightPanelTab ?? "files";
 
   return (
     <div style={{
@@ -233,94 +226,125 @@ export function RightPanel({ locale }: RightPanelProps) {
       fontFamily: fonts.mono, fontSize: "11px",
       color: colors.textSecondary, userSelect: "none",
     }}>
-      {/* Header */}
+      {/* Tab bar: Files | Outline */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "6px 8px", borderBottom: `1px solid ${colors.border}`,
-        color: colors.textMuted, fontSize: "9px", textTransform: "uppercase",
-        letterSpacing: "0.5px",
+        display: "flex", borderBottom: `1px solid ${colors.border}`,
+        flexShrink: 0,
       }}>
-        <span>{t("fileExplorer.title", locale) || "files"}</span>
-        <div style={{ display: "flex", gap: "2px" }}>
-          <button onClick={(e: MouseEvent) => { e.stopPropagation(); startCreate("/", false); }}
-            title="New file"
-            style={btnStyle}>+</button>
-          <button onClick={(e: MouseEvent) => { e.stopPropagation(); startCreate("/", true); }}
-            title="New folder"
-            style={btnStyle}>+d</button>
-        </div>
-      </div>
-
-      {/* Tree */}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "2px 0" }}>
-        {tree.length === 0 && (
-          <div style={{ padding: "12px 8px", color: colors.textMuted, fontSize: "10px", fontStyle: "italic" }}>
-            {t("fileExplorer.empty", locale) || "empty project"}
+        {["files", "outline"].map((tab) => (
+          <div key={tab}
+            onClick={() => (ideStore.getState() as any).setRightPanelTab(tab)}
+            style={{
+              padding: "6px 10px", fontSize: "9px", textTransform: "uppercase",
+              letterSpacing: "0.5px", cursor: "pointer", userSelect: "none",
+              color: activeTab === tab ? colors.text : colors.textMuted,
+              background: activeTab === tab ? colors.bg : "transparent",
+              borderBottom: activeTab === tab ? `1px solid ${colors.text}` : "1px solid transparent",
+              marginBottom: "-1px",
+            }}>
+            {tab === "files"
+              ? (t("fileExplorer.title", locale) || "files")
+              : (t("outline.title", locale) || "outline")}
           </div>
-        )}
-        {tree.map((node) => (
-          <TreeNode
-            key={node.path}
-            node={node}
-            depth={0}
-            expanded={expanded}
-            onToggle={toggleDir}
-            onOpen={openFile}
-            onContextMenu={handleContextMenu}
-            onStartCreate={startCreate}
-            renaming={renaming}
-            renameValue={renameValue}
-            onRenameChange={setRenameValue}
-            onRenameCommit={commitRename}
-            onRenameCancel={() => setRenaming(null)}
-            creatingIn={creatingIn}
-            creatingIsDir={creatingIsDir}
-            createName={createName}
-            onCreateNameChange={setCreateName}
-            onCreateCommit={commitCreate}
-            onCreateCancel={() => setCreatingIn(null)}
-          />
         ))}
-
-        {/* Inline create at root */}
-        {creatingIn === "/" && (
-          <CreateInput
-            isDir={creatingIsDir}
-            value={createName}
-            onChange={setCreateName}
-            onCommit={commitCreate}
-            onCancel={() => setCreatingIn(null)}
-          />
-        )}
       </div>
 
-      {/* Context menu */}
-      {ctxTarget && ctxPos && (
-        <div style={{
-          position: "fixed", left: ctxPos.x, top: ctxPos.y,
-          background: colors.surface2, border: `1px solid ${colors.borderEmphasis}`,
-          zIndex: 1000, minWidth: "100px",
-          fontSize: "11px", fontFamily: fonts.mono,
-        }}>
-          <div onClick={(e: MouseEvent) => { e.stopPropagation(); startRename(ctxTarget); }}
-            style={ctxItemStyle}>
-            {t("fileExplorer.rename", locale) || "rename"}
+      {activeTab === "files" ? (
+        <>
+          {/* Header */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "4px 8px", borderBottom: `1px solid ${colors.border}`,
+            color: colors.textMuted, fontSize: "9px", textTransform: "uppercase",
+            letterSpacing: "0.5px", flexShrink: 0,
+          }}>
+            <span>{t("fileExplorer.title", locale) || "files"}</span>
+            <div style={{ display: "flex", gap: "2px" }}>
+              <button onClick={(e: MouseEvent) => { e.stopPropagation(); startCreate("/", false); }}
+                title="New file"
+                style={btnStyle}>+</button>
+              <button onClick={(e: MouseEvent) => { e.stopPropagation(); startCreate("/", true); }}
+                title="New folder"
+                style={btnStyle}>+d</button>
+            </div>
           </div>
-          <div onClick={(e: MouseEvent) => { e.stopPropagation(); handleDelete(ctxTarget); }}
-            style={ctxItemStyle}>
-            {t("fileExplorer.delete", locale) || "delete"}
+
+          {/* Tree */}
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "2px 0" }}>
+            {tree.length === 0 && (
+              <div style={{ padding: "12px 8px", color: colors.textMuted, fontSize: "10px", fontStyle: "italic" }}>
+                {t("fileExplorer.empty", locale) || "empty project"}
+              </div>
+            )}
+            {tree.map((node) => (
+              <TreeNode
+                key={node.path}
+                node={node}
+                depth={0}
+                expanded={expanded}
+                onToggle={toggleDir}
+                onOpen={openFile}
+                onContextMenu={handleContextMenu}
+                onStartCreate={startCreate}
+                renaming={renaming}
+                renameValue={renameValue}
+                onRenameChange={setRenameValue}
+                onRenameCommit={commitRename}
+                onRenameCancel={() => setRenaming(null)}
+                creatingIn={creatingIn}
+                creatingIsDir={creatingIsDir}
+                createName={createName}
+                onCreateNameChange={setCreateName}
+                onCreateCommit={commitCreate}
+                onCreateCancel={() => setCreatingIn(null)}
+              />
+            ))}
+
+            {/* Inline create at root */}
+            {creatingIn === "/" && (
+              <CreateInput
+                isDir={creatingIsDir}
+                value={createName}
+                onChange={setCreateName}
+                onCommit={commitCreate}
+                onCancel={() => setCreatingIn(null)}
+              />
+            )}
           </div>
+
+          {/* Context menu */}
+          {ctxTarget && ctxPos && (
+            <div style={{
+              position: "fixed", left: ctxPos.x, top: ctxPos.y,
+              background: colors.surface2, border: `1px solid ${colors.borderEmphasis}`,
+              zIndex: 1000, minWidth: "100px",
+              fontSize: "11px", fontFamily: fonts.mono,
+            }}>
+              <div onClick={(e: MouseEvent) => { e.stopPropagation(); startRename(ctxTarget); }}
+                style={ctxItemStyle}>
+                {t("fileExplorer.rename", locale) || "rename"}
+              </div>
+              <div onClick={(e: MouseEvent) => { e.stopPropagation(); handleDelete(ctxTarget); }}
+                style={ctxItemStyle}>
+                {t("fileExplorer.delete", locale) || "delete"}
+              </div>
+            </div>
+          )}
+
+          {/* Counter */}
+          <div style={{
+            borderTop: `1px solid ${colors.border}`,
+            padding: "4px 8px", fontSize: "9px",
+            color: colors.textMuted,
+          }}>
+            {t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}
+          </div>
+        </>
+      ) : (
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <OutlinePanel locale={locale} />
         </div>
       )}
-
-      {/* Counter */}
-      <div style={{
-        borderTop: `1px solid ${colors.border}`,
-        padding: "4px 8px", fontSize: "9px",
-        color: colors.textMuted,
-      }}>
-        {t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}
-      </div>
     </div>
   );
 }
@@ -372,8 +396,8 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu, onSt
         }}
       >
         {/* Arrow / icon */}
-        <span style={{ width: "12px", textAlign: "center", flexShrink: 0, color: colors.textMuted }}>
-          {isDir ? (isExpanded ? "▾" : "▸") : " "}
+        <span style={{ width: "14px", textAlign: "center", flexShrink: 0, color: isDir ? colors.textMuted : fileInfo(node.path).color }}>
+          {isDir ? (isExpanded ? "▾" : "▸") : fileInfo(node.path).icon}
         </span>
 
         {/* Name or rename input */}
@@ -516,3 +540,30 @@ const ctxItemStyle: Record<string, string> = {
   padding: "4px 10px", cursor: "pointer",
   color: colors.textSecondary,
 };
+
+// ─── File icon helper (10.2) ────────────────────────────────
+function fileInfo(path: string): { icon: string; color: string } {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, [string, string]> = {
+    ts: ["TS", "#6b9fff"],
+    tsx: ["TX", "#6b9fff"],
+    js: ["JS", "#c9a93e"],
+    jsx: ["RX", "#c97e3e"],
+    json: ["{}", "#c9a93e"],
+    html: ["<>", "#c97e3e"],
+    htm: ["<>", "#c97e3e"],
+    css: ["#", "#e06c9e"],
+    scss: ["#", "#e06c9e"],
+    md: ["MD", "#888888"],
+    py: ["PY", "#6b9fff"],
+    txt: ["TX", "#888888"],
+    yml: ["YM", "#888888"],
+    yaml: ["YM", "#888888"],
+    toml: ["TM", "#888888"],
+    env: [".e", "#888888"],
+    gitignore: [".g", "#555555"],
+  };
+  const entry = map[ext];
+  if (entry) return { icon: entry[0], color: entry[1] };
+  return { icon: "📄", color: colors.textMuted };
+}

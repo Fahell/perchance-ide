@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { dbSaveVfs } from "../db.js";
+import { setCurrentView } from "../editor/view-store.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
 import { vfsExists, vfsGetAll, vfsRead, vfsWrite } from "../vfs.js";
@@ -70,9 +71,13 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 
     // Destroy old editor
     if (viewRef.current) {
+      setCurrentView(null);
       viewRef.current.destroy();
       viewRef.current = null;
     }
+
+    // Read settings from store (10.4)
+    const { fontSize, tabSize, wordWrap } = store.settings;
 
     // Read content from VFS
     const content = vfsRead(path) ?? "";
@@ -89,9 +94,9 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         parent: containerRef.current,
         doc: content,
         language: getLanguageSupport(path),
-        fontSize: 13,
-        tabSize: 2,
-        wordWrap: false,
+        fontSize,
+        tabSize,
+        wordWrap,
         onChange: (doc) => {
           if (!mountedRef.current) return;
           ideStore.getState().setFileSaveStatus(path, "saving");
@@ -112,12 +117,16 @@ export function CodeEditor({ locale }: CodeEditorProps) {
           ideStore.getState().setFileDirty(path, true);
         },
       });
+
+      // Share view with OutlinePanel (10.1)
+      setCurrentView(viewRef.current);
     })();
 
     return () => {
       cancelled = true;
+      setCurrentView(null);
     };
-  }, [activeFile]);
+  }, [activeFile, store.settingsVersion]);
 
   // ── Listen for flush-save event (from Ctrl+S shortcut) ─
   useEffect(() => {
@@ -149,6 +158,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      setCurrentView(null);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (persistRef.current) clearTimeout(persistRef.current);
       if (viewRef.current) {
@@ -211,6 +221,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         onSelect={selectTab}
         onClose={closeTab}
         onAdd={addTab}
+        locale={locale}
       />
       <div ref={containerRef} style={{
         flex: 1, overflow: "hidden", position: "relative",
@@ -237,13 +248,57 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 }
 
 // ─── Tab Bar ────────────────────────────────────────────────
-function TabBar({ tabs, activeFile, onSelect, onClose, onAdd }: {
+function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
   tabs: IdeState["files"];
   activeFile: string | null;
   onSelect: (path: string) => void;
   onClose: (path: string, e: MouseEvent) => void;
   onAdd: () => void;
+  locale?: Locale;
 }) {
+  // Context menu + inline rename state (10.3)
+  const [ctxPath, setCtxPath] = useState<string | null>(null);
+  const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!ctxPath) return;
+    const handler = () => { setCtxPath(null); setCtxPos(null); };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [ctxPath]);
+
+  function handleContextMenu(tabPath: string, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxPath(tabPath);
+    setCtxPos({ x: e.clientX, y: e.clientY });
+  }
+
+  function startRename(path: string) {
+    const tab = tabs.find((t) => t.path === path);
+    setRenamingPath(path);
+    setRenameValue(tab?.name ?? "");
+    setCtxPath(null);
+    setCtxPos(null);
+  }
+
+  function commitRename() {
+    if (!renamingPath || !renameValue.trim()) {
+      setRenamingPath(null);
+      return;
+    }
+    const parts = renamingPath.split("/").filter(Boolean);
+    parts.pop();
+    const newPath = "/" + [...parts, renameValue.trim()].join("/");
+    if (newPath !== renamingPath) {
+      ideStore.getState().renameFile(renamingPath, newPath);
+    }
+    setRenamingPath(null);
+  }
+
   return (
     <div style={{
       display: "flex", alignItems: "center",
@@ -256,8 +311,11 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd }: {
         {tabs.map((tab) => {
           const isActive = tab.path === activeFile;
           const ext = getExt(tab.path);
+          const isRenaming = renamingPath === tab.path;
           return (
             <div key={tab.path} onClick={() => onSelect(tab.path)}
+              onContextMenu={(e: MouseEvent) => handleContextMenu(tab.path, e)}
+              onDblClick={(e: MouseEvent) => { e.stopPropagation(); startRename(tab.path); }}
               style={{
                 display: "flex", alignItems: "center", gap: "4px",
                 padding: "4px 8px", fontSize: "10px", fontFamily: fonts.mono,
@@ -269,7 +327,24 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd }: {
               }}
             >
               <LangLabel ext={ext} />
-              <span>{tab.name}</span>
+              {isRenaming ? (
+                <input value={renameValue}
+                  onInput={(e: any) => setRenameValue(e.currentTarget.value)}
+                  onKeyDown={(e: KeyboardEvent) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setRenamingPath(null);
+                  }}
+                  onBlur={commitRename}
+                  autoFocus
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
+                  style={{
+                    background: colors.inputBg, border: `1px solid ${colors.borderEmphasis}`,
+                    color: colors.text, fontSize: "10px", fontFamily: fonts.mono,
+                    outline: "none", padding: "1px 2px", width: "80px",
+                  }} />
+              ) : (
+                <span>{tab.name}</span>
+              )}
               {tab.dirty && (
                 <span style={{
                   color: colors.textMuted, fontSize: "10px",
@@ -298,6 +373,25 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd }: {
           );
         })}
       </div>
+
+      {/* Context menu */}
+      {ctxPath && ctxPos && (
+        <div style={{
+          position: "fixed", left: ctxPos.x, top: ctxPos.y,
+          background: colors.surface2, border: `1px solid ${colors.borderEmphasis}`,
+          zIndex: 1000, minWidth: "80px",
+          fontSize: "11px", fontFamily: fonts.mono,
+        }}>
+          <div onClick={(e: MouseEvent) => { e.stopPropagation(); startRename(ctxPath); }}
+            style={{
+              padding: "4px 10px", cursor: "pointer",
+              color: colors.textSecondary,
+            }}>
+            {t("editor.rename", locale) || "rename"}
+          </div>
+        </div>
+      )}
+
       <button onClick={onAdd} title="New file"
         style={{
           background: "none", border: "none", color: colors.textMuted,

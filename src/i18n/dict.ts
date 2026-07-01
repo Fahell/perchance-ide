@@ -121,6 +121,20 @@ const en: Translations = {
   // Tool cards
   "tool.loadingPyodide": "Loading Python runtime (3.5 MB)…",
   "tool.pyodideError": "Python runtime failed to load",
+
+  // Editor — tab rename (10.3)
+  "editor.rename": "rename",
+
+  // Outline (10.1)
+  "outline.title": "outline",
+  "outline.noSymbols": "no symbols found",
+  "outline.noEditor": "no file open",
+
+  // File search (10.5)
+  "fileSearch.placeholder": "Search files...",
+  "fileSearch.noResults": "no results",
+  "fileSearch.noFiles": "no files in project",
+  "fileSearch.results": "{n} results",
 };
 
 const ptBR: Translations = {
@@ -224,6 +238,20 @@ const ptBR: Translations = {
   // Tool cards
   "tool.loadingPyodide": "Carregando Python runtime (3.5 MB)…",
   "tool.pyodideError": "Falha ao carregar Python runtime",
+
+  // Editor — tab rename (10.3)
+  "editor.rename": "renomear",
+
+  // Outline (10.1)
+  "outline.title": "estrutura",
+  "outline.noSymbols": "nenhum símbolo encontrado",
+  "outline.noEditor": "nenhum arquivo aberto",
+
+  // File search (10.5)
+  "fileSearch.placeholder": "Buscar arquivos...",
+  "fileSearch.noResults": "nenhum resultado",
+  "fileSearch.noFiles": "nenhum arquivo no projeto",
+  "fileSearch.results": "{n} resultados",
 };
 
 const es: Translations = {
@@ -313,6 +341,20 @@ const es: Translations = {
   // Tool cards
   "tool.loadingPyodide": "Cargando Python runtime (3.5 MB)…",
   "tool.pyodideError": "Error al cargar Python runtime",
+
+  // Editor — tab rename (10.3)
+  "editor.rename": "renombrar",
+
+  // Outline (10.1)
+  "outline.title": "estructura",
+  "outline.noSymbols": "sin símbolos",
+  "outline.noEditor": "sin archivo abierto",
+
+  // File search (10.5)
+  "fileSearch.placeholder": "Buscar archivos...",
+  "fileSearch.noResults": "sin resultados",
+  "fileSearch.noFiles": "sin archivos en el proyecto",
+  "fileSearch.results": "{n} resultados",
 };
 
 const ja: Translations = {
@@ -403,6 +445,20 @@ const ja: Translations = {
   // Tool cards
   "tool.loadingPyodide": "Pythonランタイムを読み込み中 (3.5 MB)…",
   "tool.pyodideError": "Pythonランタイムの読み込みに失敗しました",
+
+  // Editor — tab rename (10.3)
+  "editor.rename": "名前変更",
+
+  // Outline (10.1)
+  "outline.title": "アウトライン",
+  "outline.noSymbols": "シンボルがありません",
+  "outline.noEditor": "ファイルが開かれていません",
+
+  // File search (10.5)
+  "fileSearch.placeholder": "ファイルを検索...",
+  "fileSearch.noResults": "結果なし",
+  "fileSearch.noFiles": "プロジェクトにファイルがありません",
+  "fileSearch.results": "{n}件",
 };
 
 const zh: Translations = {
@@ -493,6 +549,20 @@ const zh: Translations = {
   // Tool cards
   "tool.loadingPyodide": "正在加载 Python 运行时 (3.5 MB)…",
   "tool.pyodideError": "Python 运行时加载失败",
+
+  // Editor — tab rename (10.3)
+  "editor.rename": "重命名",
+
+  // Outline (10.1)
+  "outline.title": "大纲",
+  "outline.noSymbols": "未找到符号",
+  "outline.noEditor": "未打开文件",
+
+  // File search (10.5)
+  "fileSearch.placeholder": "搜索文件...",
+  "fileSearch.noResults": "无结果",
+  "fileSearch.noFiles": "项目中无文件",
+  "fileSearch.results": "{n}个结果",
 };
 
 export const dict: Record<Locale, Translations> = {

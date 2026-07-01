@@ -10,6 +10,7 @@ import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index
 import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
+import { loadSettings } from "./store.js";
 import { initContextTools, initTerminalTools, initVfsTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
@@ -163,6 +164,9 @@ function startAgent() {
   // Initialize message store (load persisted messages)
   // Fire-and-forget: startup must not block rendering
   initMessageStore().catch((e) => console.error("[Agent] initMessageStore failed:", e));
+
+  // Load editor settings from localStorage
+  loadSettings();
 
   // Restore VFS from IndexedDB
   // Fire-and-forget: VFS loads incrementally, no need to block

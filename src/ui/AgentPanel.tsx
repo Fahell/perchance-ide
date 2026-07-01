@@ -10,6 +10,7 @@ import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FaqModal } from "./FaqModal.js";
+import { FileSearchModal } from "./FileSearchModal.js";
 import { Footer } from "./Footer.js";
 import { Header } from "./Header.js";
 import { MessageList } from "./MessageList.js";
@@ -53,6 +54,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
+  const [showFileSearch, setShowFileSearch] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [panelMode, setPanelMode] = useState<PanelMode>(initialPanelMode);
   const [inputEnabled, setInputEnabled] = useState(initialInputEnabled);
@@ -91,7 +93,8 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     setSettingsOpen,
     setContextOpen,
     setFaqOpen,
-  });
+    setShowFileSearch,
+  } as any);
   // Keep ref up to date
   shortcutRef.current = {
     settingsOpen,
@@ -102,6 +105,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     setSettingsOpen,
     setContextOpen,
     setFaqOpen,
+    setShowFileSearch,
   };
 
   useEffect(() => {
@@ -123,14 +127,10 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         return;
       }
 
-      // ── Ctrl+P / Cmd+P: File search placeholder ──────
+      // ── Ctrl+P / Cmd+P: File search ─────────────────
       if (meta && e.key === "p") {
         e.preventDefault();
-        // Placeholder — full modal comes in 10.5
-        const files = vfsGetAll();
-        if (files.length > 0) {
-          console.log("[Shortcuts] Ctrl+P — file search coming in Phase 10. Files:", files.length);
-        }
+        s.setShowFileSearch(true);
         return;
       }
 
@@ -156,6 +156,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         if (s.faqOpen) { s.setFaqOpen(false); return; }
         if (s.contextOpen) { s.setContextOpen(false); return; }
         if (s.settingsOpen) { s.setSettingsOpen(false); return; }
+        if (s.setShowFileSearch) { s.setShowFileSearch(false); return; }
         // Cancel rename in explorer
         document.dispatchEvent(new Event("explorer:cancel-rename"));
         return;
@@ -357,6 +358,12 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
         onInputEnabledChange={handleInputEnabledChange}
         locale={locale}
         onLocaleChange={handleLocaleChange}
+      />
+
+      <FileSearchModal
+        isOpen={showFileSearch}
+        onClose={() => setShowFileSearch(false)}
+        locale={locale}
       />
     </div>
   );
