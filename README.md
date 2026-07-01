@@ -2,13 +2,13 @@
 
 Standalone AI agent generator for [Perchance](https://perchance.org), powered by [ai-text-plugin](https://perchance.org/ai-text-plugin).
 
-TypeScript project bundled with esbuild into a single JS file, served via jsDelivr CDN.
+TypeScript + Preact project, bundled with esbuild into a single JS file and served via jsDelivr CDN.
 
 ## Quick Start
 
 ### 1. Create a Perchance generator
 
-Make a new generator on Perchance and set up an HTML panel with:
+Create a new generator on Perchance and add an HTML panel with:
 
 ```html
 <!-- HTML Panel -->
@@ -31,14 +31,17 @@ Replace `<COMMIT>` with the latest commit hash (auto-generated in `IMPORT.md` af
 # Install dependencies
 pnpm install
 
-# Build
+# Build (minified production bundle)
 pnpm build
 
-# Deploy (build + push + generate IMPORT.md)
+# Watch mode with source maps
+pnpm dev
+
+# Deploy — build + commit + push + generate IMPORT.md
 pnpm deploy
 
-# Watch mode
-pnpm dev
+# Run tests
+pnpm test
 ```
 
 ### Generator scaffolding
@@ -50,19 +53,21 @@ The `generator/` folder contains templates you can adapt:
 
 ## Features
 
-- **AI agent with tools** — web search, page scraping, context management
-- **Tool-calling agent loop** — AI outputs `<tool_call>` XML, custom code executes and feeds results back (up to 8 iterations)
-- **Context window management** — token-aware summarization with 3-tier architecture (hot/warm/cold)
+- **AI agent with tools** — web search (Jina AI), page scraping, context management, VFS operations, Python execution
+- **Tool-calling agent loop** — AI outputs `<tool_call>` XML, runtime detects and executes each call, feeds results back (up to 8 iterations)
+- **Token-aware context management** — 3-tier architecture (hot/warm/cold) with automatic summarization and memory extraction
 - **Context tools** — agent can query its own history via `search_history` (BM25-lite) and `get_messages` (index retrieval)
 - **Persistent memory** — extracts timeless facts from conversations, stored across sessions via IndexedDB
-- **Custom message store** — in-memory message history persisted to IndexedDB (via `idb` v8)
-- **IndexedDB persistence** — messages, memories, and summaries stored in IndexedDB for reliable cross-session persistence
-- **Zustand state management** — vanilla Zustand store for IDE state (active file, editor history, layout, settings)
+- **Dual persistence layers** — IndexedDB (via `idb` v8) for messages, memories, summaries; localStorage for small config (API key, panel mode, locale)
+- **Zustand state management** — vanilla Zustand store with `subscribeWithSelector` middleware for IDE-wide state
+- **CodeMirror 6 editor** — tabbed code editor with syntax highlighting, undo/redo stacks, and file management
+- **Virtual File System (VFS)** — fully in-memory tree with persistence, exposed as agent tools (read, write, search, list, delete, rename)
+- **Python execution via Pyodide** — run Python snippets, execute `.py` files from VFS, install packages via micropip (lazy-loaded, ~3.5MB gzip)
 - **i18n** — 5 languages (English, Português, Español, 日本語, 中文)
-- **Monochrome dark UI** — Preact-based 3-column panel with chat sidebar, code editor, and placeholder right panel
-- **FAQ panel** — built-in info modal with project links and usage notes
-- **VFS agent tools** — read, write, search, list, delete, and rename files in a virtual file system
-- **Python execution via Pyodide** — run Python snippets, execute `.py` files from VFS, install packages via micropip (lazy-loaded, ~3.5MB gzip, 2-6s cold start)
+- **Monochrome dark UI** — Preact-based 3-column layout: chat sidebar, code editor, file explorer / output panels
+- **Fully typed** — TypeScript strict mode, generic tool definitions with typed parameters, runtime validation guards
+- **Accessible** — semantic `<button>` elements, ARIA roles (`dialog`, `tablist`, `tree`, `log`, `switch`, `progressbar`), focus trapping in modals, WCAG AA contrast ratios
+- **Unit tested** — Vitest + jsdom with 70+ tests across VFS, storage, context management, agent loop, and utilities
 
 ## Architecture
 
@@ -70,23 +75,26 @@ The `generator/` folder contains templates you can adapt:
 src/
 ├── index.ts              # Entry point — bootstrap, agent orchestration, send handler
 ├── agent-loop.ts         # Core agent loop — tool call detection, instruction building, window.ai calls
-├── context-manager.ts    # Token-aware context building, summarization, chunked summaries (IndexedDB)
-├── db.ts                 # IndexedDB persistence layer (idb v8) — messages + kv stores
+├── context-manager.ts    # Token-aware context building, summarization, chunked summaries (IndexedDB), UTF-8 token estimation
+├── db.ts                 # IndexedDB persistence layer (idb v8) — messages + kv stores, optional runtime validation
 ├── memory.ts             # Persistent memory extraction and retrieval (IndexedDB)
 ├── message-store.ts      # In-memory message cache + async IndexedDB persistence
-├── storage.ts            # localStorage wrapper for small config (API key, panel mode, locale)
-├── store.ts              # Zustand vanilla store — IDE state management
-├── types.ts              # Perchance API types + window.ai type declarations
+├── storage.ts            # localStorage wrapper for small config (API key, panel mode, locale, input enabled)
+├── store.ts              # Zustand vanilla store — IDE state (files, editor history, layout, settings)
+├── types.ts              # Perchance API types + window.ai type declarations + getAi() helper
 │
 ├── tools/
-│   ├── index.ts          # Tool registry + initContextTools()
+│   ├── index.ts          # Tool registry — ToolDefinition<TArgs> generic interface + getToolDescriptions()
 │   ├── context-tools.ts  # search_history (BM25-lite) + get_messages tools
 │   ├── vfs-tools.ts      # read_file, write_file, list_files, search_files, delete_file, rename_file
 │   ├── terminal-tools.ts # run_python, execute_script, install_package
-│   └── web-search.ts     # Jina API integration (search + scrape)
+│   └── web-search.ts     # Jina AI integration (search + scrape), typed FetchError + result interfaces
+│
+├── utils/
+│   └── validate.ts       # Zero-dependency runtime validation — validateShape<T>(), isArrayOf()
 │
 ├── terminal/
-│   └── pyodide.ts        # Pyodide loader + VFS→MEMFS sync bridge
+│   └── pyodide.ts        # Pyodide WebAssembly loader + VFS→MEMFS sync bridge
 │
 ├── i18n/
 │   ├── dict.ts           # Translation dictionaries (5 locales)
@@ -94,26 +102,134 @@ src/
 │
 └── ui/
     ├── AgentPanel.tsx     # Main panel — 3-column layout, state, modal management
-    ├── Header.tsx         # Top bar with version + FAQ button
+    ├── Header.tsx         # Top bar — version display, [clear] and [?] buttons
     ├── Footer.tsx         # Input bar + settings/context buttons
-    ├── MessageList.tsx    # Scrollable message container
+    ├── MessageList.tsx    # Scrollable message container — role="log", aria-live="polite"
     ├── UserMessage.tsx    # User message bubble
     ├── AgentMessage.tsx   # Agent response with tool call cards
     ├── ResponseText.tsx   # Markdown rendering + expand/collapse
     ├── ToolCallCard.tsx   # Collapsible tool call display
     ├── ThinkingIndicator.tsx  # Animated thinking dots
     ├── ScrollFAB.tsx      # Scroll-to-bottom floating button
-    ├── SettingsModal.tsx  # API key, panel mode, language settings
-    ├── ContextViewer.tsx  # Context visualization (tokens, tiers, search, memories)
-    ├── FaqModal.tsx       # FAQ modal with project info
-    ├── CodeEditor.tsx     # Code/text editor panel (middle column)
-    ├── RightPanel.tsx     # Placeholder panel (right column, coming soon)
+    ├── Modal.tsx          # Accessible modal wrapper — focus trap, Escape close, focus restoration
+    ├── SettingsModal.tsx  # Settings dialog — API key, panel mode, language, input toggle (role="switch")
+    ├── ContextViewer.tsx  # Context visualization — token budget (role="progressbar"), tiers, search, memories
+    ├── FaqModal.tsx       # FAQ dialog — project links, usage notes
+    ├── CodeEditor.tsx     # CodeMirror 6 editor — tabbed interface, syntax highlighting
+    ├── RightPanel.tsx     # File explorer + outline + preview + output tabs (ARIA tablist/tree)
     ├── SetupScreen.tsx    # Initial API key setup wizard
-    ├── theme.ts           # Monochrome color palette + fonts
+    ├── theme.ts           # Monochrome color palette + fonts (WCAG AA compliant)
     ├── markdown.ts        # Minimal markdown → HTML renderer
     ├── animations.ts      # Keyframe animations (pulse, glow, scroll)
-    └── types.ts           # UI-specific types (PanelMessage, ToolCallEntry, etc.)
+    └── types.ts           # UI-specific types (PanelMessage, ToolCallEntry, PanelMode, etc.)
 ```
+
+## Context Management
+
+The agent uses a **3-tier context architecture** to manage conversation history efficiently:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  HOT — always in prompt (~1200 tokens)              │
+│  Last 5 messages + rolling summary + key facts      │
+├─────────────────────────────────────────────────────┤
+│  WARM — accessible via search_history tool          │
+│  Chunked summaries of older conversation blocks     │
+│  BM25-lite keyword search across all history        │
+├─────────────────────────────────────────────────────┤
+│  COLD — accessible via get_messages tool            │
+│  Full raw message history                         │
+│  Index-based retrieval (by position or count)       │
+└─────────────────────────────────────────────────────┘
+```
+
+- **Summarization** triggers automatically when conversation exceeds ~3K token budget
+- **Memory extraction** runs in background after each exchange, capturing timeless facts (max 20)
+- **Context tools** let the agent search its own history when the user references earlier conversation
+- **ContextViewer** modal visualizes token usage, tiers, chunks, and memories
+- **Token estimation** uses `TextEncoder` byte-length / 4 with a code heuristic (divisor 3.0 if >15% code operators)
+
+## Type Safety
+
+Tools use a generic `ToolDefinition<TArgs>` interface:
+
+```ts
+interface ToolDefinition<TArgs extends Record<string, unknown>> {
+  name: string;
+  description: string;
+  parameters: Record<string, { description: string; type: string; required?: boolean }>;
+  execute(args: TArgs): Promise<string>;
+}
+```
+
+Runtime validation uses zero-dependency type guards:
+
+```ts
+const isChunkSummary = validateShape<ChunkSummary>({
+  from: v => typeof v === "number",
+  to: v => typeof v === "number",
+  summary: v => typeof v === "string",
+  tokenCount: v => typeof v === "number",
+});
+
+const data: unknown = await dbKvGet("key");
+if (isChunkSummary(data)) {
+  data.from; // typed as number ✓
+}
+```
+
+## Accessibility
+
+All UI components follow ARIA patterns:
+
+| Component | ARIA |
+|-----------|------|
+| `Modal` | `role="dialog"`, `aria-modal="true"`, focus trap, Escape close, focus restoration |
+| `SettingsModal` toggles | `role="switch"`, `aria-checked`, keyboard activation |
+| `MessageList` | `role="log"`, `aria-live="polite"` |
+| `ContextViewer` budget bar | `role="progressbar"`, `aria-valuenow/min/max` |
+| `RightPanel` tabs | `role="tablist"` / `role="tab"`, `aria-selected` |
+| `RightPanel` tree | `role="tree"` / `role="treeitem"`, `aria-expanded` |
+| All close/action controls | `<button>` elements with accessible labels |
+| Color contrast | `textMuted: #757575` on black bg (WCAG AA for 18pt+) |
+
+## Message Flow
+
+```
+User sends message
+    │
+    ├──→ handleSendMessage()
+    │    ├─ addMessage() → stores in custom message store + IndexedDB
+    │    ├─ buildContext() → token-aware: hot messages + summary + memories
+    │    ├─ formatMemories() → injects key facts as bullet list
+    │    ├─ agentLoop() → window.ai() call with tool instructions
+    │    │   ├─ Agent uses web_search / scrape_url for real-time data
+    │    │   ├─ Agent uses search_history / get_messages for older context
+    │    │   ├─ Agent uses VFS tools to read/write files
+    │    │   └─ Up to 8 tool-call iterations
+    │    ├─ addMessage() → stores agent response
+    │    └─ extractMemories() → background fact extraction (async)
+    │
+    └──→ Response rendered in Preact sidebar panel
+```
+
+## Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `web_search` | Search the web via Jina AI | `{ query: string }` |
+| `scrape_url` | Fetch full page content as markdown | `{ url: string, maxChars?: number }` |
+| `search_history` | Search conversation history by keyword (BM25-lite) | `{ query: string }` |
+| `get_messages` | Retrieve messages by position or count | `{ count?: number, from?: number, to?: number }` |
+| `read_file` | Read file contents from VFS | `{ path: string }` |
+| `write_file` | Create or overwrite a file in VFS | `{ path: string, content: string }` |
+| `list_files` | Show project tree structure | `{ path?: string }` |
+| `search_files` | Search files by name or content | `{ query: string, mode?: "name" \| "content" }` |
+| `delete_file` | Delete a file or folder recursively | `{ path: string }` |
+| `rename_file` | Rename or move a file/folder | `{ source: string, dest: string }` |
+| `run_python` | Execute a Python snippet, returns stdout/stderr | `{ code: string }` |
+| `execute_script` | Run a `.py` file from VFS | `{ path: string }` |
+| `install_package` | Install a Python package via micropip | `{ name: string }` |```
 
 ## Context Management
 
@@ -185,26 +301,26 @@ User sends message
 
 ## Storage API
 
-The project uses two persistence layers with different scopes:
+Two persistence layers with different scopes:
 
 ### localStorage (small config)
 
-Via `src/storage.ts` — preserved for small user settings:
+Via `src/storage.ts` — synchronous, for small user settings:
 
 | Function | Description |
 |----------|-------------|
-| `storageGet<T>(key)` | Get a value by key |
+| `storageGet<T>(key)` | Get a value by key (preserves `null`) |
 | `storageSet<T>(key, value)` | Set a value by key |
 | `storageDel(key)` | Delete a key |
 | `storageHas(key)` | Check if key exists |
 | `storageKeys()` | List all keys |
 | `storageClear()` | Remove all data |
 
-All keys use the `agent:` prefix internally to avoid collisions. Stores: API key, panel mode, UI locale, input enabled state.
+All keys use the `agent:` prefix internally. Stores: API key, panel mode, UI locale, input enabled state.
 
 ### IndexedDB (messages, memories, summaries)
 
-Via `src/db.ts` — powered by [`idb`](https://github.com/jakearchibald/idb) v8, with two object stores:
+Via `src/db.ts` — powered by [`idb`](https://github.com/jakearchibald/idb) v8, two object stores:
 
 | Store | Key | Contents |
 |-------|-----|----------|
@@ -227,6 +343,7 @@ Via `src/db.ts` — powered by [`idb`](https://github.com/jakearchibald/idb) v8,
 | Function | Description |
 |----------|-------------|
 | `dbKvGet<T>(key)` | Get a value by key |
+| `dbKvGetValidated<T>(key, validator)` | Get + runtime type guard (logs warning on mismatch) |
 | `dbKvSet(key, value)` | Set a value by key |
 | `dbKvDel(key)` | Delete a key |
 | `dbKvClear()` | Remove all KV entries |
@@ -247,11 +364,11 @@ Custom message store with in-memory cache + async IndexedDB persistence (`src/me
 | `getMessageCount()` | Total message count (sync) |
 | `clearMessages()` | Clear all messages from cache and IndexedDB (async) |
 
-Messages are cached in memory for fast access; writes are fire-and-forget persisted to the `messages` store in IndexedDB via `db.ts`.
+Messages are cached in memory for fast access; writes are fire-and-forget persisted to the `messages` store in IndexedDB.
 
 ## State Management
 
-Vanilla Zustand store (`src/store.ts`) for IDE-wide state, created with `createStore` from `zustand/vanilla` and the `subscribeWithSelector` middleware:
+Vanilla Zustand store (`src/store.ts`) created with `createStore` from `zustand/vanilla` and `subscribeWithSelector` middleware:
 
 ### State Slices
 
@@ -278,7 +395,7 @@ Vanilla Zustand store (`src/store.ts`) for IDE-wide state, created with `createS
 | `updateSettings(partial)` | Merge settings partial |
 | `setProcessing(bool, msg?)` | Toggle processing state |
 
-The store is runtime-only (no built-in persistence). Persistent state uses `storage.ts` (localStorage) for small config and `db.ts` (IndexedDB) for bulk data. Preact components can subscribe via `useSyncExternalStore`.
+The store is runtime-only (no built-in persistence). Persistent state uses `storage.ts` (localStorage) for small config and `db.ts` (IndexedDB) for bulk data. Preact components subscribe via `useSyncExternalStore`.
 
 ## Setup & Configuration
 
@@ -290,10 +407,8 @@ The first time the agent loads without an API key, a **Setup Screen** is shown:
 
 ### Panel Modes
 
-- **Full** — Chat sidebar + code editor + placeholder right panel
+- **Full** — Chat sidebar + code editor + file explorer / output panels
 - **Tools-only** — Compact view showing only tool call history
-
-Switch modes in Settings. The selection persists across sessions.
 
 ### Settings
 
@@ -306,20 +421,46 @@ Accessible via the gear icon in the header:
 | **Language** | UI locale (en, pt, es, ja, zh) |
 | **Input Enabled** | Toggle chat input on/off |
 
+## Testing
+
+Tests use [Vitest](https://vitest.dev/) with jsdom environment:
+
+```bash
+pnpm test        # Run all tests
+pnpm test:watch  # Watch mode
+```
+
+Test files (`*.test.ts`) live alongside source files:
+
+| Test file | Covers |
+|-----------|--------|
+| `src/vfs.test.ts` | VFS CRUD, normalize, tree, rename, delete, edge cases |
+| `src/storage.test.ts` | localStorage get/set/del/has/keys/clear |
+| `src/context-manager.test.ts` | Token estimation (UTF-8 + code heuristic) |
+| `src/agent-loop.test.ts` | Tool call extraction regex, response cleaning |
+| `src/utils/truncate.test.ts` | String truncation (chars + lines modes) |
+| `src/utils/retry.test.ts` | isRetryableError, retryWithBackoff |
+
 ## Critical Patterns
 
-- **LLM calls**: All operations (agent loop, summarization, memory extraction) use `window.ai()` / `root.ai()` from ai-text-plugin.
-- **Custom message store**: Messages cached in memory + persisted to IndexedDB (via `db.ts`).
-- **Storage**: Two layers — `storage.ts` (localStorage) for small config (API key, panel mode, locale), `db.ts` (IndexedDB) for messages, memories, and summaries.
-- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → code detects, executes, feeds result back.
-- **UI**: All UI rendered by Preact into `document.body`.
+- **LLM calls**: All operations (agent loop, summarization, memory extraction) use `getAi()` helper (resolves `window[name]` / `window.root[name]` / `window.parent?.root?.[name]`). Never call `window.ai` directly.
+- **Message store**: In-memory cache + async IndexedDB persistence via `db.ts`.
+- **Storage**: Two layers — `storage.ts` (localStorage) for small config, `db.ts` (IndexedDB) for bulk data with optional runtime validation (`dbKvGetValidated`).
+- **Tool calls**: AI outputs `<tool_call name="...">{JSON}</tool_call>` → runtime detects, executes tool, feeds result back into next LLM iteration.
+- **Tool interface**: `ToolDefinition<TArgs>` generic — typed `execute(args: TArgs)` instead of `Record<string, any>`.
+- **UI**: Preact renders into `document.body`. Accessible via ARIA roles throughout.
 - **CDN cache busting**: Use `@<COMMIT>` (immutable commit reference), not `@main`.
 - **API key**: Jina AI key stored in localStorage under `agent:jina_key`.
 - **Panel modes**: `"full"` (3-column) or `"tools-only"` — persisted in localStorage.
 
 ## Bundle
 
-~92KB minified (esbuild), served via jsDelivr CDN.
+Built with esbuild, minified in production (dev mode includes source maps). Served via jsDelivr CDN as a single ESM file.
+
+```bash
+pnpm build   # → dist/agent.js (minified)
+pnpm dev     # → dist/agent.js + source maps, watch mode
+```
 
 ## License
 
