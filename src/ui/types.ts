@@ -3,7 +3,6 @@
  */
 
 export type AgentStatus = "idle" | "thinking" | "searching" | "scraping" | "responding";
-export type PanelMode = "full" | "tools-only";
 
 export interface ToolCallEntry {
   id: string;

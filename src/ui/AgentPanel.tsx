@@ -127,13 +127,9 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
                     fontFamily: fonts.mono,
                   }}>
                     <div style={{ fontSize: "12px", marginBottom: "6px" }}>
-                      {panelMode === "tools-only" ? (
-                        <span>{t("panel.compact", locale)}</span>
-                      ) : (
-                        <span>
-                          {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
-                        </span>
-                      )}
+                      <span>
+                        {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
+                      </span>
                     </div>
                     <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
                   </div>
@@ -142,7 +138,6 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
                 <ChatMessages
                   messages={messages}
                   agentStatus={agentStatus}
-                  panelMode={panelMode}
                   locale={locale}
                   userName={userName}
                 />

@@ -6,41 +6,29 @@
  */
 
 import type { Locale } from "../i18n/index.js";
-import { t } from "../i18n/index.js";
 import { AgentMessage } from "./AgentMessage.js";
-import { colors, fonts } from "./theme.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
-import type { AgentStatus, PanelMessage, PanelMode } from "./types.js";
+import type { AgentStatus, PanelMessage } from "./types.js";
 import { UserMessage } from "./UserMessage.js";
 
 export interface ChatMessagesProps {
   messages: PanelMessage[];
   agentStatus: AgentStatus;
-  panelMode: PanelMode;
   locale: Locale;
   userName?: string;
 }
 
-export function ChatMessages({ messages, agentStatus, panelMode, locale, userName }: ChatMessagesProps) {
-  const isCompact = panelMode === "tools-only";
+export function ChatMessages({ messages, agentStatus, locale, userName }: ChatMessagesProps) {
+  const isCompact = false;
 
   const filtered = isCompact
     ? messages.filter((msg) => {
-        if (msg.role === "user") return false;
-        if (msg.toolCalls.length > 0) return true;
-        if (agentStatus !== "idle") return true;
-        return false;
-      })
+      if (msg.role === "user") return false;
+      if (msg.toolCalls.length > 0) return true;
+      if (agentStatus !== "idle") return true;
+      return false;
+    })
     : messages;
-
-  // Compact mode empty-state when all messages are filtered out
-  if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
-    return (
-      <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono }}>
-        {t("panel.compact", locale)}
-      </div>
-    );
-  }
 
   const elements: preact.VNode[] = [];
   filtered.forEach((msg, i) => {

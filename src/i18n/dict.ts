@@ -41,7 +41,6 @@ const en: Translations = {
 
   // Panel
   "panel.ready": "ready",
-  "panel.compact": "compact — tool calls only",
 
   // Response
   "response.label": "agent",
@@ -180,7 +179,6 @@ const ptBR: Translations = {
 
   // Panel
   "panel.ready": "pronto",
-  "panel.compact": "compacto — apenas tool calls",
 
   // Response
   "response.label": "agente",
@@ -315,7 +313,6 @@ const es: Translations = {
   "settings.save": "guardar",
   "settings.close": "cerrar",
   "panel.ready": "listo",
-  "panel.compact": "compacto — solo tool calls",
   "response.label": "agente",
   "response.expand": "expandir",
   "response.collapse": "contraer",
@@ -439,7 +436,6 @@ const ja: Translations = {
   "settings.save": "保存",
   "settings.close": "閉じる",
   "panel.ready": "準備完了",
-  "panel.compact": "コンパクト — ツールのみ",
   "response.label": "エージェント",
   "response.expand": "展開",
   "response.collapse": "折りたたむ",
@@ -564,7 +560,6 @@ const zh: Translations = {
   "settings.save": "保存",
   "settings.close": "关闭",
   "panel.ready": "就绪",
-  "panel.compact": "紧凑 — 仅工具调用",
   "response.label": "代理",
   "response.expand": "展开",
   "response.collapse": "折叠",

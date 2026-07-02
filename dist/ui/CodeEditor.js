@@ -1,0 +1,319 @@
+import { jsx as _jsx, jsxs as _jsxs } from "preact/jsx-runtime";
+/**
+ * CodeEditor — tabbed code editor powered by CodeMirror 6.
+ *
+ * Features:
+ * - Multiple open tabs backed by VFS (store)
+ * - Syntax highlighting via CM6 language support
+ * - New tab / close tab
+ * - Auto-save to VFS (debounced 500ms)
+ * - Lazy-loaded — CM6 bundle only imported when component mounts
+ */
+import { useEffect, useRef, useState } from "preact/hooks";
+import { dbSaveVfs } from "../db.js";
+import { getEmmetSyntax } from "../editor/emmet-langs.js";
+import { getEmmetExtensions } from "../editor/emmet.js";
+import { setCurrentView } from "../editor/view-store.js";
+import { t } from "../i18n/index.js";
+import { ideStore } from "../store.js";
+import { vfsExists, vfsGetAll, vfsRead, vfsWrite } from "../vfs.js";
+import { colors, fonts } from "./theme.js";
+// ─── Helpers ────────────────────────────────────────────────
+function getExt(path) {
+    return path.split(".").pop()?.toLowerCase() ?? "js";
+}
+// ─── Component ──────────────────────────────────────────────
+export function CodeEditor({ locale }) {
+    // Subscribe to Zustand store
+    const [store, setStore] = useState(ideStore.getState());
+    useEffect(() => {
+        return ideStore.subscribe((s) => setStore(s));
+    }, []);
+    const { files, activeFile } = store;
+    const containerRef = useRef(null);
+    const viewRef = useRef(null);
+    const debounceRef = useRef(null);
+    const persistRef = useRef(null);
+    const saveStatusTimerRef = useRef(null);
+    const prevActiveRef = useRef(null);
+    const mountedRef = useRef(true);
+    // Persist VFS to IndexedDB (debounced, not on every keystroke)
+    function schedulePersist() {
+        if (persistRef.current)
+            clearTimeout(persistRef.current);
+        persistRef.current = window.setTimeout(() => {
+            dbSaveVfs(vfsGetAll()).catch((e) => console.warn("[CodeEditor] dbSaveVfs failed:", e));
+        }, 2000);
+    }
+    // Auto-clear save status after a delay (replaces orphan setTimeout calls)
+    function scheduleSaveStatusClear(path, delay = 2000) {
+        if (saveStatusTimerRef.current)
+            clearTimeout(saveStatusTimerRef.current);
+        saveStatusTimerRef.current = window.setTimeout(() => {
+            if (!mountedRef.current)
+                return;
+            ideStore.getState().setFileSaveStatus(path, "idle");
+            saveStatusTimerRef.current = null;
+        }, delay);
+    }
+    // ── Mount / remount editor when activeFile changes ─────
+    useEffect(() => {
+        const path = activeFile;
+        if (!path || !containerRef.current)
+            return;
+        // Save previous file content before switching
+        if (prevActiveRef.current && viewRef.current) {
+            if (vfsExists(prevActiveRef.current)) {
+                const content = viewRef.current.state.doc.toString();
+                vfsWrite(prevActiveRef.current, content);
+                ideStore.getState().setFileDirty(prevActiveRef.current, false);
+                schedulePersist();
+            }
+        }
+        prevActiveRef.current = path;
+        // Destroy old editor
+        if (viewRef.current) {
+            setCurrentView(null);
+            viewRef.current.destroy();
+            viewRef.current = null;
+        }
+        // Read settings from store (10.4)
+        const { fontSize, tabSize, wordWrap } = store.settings;
+        // Read content from VFS
+        const content = vfsRead(path) ?? "";
+        let cancelled = false;
+        (async () => {
+            const [{ createEditor }, { getLanguageSupport }] = await Promise.all([
+                import("../editor/index.js"),
+                import("../editor/langs.js"),
+            ]);
+            if (cancelled || !containerRef.current)
+                return;
+            // Lazy-load Emmet for eligible file types (11.5)
+            const emmetSyntax = getEmmetSyntax(path);
+            const emmetExts = emmetSyntax ? await getEmmetExtensions(emmetSyntax) : [];
+            viewRef.current = createEditor({
+                parent: containerRef.current,
+                doc: content,
+                language: getLanguageSupport(path),
+                extraExtensions: emmetExts,
+                fontSize,
+                tabSize,
+                wordWrap,
+                onChange: (doc) => {
+                    if (!mountedRef.current)
+                        return;
+                    ideStore.getState().setFileSaveStatus(path, "saving");
+                    // Debounce save to VFS
+                    if (debounceRef.current)
+                        clearTimeout(debounceRef.current);
+                    debounceRef.current = window.setTimeout(() => {
+                        if (!mountedRef.current)
+                            return;
+                        vfsWrite(path, doc);
+                        ideStore.getState().setFileDirty(path, false);
+                        ideStore.getState().setFileSaveStatus(path, "saved");
+                        ideStore.getState().bumpVfsVersion();
+                        schedulePersist();
+                        scheduleSaveStatusClear(path);
+                    }, 500);
+                    ideStore.getState().setFileDirty(path, true);
+                },
+            });
+            // Share view with OutlinePanel (10.1)
+            setCurrentView(viewRef.current);
+        })();
+        return () => {
+            cancelled = true;
+            setCurrentView(null);
+        };
+    }, [activeFile, store.settingsVersion]);
+    // ── Listen for flush-save event (from Ctrl+S shortcut) ─
+    useEffect(() => {
+        function handleFlushSave(e) {
+            const { path } = e.detail;
+            if (!viewRef.current)
+                return;
+            // Flush debounced write
+            if (debounceRef.current)
+                clearTimeout(debounceRef.current);
+            vfsWrite(path, viewRef.current.state.doc.toString());
+            ideStore.getState().setFileDirty(path, false);
+            ideStore.getState().setFileSaveStatus(path, "saved");
+            ideStore.getState().bumpVfsVersion();
+            scheduleSaveStatusClear(path);
+            // Trigger persist
+            if (persistRef.current)
+                clearTimeout(persistRef.current);
+            dbSaveVfs(vfsGetAll()).catch((err) => console.warn("[CodeEditor] flush-save persist failed:", err));
+        }
+        document.addEventListener("editor:flush-save", handleFlushSave);
+        return () => document.removeEventListener("editor:flush-save", handleFlushSave);
+    }, []);
+    // ── Cleanup on unmount ──────────────────────────────────
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            setCurrentView(null);
+            if (debounceRef.current)
+                clearTimeout(debounceRef.current);
+            if (persistRef.current)
+                clearTimeout(persistRef.current);
+            if (saveStatusTimerRef.current)
+                clearTimeout(saveStatusTimerRef.current);
+            if (viewRef.current) {
+                const currentFile = activeFile;
+                if (currentFile) {
+                    vfsWrite(currentFile, viewRef.current.state.doc.toString());
+                }
+                viewRef.current.destroy();
+                viewRef.current = null;
+            }
+            // Flush pending persist on unmount
+            dbSaveVfs(vfsGetAll()).catch((e) => console.warn("[CodeEditor] final dbSaveVfs failed:", e));
+        };
+    }, []);
+    // ── Actions ─────────────────────────────────────────────
+    function addTab() {
+        const count = files.length + 1;
+        const name = `untitled-${count}.js`;
+        const path = "/" + name;
+        if (!vfsExists(path)) {
+            vfsWrite(path, "");
+            schedulePersist();
+        }
+        ideStore.getState().openFile(path, name, "js");
+    }
+    function closeTab(path, e) {
+        e.stopPropagation();
+        // Check for unsaved changes
+        const tab = files.find((f) => f.path === path);
+        if (tab?.dirty) {
+            if (!confirm(t("editor.unsavedConfirm", locale)))
+                return;
+        }
+        // Save content before closing
+        if (viewRef.current && path === activeFile) {
+            vfsWrite(path, viewRef.current.state.doc.toString());
+            schedulePersist();
+        }
+        ideStore.getState().closeFile(path);
+    }
+    function selectTab(path) {
+        if (path === activeFile)
+            return;
+        ideStore.getState().setActiveFile(path);
+    }
+    const activeTab = files.find((f) => f.path === activeFile);
+    return (_jsxs("div", { style: {
+            display: "flex", flexDirection: "column", height: "100%",
+            background: colors.bg, borderLeft: `1px solid ${colors.border}`,
+        }, children: [_jsx(TabBar, { tabs: files, activeFile: activeFile ?? null, onSelect: selectTab, onClose: closeTab, onAdd: addTab, locale: locale }), _jsxs("div", { ref: containerRef, style: {
+                    flex: 1, overflow: "hidden", position: "relative",
+                }, children: [!activeTab && (_jsx("div", { style: {
+                            padding: "12px", color: colors.textMuted,
+                            fontSize: "11px", fontFamily: fonts.mono,
+                        }, children: t("editor.noFiles", locale) || "no files open" })), activeTab && !viewRef.current && (_jsx("div", { style: {
+                            padding: "12px", color: colors.textMuted,
+                            fontSize: "11px", fontFamily: fonts.mono,
+                        }, children: t("editor.loading", locale) || "loading editor..." }))] })] }));
+}
+// ─── Tab Bar ────────────────────────────────────────────────
+function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }) {
+    // Context menu + inline rename state (10.3)
+    const [ctxPath, setCtxPath] = useState(null);
+    const [ctxPos, setCtxPos] = useState(null);
+    const [renamingPath, setRenamingPath] = useState(null);
+    const [renameValue, setRenameValue] = useState("");
+    // Close context menu on outside click
+    useEffect(() => {
+        if (!ctxPath)
+            return;
+        const handler = () => { setCtxPath(null); setCtxPos(null); };
+        document.addEventListener("click", handler);
+        return () => document.removeEventListener("click", handler);
+    }, [ctxPath]);
+    function handleContextMenu(tabPath, e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxPath(tabPath);
+        setCtxPos({ x: e.clientX, y: e.clientY });
+    }
+    function startRename(path) {
+        const tab = tabs.find((t) => t.path === path);
+        setRenamingPath(path);
+        setRenameValue(tab?.name ?? "");
+        setCtxPath(null);
+        setCtxPos(null);
+    }
+    function commitRename() {
+        if (!renamingPath || !renameValue.trim()) {
+            setRenamingPath(null);
+            return;
+        }
+        const parts = renamingPath.split("/").filter(Boolean);
+        parts.pop();
+        const newPath = "/" + [...parts, renameValue.trim()].join("/");
+        if (newPath !== renamingPath) {
+            ideStore.getState().renameFile(renamingPath, newPath);
+        }
+        setRenamingPath(null);
+    }
+    return (_jsxs("div", { style: {
+            display: "flex", alignItems: "center",
+            borderBottom: `1px solid ${colors.border}`,
+            background: colors.surface1,
+            flexShrink: 0, overflowX: "auto", overflowY: "hidden",
+            minHeight: "30px",
+        }, children: [_jsx("div", { style: { display: "flex", alignItems: "stretch", flex: 1 }, children: tabs.map((tab) => {
+                    const isActive = tab.path === activeFile;
+                    const ext = getExt(tab.path);
+                    const isRenaming = renamingPath === tab.path;
+                    return (_jsxs("div", { onClick: () => onSelect(tab.path), onContextMenu: (e) => handleContextMenu(tab.path, e), onDblClick: (e) => { e.stopPropagation(); startRename(tab.path); }, style: {
+                            display: "flex", alignItems: "center", gap: "4px",
+                            padding: "4px 8px", fontSize: "10px", fontFamily: fonts.mono,
+                            color: isActive ? colors.text : colors.textMuted,
+                            background: isActive ? colors.bg : "transparent",
+                            borderRight: `1px solid ${colors.border}`,
+                            cursor: "pointer", userSelect: "none",
+                            whiteSpace: "nowrap", minWidth: 0,
+                        }, children: [_jsx(LangLabel, { ext: ext }), isRenaming ? (_jsx("input", { value: renameValue, onInput: (e) => setRenameValue(e.currentTarget.value), onKeyDown: (e) => {
+                                    if (e.key === "Enter")
+                                        commitRename();
+                                    if (e.key === "Escape")
+                                        setRenamingPath(null);
+                                }, onBlur: commitRename, autoFocus: true, onClick: (e) => e.stopPropagation(), style: {
+                                    background: colors.inputBg, border: `1px solid ${colors.borderEmphasis}`,
+                                    color: colors.text, fontSize: "10px", fontFamily: fonts.mono,
+                                    outline: "none", padding: "1px 2px", width: "80px",
+                                } })) : (_jsx("span", { children: tab.name })), tab.dirty && (_jsx("span", { style: {
+                                    color: colors.textMuted, fontSize: "10px",
+                                    width: "6px", height: "6px", borderRadius: "50%",
+                                    background: "#888", display: "inline-block",
+                                } })), tab.saveStatus === "saving" && (_jsx("span", { style: { color: colors.textMuted, fontSize: "8px", marginLeft: "2px" }, children: t("editor.saving") })), tab.saveStatus === "saved" && (_jsx("span", { style: { color: colors.statusDone, fontSize: "8px", marginLeft: "2px" }, children: t("editor.saved") })), _jsx("span", { onClick: (e) => onClose(tab.path, e), style: {
+                                    color: colors.textMuted, fontSize: "10px",
+                                    padding: "0 2px", cursor: "pointer", lineHeight: 1,
+                                }, children: "\u00D7" })] }, tab.path));
+                }) }), ctxPath && ctxPos && (_jsx("div", { style: {
+                    position: "fixed", left: ctxPos.x, top: ctxPos.y,
+                    background: colors.surface2, border: `1px solid ${colors.borderEmphasis}`,
+                    zIndex: 1000, minWidth: "80px",
+                    fontSize: "11px", fontFamily: fonts.mono,
+                }, children: _jsx("div", { onClick: (e) => { e.stopPropagation(); startRename(ctxPath); }, style: {
+                        padding: "4px 10px", cursor: "pointer",
+                        color: colors.textSecondary,
+                    }, children: t("editor.rename", locale) || "rename" }) })), _jsx("button", { onClick: onAdd, title: "New file", style: {
+                    background: "none", border: "none", color: colors.textMuted,
+                    padding: "4px 10px", fontSize: "14px", cursor: "pointer",
+                    lineHeight: 1, flexShrink: 0,
+                }, children: "+" })] }));
+}
+// ─── Language label ──────────────────────────────────────────
+function LangLabel({ ext }) {
+    const labels = {
+        js: "JS", jsx: "RX", ts: "TS", tsx: "TX",
+        json: "{}", html: "<>", htm: "<>", css: "#", md: "MD",
+    };
+    return _jsx("span", { style: { color: "#555", fontSize: "9px" }, children: labels[ext] ?? "TX" });
+}
