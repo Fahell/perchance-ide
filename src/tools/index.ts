@@ -5,7 +5,7 @@
 import { createContextTools } from "./context-tools.js";
 import { createTerminalTools } from "./terminal-tools.js";
 import { createVfsTools } from "./vfs-tools.js";
-import { scrapeUrl, webSearch } from "./web-search.js";
+import { createWebTools } from "./web-search.js";
 
 // ─── Tool Definition ────────────────────────────────────────
 export interface ToolDefinition<TArgs extends Record<string, unknown> = Record<string, unknown>> {
@@ -20,39 +20,7 @@ export interface ToolDefinition<TArgs extends Record<string, unknown> = Record<s
 export type Tool = ToolDefinition;
 
 // ─── Registry ───────────────────────────────────────────────
-const tools: Record<string, Tool> = {
-  web_search: {
-    name: "web_search",
-    description: "Search the web for REAL-TIME or CURRENT information. USE this for: prices, exchange rates, sports results, news, weather, events, recent facts, or anything you are not 100% sure about. Returns up to 5 results with titles, URLs, and descriptions.",
-    parameters: {
-      query: { description: "The search query string. Be specific — include topic, year, or context when relevant.", type: "string", required: true },
-      limit: { description: "Maximum number of results (default 5).", type: "number" },
-    },
-    timeoutMs: 30_000,
-    execute: async (args) => {
-      const query = String(args.query ?? "");
-      const limit = typeof args.limit === "number" ? args.limit : 5;
-      const result = await webSearch(query, limit);
-      return result.raw || "No results found.";
-    },
-  },
-
-  scrape_url: {
-    name: "scrape_url",
-    description: "Fetch and extract the full text content from a specific URL as markdown. USE this after web_search to read the actual page content of the most relevant URLs. Returns real article/page text, not just summaries.",
-    parameters: {
-      url: { description: "The full URL to scrape (must start with http:// or https://)", type: "string", required: true },
-      maxChars: { description: "Maximum characters to return (default 3000). Use higher values for detailed articles.", type: "number" },
-    },
-    timeoutMs: 30_000,
-    execute: async (args) => {
-      const url = String(args.url ?? "");
-      const maxChars = typeof args.maxChars === "number" ? args.maxChars : 3000;
-      const result = await scrapeUrl(url, maxChars);
-      return `# ${result.title}\n\n${result.content}`;
-    },
-  },
-};
+const tools: Record<string, Tool> = {};
 
 // ─── Argument Validation ────────────────────────────────────
 
@@ -105,6 +73,13 @@ export function getToolDescriptions(): string {
 
 export function hasTool(name: string): boolean {
   return name in tools;
+}
+
+// ─── Web Tools ───────────────────────────────────────────────
+export function initWebTools(): void {
+  const webTools = createWebTools();
+  Object.assign(tools, webTools);
+  console.log("🌐 [Tools] Web tools registered:", Object.keys(webTools).join(", "));
 }
 
 // ─── Context Tools ─────────────────────────────────────────

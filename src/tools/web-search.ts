@@ -7,6 +7,7 @@
  */
 
 import { retryWithBackoff } from "../utils/retry.js";
+import type { Tool } from "./index.js";
 
 // ─── Typed Error ────────────────────────────────────────────
 class FetchError extends Error {
@@ -155,4 +156,41 @@ export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeRes
   const truncated = content.length > maxChars ? content.slice(0, maxChars) + "\n\n[...truncated]" : content;
 
   return { url, title, content: truncated };
+}
+
+// ─── Tool Factory ────────────────────────────────────────────
+export function createWebTools(): Record<string, Tool> {
+  return {
+    web_search: {
+      name: "web_search",
+      description: "Search the web for REAL-TIME or CURRENT information. USE this for: prices, exchange rates, sports results, news, weather, events, recent facts, or anything you are not 100% sure about. Returns up to 5 results with titles, URLs, and descriptions.",
+      parameters: {
+        query: { description: "The search query string. Be specific — include topic, year, or context when relevant.", type: "string", required: true },
+        limit: { description: "Maximum number of results (default 5).", type: "number" },
+      },
+      timeoutMs: 30_000,
+      execute: async (args: Record<string, unknown>) => {
+        const query = String(args.query ?? "");
+        const limit = typeof args.limit === "number" ? args.limit : 5;
+        const result = await webSearch(query, limit);
+        return result.raw || "No results found.";
+      },
+    },
+
+    scrape_url: {
+      name: "scrape_url",
+      description: "Fetch and extract the full text content from a specific URL as markdown. USE this after web_search to read the actual page content of the most relevant URLs. Returns real article/page text, not just summaries.",
+      parameters: {
+        url: { description: "The full URL to scrape (must start with http:// or https://)", type: "string", required: true },
+        maxChars: { description: "Maximum characters to return (default 3000). Use higher values for detailed articles.", type: "number" },
+      },
+      timeoutMs: 30_000,
+      execute: async (args: Record<string, unknown>) => {
+        const url = String(args.url ?? "");
+        const maxChars = typeof args.maxChars === "number" ? args.maxChars : 3000;
+        const result = await scrapeUrl(url, maxChars);
+        return `# ${result.title}\n\n${result.content}`;
+      },
+    },
+  };
 }

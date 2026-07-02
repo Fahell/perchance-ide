@@ -11,7 +11,7 @@ import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
 import { loadSettings } from "./store.js";
-import { initContextTools, initTerminalTools, initVfsTools } from "./tools/index.js";
+import { initContextTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
@@ -232,6 +232,9 @@ function startAgent() {
       }
     },
   });
+
+  // Register web tools (web_search, scrape_url)
+  initWebTools();
 
   // Register context tools (search_history, get_messages)
   initContextTools();
