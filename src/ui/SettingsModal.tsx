@@ -17,6 +17,10 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
   const [autoSave, setAutoSave] = useState(ideStore.getState().settings.autoSave);
+  const [toolWeb, setToolWeb] = useState(ideStore.getState().settings.toolWebEnabled);
+  const [toolCtx, setToolCtx] = useState(ideStore.getState().settings.toolContextEnabled);
+  const [toolVfs, setToolVfs] = useState(ideStore.getState().settings.toolVfsEnabled);
+  const [toolTerm, setToolTerm] = useState(ideStore.getState().settings.toolTerminalEnabled);
 
   function handleAutoSaveToggle(e: Event) {
     const val = (e.target as HTMLSelectElement).value === "on";
@@ -96,6 +100,107 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         </div>
         <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
           {t("settings.autoSave.desc", locale)}
+        </div>
+      </div>
+
+      {/* Agent Tools section */}
+      <div style={{ marginBottom: "14px", color: colors.textMuted, fontSize: "9px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+        agent tools
+      </div>
+
+      {/* Web tools toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tools.web", locale)}
+          </label>
+          <select
+            value={toolWeb ? "on" : "off"}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value === "on";
+              setToolWeb(val);
+              ideStore.getState().updateSettings({ toolWebEnabled: val });
+            }}
+            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.tools.web.desc", locale)}
+        </div>
+      </div>
+
+      {/* Context tools toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tools.context", locale)}
+          </label>
+          <select
+            value={toolCtx ? "on" : "off"}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value === "on";
+              setToolCtx(val);
+              ideStore.getState().updateSettings({ toolContextEnabled: val });
+            }}
+            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.tools.context.desc", locale)}
+        </div>
+      </div>
+
+      {/* File tools toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tools.files", locale)}
+          </label>
+          <select
+            value={toolVfs ? "on" : "off"}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value === "on";
+              setToolVfs(val);
+              ideStore.getState().updateSettings({ toolVfsEnabled: val });
+            }}
+            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.tools.files.desc", locale)}
+        </div>
+      </div>
+
+      {/* Python tools toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tools.terminal", locale)}
+          </label>
+          <select
+            value={toolTerm ? "on" : "off"}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value === "on";
+              setToolTerm(val);
+              ideStore.getState().updateSettings({ toolTerminalEnabled: val });
+            }}
+            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.tools.terminal.desc", locale)}
         </div>
       </div>
 

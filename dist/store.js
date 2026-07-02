@@ -23,6 +23,10 @@ const DEFAULT_SETTINGS = {
     wordWrap: true,
     tabSize: 2,
     autoSave: true,
+    toolWebEnabled: true,
+    toolContextEnabled: true,
+    toolVfsEnabled: true,
+    toolTerminalEnabled: true,
 };
 // ─── Store ───────────────────────────────────────────────────
 export const ideStore = createStore()(subscribeWithSelector((set, get) => ({

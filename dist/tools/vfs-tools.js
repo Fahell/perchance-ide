@@ -36,6 +36,31 @@ function countEntries(path) {
     const prefix = path === "/" ? "/" : path + "/";
     return vfsGetAll().filter((e) => e.path === path || e.path.startsWith(prefix)).length;
 }
+/** Find all occurrences of `search` in `content` with line numbers and surrounding context. */
+function findOccurrences(content, search) {
+    const occurrences = [];
+    let startIndex = 0;
+    const searchLen = search.length;
+    while (true) {
+        const idx = content.indexOf(search, startIndex);
+        if (idx === -1)
+            break;
+        // Compute line number (1-based)
+        const prefix = content.slice(0, idx);
+        const line = prefix.split("\n").length;
+        // Context: ~15 chars before and after
+        const ctxStart = Math.max(0, idx - 15);
+        const ctxEnd = Math.min(content.length, idx + searchLen + 15);
+        let context = content.slice(ctxStart, ctxEnd);
+        if (ctxStart > 0)
+            context = "..." + context;
+        if (ctxEnd < content.length)
+            context = context + "...";
+        occurrences.push({ index: idx, line, context });
+        startIndex = idx + searchLen;
+    }
+    return occurrences;
+}
 // ─── Tool Factory ───────────────────────────────────────────
 export function createVfsTools() {
     return {
@@ -222,6 +247,56 @@ export function createVfsTools() {
                 }
                 await persistVfs();
                 return `Success: Renamed ${oldPath} → ${newPath}`;
+            },
+        },
+        edit_file: {
+            name: "edit_file",
+            description: "Edit a file by replacing exact text. Safer than write_file for partial edits — only modifies the specified string. Returns error if old_string is not found or matches multiple locations.",
+            parameters: {
+                file_path: { description: "Absolute path of the file to edit (e.g., /src/utils/helpers.ts). Must start with /.", type: "string", required: true },
+                old_string: { description: "The exact text to search for and replace. Must match exactly — whitespace, indentation, and line endings matter.", type: "string", required: true },
+                new_string: { description: "The replacement text.", type: "string", required: true },
+            },
+            timeoutMs: 15_000,
+            execute: async (args) => {
+                const filePath = String(args.file_path ?? "");
+                const oldString = String(args.old_string ?? "");
+                const newString = String(args.new_string ?? "");
+                if (!filePath)
+                    return "Error: file_path is required.";
+                if (!oldString)
+                    return "Error: old_string is required.";
+                if (!filePath.startsWith("/"))
+                    return "Error: path must be absolute (start with /).";
+                if (!vfsExists(filePath))
+                    return `Error: File not found: ${filePath}`;
+                const content = vfsRead(filePath);
+                if (content === null)
+                    return `Error: ${filePath} is a directory, not a file.`;
+                const occurrences = findOccurrences(content, oldString);
+                if (occurrences.length === 0) {
+                    return `Error: old_string not found in ${filePath}.\n\nSuggestions:\n- Check that the file_path is correct (the file exists).\n- Check exact whitespace, indentation, and line endings.\n- Use read_file to see the current file content.\n- Use write_file if you need to overwrite the entire file.`;
+                }
+                if (occurrences.length > 1) {
+                    const details = occurrences
+                        .map((o, i) => `  ${i + 1}. Line ${o.line}: ...${o.context}...`)
+                        .join("\n");
+                    return `Error: old_string found ${occurrences.length} times in ${filePath}. Use a more specific string to match only one location, or use write_file for full overwrite.\n\nOccurrences:\n${details}`;
+                }
+                // Exactly 1 match — do the replacement
+                const newContent = content.replace(oldString, newString);
+                // Store diff data
+                setDiff(filePath, content, newContent);
+                vfsWrite(filePath, newContent);
+                // Mark tab as dirty if file is open in editor
+                const state = ideStore.getState();
+                if (state.files.some((f) => f.path === filePath)) {
+                    state.setFileDirty(filePath, true);
+                }
+                state.bumpVfsVersion();
+                await persistVfs();
+                const size = newContent.length;
+                return `Success: Edited ${filePath} (replaced 1 occurrence, ${size} byte${size === 1 ? "" : "s"})`;
             },
         },
     };

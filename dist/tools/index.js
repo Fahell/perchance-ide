@@ -8,6 +8,7 @@ import { createVfsTools } from "./vfs-tools.js";
 import { createWebTools } from "./web-search.js";
 // ─── Registry ───────────────────────────────────────────────
 const tools = {};
+const toolCategories = {};
 // ─── Rate Limiting ──────────────────────────────────────────
 const rateLimiters = new Map();
 /**
@@ -62,8 +63,9 @@ export function validateToolArgs(tool, args) {
 export function getTool(name) {
     return tools[name];
 }
-export function getToolDescriptions() {
+export function getToolDescriptions(enabledCategories) {
     return Object.values(tools)
+        .filter((t) => !enabledCategories || enabledCategories.has(toolCategories[t.name]))
         .map((t) => {
         const params = Object.entries(t.parameters)
             .map(([key, meta]) => `    ${key} (${meta.type}${meta.required ? ", required" : ""}): ${meta.description}`)
@@ -79,23 +81,35 @@ export function hasTool(name) {
 export function initWebTools() {
     const webTools = createWebTools();
     Object.assign(tools, webTools);
+    for (const name of Object.keys(webTools)) {
+        toolCategories[name] = "web";
+    }
     console.log("🌐 [Tools] Web tools registered:", Object.keys(webTools).join(", "));
 }
 // ─── Context Tools ─────────────────────────────────────────
 export function initContextTools() {
     const contextTools = createContextTools();
     Object.assign(tools, contextTools);
+    for (const name of Object.keys(contextTools)) {
+        toolCategories[name] = "context";
+    }
     console.log("🔧 [Tools] Context tools registered:", Object.keys(contextTools).join(", "));
 }
 // ─── VFS Tools ───────────────────────────────────────────────
 export function initVfsTools() {
     const vfsTools = createVfsTools();
     Object.assign(tools, vfsTools);
+    for (const name of Object.keys(vfsTools)) {
+        toolCategories[name] = "vfs";
+    }
     console.log("📁 [Tools] VFS tools registered:", Object.keys(vfsTools).join(", "));
 }
 // ─── Terminal Tools ───────────────────────────────────────────
 export function initTerminalTools() {
     const terminalTools = createTerminalTools();
     Object.assign(tools, terminalTools);
+    for (const name of Object.keys(terminalTools)) {
+        toolCategories[name] = "terminal";
+    }
     console.log("🐍 [Tools] Terminal tools registered:", Object.keys(terminalTools).join(", "));
 }

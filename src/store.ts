@@ -29,6 +29,10 @@ export interface IdeSettings {
   wordWrap: boolean;
   tabSize: number;
   autoSave: boolean;
+  toolWebEnabled: boolean;
+  toolContextEnabled: boolean;
+  toolVfsEnabled: boolean;
+  toolTerminalEnabled: boolean;
 }
 
 export interface OutputEntry {
@@ -141,6 +145,10 @@ const DEFAULT_SETTINGS: IdeSettings = {
   wordWrap: true,
   tabSize: 2,
   autoSave: true,
+  toolWebEnabled: true,
+  toolContextEnabled: true,
+  toolVfsEnabled: true,
+  toolTerminalEnabled: true,
 };
 
 // ─── Store ───────────────────────────────────────────────────

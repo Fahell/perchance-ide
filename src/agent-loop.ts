@@ -8,6 +8,7 @@
  *   4. Repeat until LLM gives a final answer (no tool_call)
  */
 
+import { ideStore } from "./store.js";
 import { getPyodideStatus } from "./terminal/pyodide.js";
 import { checkToolRateLimit, getTool, getToolDescriptions, hasTool, validateToolArgs } from "./tools/index.js";
 import { getAi } from "./types.js";
@@ -155,6 +156,14 @@ function buildToolPrompt(vfsFileCount?: number, pyodideLoaded?: boolean): string
   const cutoffYear = 2025;
   const currentYear = now.getFullYear();
 
+  // Read enabled tool categories from user settings
+  const settings = ideStore.getState().settings;
+  const enabledCats = new Set<string>();
+  if (settings.toolWebEnabled) enabledCats.add("web");
+  if (settings.toolContextEnabled) enabledCats.add("context");
+  if (settings.toolVfsEnabled) enabledCats.add("vfs");
+  if (settings.toolTerminalEnabled) enabledCats.add("terminal");
+
   return `You are a research agent. Use your tools to find accurate, up-to-date information.
 
 KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.
@@ -164,7 +173,7 @@ PROJECT STATE:
 - Python: ${pyodideLoaded ? '● Loaded' : '○ Loads on first use'}
 
 TOOLS:
-${getToolDescriptions()}
+${getToolDescriptions(enabledCats)}
 
 WORKFLOW:
 1. **Search** → web_search for URLs with summaries.
