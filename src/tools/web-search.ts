@@ -254,6 +254,7 @@ export function createWebTools(): Record<string, Tool> {
         limit: { description: "Maximum number of results (default 5).", type: "number" },
       },
       timeoutMs: 30_000,
+      rateLimit: { maxCalls: 10, windowMs: 60_000 },
       execute: async (args: Record<string, unknown>) => {
         const query = String(args.query ?? "");
         const limit = typeof args.limit === "number" ? args.limit : 5;
@@ -270,6 +271,7 @@ export function createWebTools(): Record<string, Tool> {
         maxChars: { description: "Maximum characters to return (default 3000). Use higher values for detailed articles.", type: "number" },
       },
       timeoutMs: 30_000,
+      rateLimit: { maxCalls: 8, windowMs: 60_000 },
       execute: async (args: Record<string, unknown>) => {
         const url = String(args.url ?? "");
         const maxChars = typeof args.maxChars === "number" ? args.maxChars : 3000;

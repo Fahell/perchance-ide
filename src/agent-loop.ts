@@ -9,7 +9,7 @@
  */
 
 import { getPyodideStatus } from "./terminal/pyodide.js";
-import { getTool, getToolDescriptions, hasTool, validateToolArgs } from "./tools/index.js";
+import { checkToolRateLimit, getTool, getToolDescriptions, hasTool, validateToolArgs } from "./tools/index.js";
 import { getAi } from "./types.js";
 import { truncateOutput } from "./utils/truncate.js";
 import { vfsGetAll } from "./vfs.js";
@@ -400,6 +400,15 @@ export async function agentLoop(
 
           onStatus?.(`Using ${call.name}...`);
           onToolStart?.(call.name, call.args);
+
+          // Rate limit check — prevents abuse of external APIs
+          const rateCheck = checkToolRateLimit(call.name);
+          if (!rateCheck.allowed) {
+            const waitSec = Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000);
+            const rateMsg = `Rate limit exceeded for ${call.name}. Please wait ${waitSec}s before calling this tool again.`;
+            onToolError?.(call.name, call.args, rateMsg);
+            return { call, status: 'rejected' as const, result: undefined as string | undefined, error: rateMsg };
+          }
 
           const validationError = validateToolArgs(tool, call.args);
           if (validationError) {

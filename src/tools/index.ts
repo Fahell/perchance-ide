@@ -2,6 +2,7 @@
  * Tool registry — maps tool names to their implementations
  */
 
+import { SlidingWindowRateLimiter, type RateLimitConfig, type RateLimitResult } from "../utils/rate-limiter.js";
 import { createContextTools } from "./context-tools.js";
 import { createTerminalTools } from "./terminal-tools.js";
 import { createVfsTools } from "./vfs-tools.js";
@@ -13,6 +14,8 @@ export interface ToolDefinition<TArgs extends Record<string, unknown> = Record<s
   description: string;
   parameters: { [K in keyof TArgs]: { description: string; type: "string" | "number" | "boolean"; required?: boolean } };
   timeoutMs?: number;
+  /** Optional rate limit to prevent abuse of external APIs. */
+  rateLimit?: RateLimitConfig;
   execute: (args: TArgs) => Promise<string>;
 }
 
@@ -21,6 +24,37 @@ export type Tool = ToolDefinition;
 
 // ─── Registry ───────────────────────────────────────────────
 const tools: Record<string, Tool> = {};
+
+// ─── Rate Limiting ──────────────────────────────────────────
+const rateLimiters = new Map<string, SlidingWindowRateLimiter>();
+
+/**
+ * Check whether a tool call is allowed under its configured rate limit.
+ * Lazily initializes the limiter on first call for tools that define one.
+ * Returns { allowed: true } for tools without a rate limit configured.
+ */
+export function checkToolRateLimit(toolName: string): RateLimitResult {
+  const tool = tools[toolName];
+  if (!tool?.rateLimit) {
+    return { allowed: true };
+  }
+
+  let limiter = rateLimiters.get(toolName);
+  if (!limiter) {
+    limiter = new SlidingWindowRateLimiter(tool.rateLimit);
+    rateLimiters.set(toolName, limiter);
+  }
+
+  return limiter.check();
+}
+
+/** Reset all rate limiters. Useful for testing or session reset. */
+export function resetRateLimiters(): void {
+  for (const limiter of rateLimiters.values()) {
+    limiter.reset();
+  }
+  rateLimiters.clear();
+}
 
 // ─── Argument Validation ────────────────────────────────────
 
