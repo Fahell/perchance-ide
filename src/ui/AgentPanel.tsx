@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { dbSaveVfs } from "../db.js";
-import { t, type Locale } from "../i18n/index.js";
+import type { Locale } from "../i18n/index.js";
+import { t } from "../i18n/index.js";
 import { clearMessages as clearPersistedMessages } from "../message-store.js";
 import type { IdeState } from "../store.js";
 import { ideStore } from "../store.js";
-import { vfsGetAll } from "../vfs.js";
-import { AgentMessage } from "./AgentMessage.js";
+import { ChatMessages } from "./ChatMessages.js";
 import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -13,14 +12,13 @@ import { FaqModal } from "./FaqModal.js";
 import { FileSearchModal } from "./FileSearchModal.js";
 import { Footer } from "./Footer.js";
 import { Header } from "./Header.js";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { MessageList } from "./MessageList.js";
 import { RightPanel } from "./RightPanel.js";
 import { ScrollFAB } from "./ScrollFAB.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { colors, fonts } from "./theme.js";
-import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import type { AgentStatus, PanelMode, ToolCallEntry } from "./types.js";
-import { UserMessage } from "./UserMessage.js";
 
 export interface AgentPanelProps {
   version: string;
@@ -84,7 +82,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
   };
 
   // ── Global keyboard shortcuts ──────────────────────────
-  const shortcutRef = useRef({
+  useKeyboardShortcuts({
     settingsOpen,
     contextOpen,
     faqOpen,
@@ -94,90 +92,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
     setContextOpen,
     setFaqOpen,
     setShowFileSearch,
-  } as any);
-  // Keep ref up to date
-  shortcutRef.current = {
-    settingsOpen,
-    contextOpen,
-    faqOpen,
-    agentStatus,
-    locale,
-    setSettingsOpen,
-    setContextOpen,
-    setFaqOpen,
-    setShowFileSearch,
-  };
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      const meta = e.metaKey || e.ctrlKey;
-      const s = shortcutRef.current;
-
-      // ── Ctrl+S / Cmd+S: Save active file ──────────────
-      if (meta && e.key === "s") {
-        e.preventDefault();
-        const activeFile = ideStore.getState().activeFile;
-        if (activeFile) {
-          // Dispatch event so CodeEditor can flush pending writes
-          document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
-        }
-        // Force persist VFS to IndexedDB
-        dbSaveVfs(vfsGetAll()).catch((err: unknown) => console.warn("[Shortcuts] persist failed:", err));
-        return;
-      }
-
-      // ── Ctrl+P / Cmd+P: File search ─────────────────
-      if (meta && e.key === "p") {
-        e.preventDefault();
-        s.setShowFileSearch(true);
-        return;
-      }
-
-      // ── Ctrl+W / Cmd+W: Close active tab ─────────────
-      if (meta && e.key === "w") {
-        e.preventDefault();
-        const activeFile = ideStore.getState().activeFile;
-        if (activeFile) {
-          // Check for unsaved changes
-          const tab = ideStore.getState().files.find((f) => f.path === activeFile);
-          if (tab?.dirty) {
-            if (!confirm(t("editor.unsavedConfirm", s.locale))) return;
-          }
-          // Flush editor save before closing
-          document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
-          ideStore.getState().closeFile(activeFile);
-        }
-        return;
-      }
-
-      // ── Escape: Close modals or cancel rename ────────
-      if (e.key === "Escape") {
-        if (s.faqOpen) { s.setFaqOpen(false); return; }
-        if (s.contextOpen) { s.setContextOpen(false); return; }
-        if (s.settingsOpen) { s.setSettingsOpen(false); return; }
-        if (s.setShowFileSearch) { s.setShowFileSearch(false); return; }
-        // Cancel rename in explorer
-        document.dispatchEvent(new Event("explorer:cancel-rename"));
-        return;
-      }
-
-      // ── Delete: Delete selected file ─────────────────
-      if (e.key === "Delete" && !isInput) {
-        document.dispatchEvent(new Event("explorer:delete-selected"));
-        return;
-      }
-
-      // ── F2: Rename selected file ─────────────────────
-      if (e.key === "F2" && !isInput) {
-        document.dispatchEvent(new Event("explorer:rename-selected"));
-        return;
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  });
 
   return (
     <div style={{
@@ -240,55 +155,13 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
                 </div>
               )}
 
-              {(() => {
-                const isCompact = panelMode === "tools-only";
-                const filtered = isCompact
-                  ? messages.filter((msg) => {
-                      if (msg.role === "user") return false;
-                      if (msg.toolCalls.length > 0) return true;
-                      if (agentStatus !== "idle") return true;
-                      return false;
-                    })
-                  : messages;
-
-                if (isCompact && messages.length > 0 && filtered.length === 0 && agentStatus === "idle") {
-                  return (
-                    <div style={{ padding: "12px", textAlign: "center", color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono }}>
-                      {t("panel.compact", locale)}
-                    </div>
-                  );
-                }
-
-                const elements: preact.VNode[] = [];
-                filtered.forEach((msg, i) => {
-                  const prev = filtered[i - 1];
-                  if (prev && prev.role !== msg.role) {
-                    elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
-                  }
-                  if (msg.role === "user") {
-                    elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} timestamp={msg.timestamp} />);
-                  } else {
-                    elements.push(
-                      <AgentMessage
-                        key={msg.id}
-                        message={msg}
-                        agentStatus={agentStatus}
-                        compact={isCompact}
-                        locale={locale}
-                      />
-                    );
-                  }
-                });
-                return elements;
-              })()}
-
-              {/* Thinking gap */}
-              {agentStatus === "thinking" && messages.length > 0 && messages[messages.length - 1].role === "user" && (
-                <>
-                  <div className="msg-turn-separator" />
-                  <ThinkingIndicator />
-                </>
-              )}
+              <ChatMessages
+                messages={messages}
+                agentStatus={agentStatus}
+                panelMode={panelMode}
+                locale={locale}
+                userName={userName}
+              />
 
             </MessageList>
             </ErrorBoundary>
