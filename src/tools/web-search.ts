@@ -4,6 +4,11 @@
  * Search: POST https://s.jina.ai/ with {"q": "query"}
  * Scrape: POST https://r.jina.ai/ with {"url": "url"}
  * Auth: Bearer token required
+ *
+ * Features:
+ * - In-memory TTL cache (5 min) for search and scrape results
+ * - Lazy expiration on read
+ * - FIFO eviction when max size exceeded
  */
 
 import { retryWithBackoff } from "../utils/retry.js";
@@ -17,6 +22,64 @@ class FetchError extends Error {
     this.name = "FetchError";
     this.response = response;
   }
+}
+
+// ─── TTL Cache ──────────────────────────────────────────────
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+class TtlCache<T> {
+  private store = new Map<string, CacheEntry<T>>();
+  private readonly ttlMs: number;
+  private readonly maxSize: number;
+
+  constructor(ttlMs: number, maxSize = 50) {
+    this.ttlMs = ttlMs;
+    this.maxSize = maxSize;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+
+    // Lazy expiration check
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.store.delete(key);
+      return undefined;
+    }
+
+    return entry.data;
+  }
+
+  set(key: string, data: T): void {
+    // Evict oldest entry if at capacity and key is new
+    if (!this.store.has(key) && this.store.size >= this.maxSize) {
+      const firstKey = this.store.keys().next().value;
+      if (firstKey !== undefined) {
+        this.store.delete(firstKey);
+      }
+    }
+
+    this.store.set(key, { data, timestamp: Date.now() });
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+}
+
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SCRAPE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const searchCache = new TtlCache<SearchResponse>(SEARCH_CACHE_TTL_MS, 50);
+const scrapeCache = new TtlCache<ScrapeResponse>(SCRAPE_CACHE_TTL_MS, 50);
+
+/** Clear all web search and scrape caches. Useful for testing or session reset. */
+export function clearWebCache(): void {
+  searchCache.clear();
+  scrapeCache.clear();
 }
 
 // ─── Jina API Response Types ────────────────────────────────
@@ -100,6 +163,12 @@ export interface ScrapeResponse {
 
 // ─── Search ─────────────────────────────────────────────────
 export async function webSearch(query: string, limit = 5): Promise<SearchResponse> {
+  const cacheKey = `${query}::${limit}`;
+
+  // Check cache first
+  const cached = searchCache.get(cacheKey);
+  if (cached) return cached;
+
   const res = await retryWithBackoff(async () => {
     const r = await fetch("https://s.jina.ai/", {
       method: "POST",
@@ -128,11 +197,22 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
     .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.description}`)
     .join("\n\n");
 
-  return { query, results, raw };
+  const result: SearchResponse = { query, results, raw };
+
+  // Cache successful result only
+  searchCache.set(cacheKey, result);
+
+  return result;
 }
 
 // ─── Scrape URL ─────────────────────────────────────────────
 export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeResponse> {
+  const cacheKey = `${url}::${maxChars}`;
+
+  // Check cache first
+  const cached = scrapeCache.get(cacheKey);
+  if (cached) return cached;
+
   const res = await retryWithBackoff(async () => {
     const r = await fetch("https://r.jina.ai/", {
       method: "POST",
@@ -155,7 +235,12 @@ export async function scrapeUrl(url: string, maxChars = 3000): Promise<ScrapeRes
   // Truncate if too long
   const truncated = content.length > maxChars ? content.slice(0, maxChars) + "\n\n[...truncated]" : content;
 
-  return { url, title, content: truncated };
+  const result: ScrapeResponse = { url, title, content: truncated };
+
+  // Cache successful result only
+  scrapeCache.set(cacheKey, result);
+
+  return result;
 }
 
 // ─── Tool Factory ────────────────────────────────────────────
