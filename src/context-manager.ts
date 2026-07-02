@@ -13,7 +13,8 @@ import { getAi } from "./types.js";
 import { isArrayOf, validateShape } from "./utils/validate.js";
 
 // ─── Constants ──────────────────────────────────────────────
-const MAX_CONTEXT_TOKENS = 3000;
+const MAX_CONTEXT_TOKENS = 6000;
+const MAX_SUMMARY_TOKENS = Math.floor(MAX_CONTEXT_TOKENS * 0.4); // 2400 tokens reserved for summary
 const MAX_RECENT_MESSAGES = 5;
 const SUMMARY_KEY = "context_summary";
 const SUMMARY_MSG_COUNT_KEY = "context_summary_msg_count";
@@ -129,6 +130,38 @@ Summary:`;
   }
 }
 
+// ─── Summary Condensation ───────────────────────────────────
+/**
+ * Condense two summaries into a single compact summary when the
+ * combined token count exceeds MAX_SUMMARY_TOKENS.
+ * Falls back to simple concatenation if the LLM call fails.
+ */
+async function condenseSummaries(existing: string, incoming: string): Promise<string> {
+  const combinedTokens = estimateTokens(existing) + estimateTokens(incoming);
+  console.log(`📝 [Context] Condensing summaries (${combinedTokens} tokens → target ≤${MAX_SUMMARY_TOKENS})`);
+
+  const instruction = `Merge the following two conversation summaries into a single concise paragraph (3-5 sentences). Preserve key facts, decisions, user preferences, and essential context. Eliminate redundancy. Be specific and factual.
+
+--- EXISTING SUMMARY ---
+${existing}
+
+--- NEW SUMMARY ---
+${incoming}
+
+--- MERGED SUMMARY ---`;
+
+  try {
+    const result = await getAi()({ instruction });
+    const condensed = (result.generatedText || result.text || result.toString()).trim();
+    const condensedTokens = estimateTokens(condensed);
+    console.log(`📝 [Context] Condensed summary: ${combinedTokens} → ${condensedTokens} tokens`);
+    return condensed;
+  } catch (err) {
+    console.error("❌ [Context] Condensation failed, falling back to concatenation:", err);
+    return existing + "\n" + incoming;
+  }
+}
+
 // ─── Build Context ──────────────────────────────────────────
 export interface ContextResult {
   summary: string | null;
@@ -198,7 +231,15 @@ export async function buildContext(
   let summarizedCount: number;
 
   if (existingSummary && newSummary) {
-    combinedSummary = existingSummary + "\n" + newSummary;
+    const naiveCombined = existingSummary + "\n" + newSummary;
+    const combinedTokens = estimateTokens(naiveCombined);
+
+    if (combinedTokens > MAX_SUMMARY_TOKENS) {
+      // Condense via LLM to stay within budget
+      combinedSummary = await condenseSummaries(existingSummary, newSummary);
+    } else {
+      combinedSummary = naiveCombined;
+    }
     summarizedCount = toSummarize.length;
   } else if (newSummary) {
     combinedSummary = newSummary;
@@ -206,6 +247,17 @@ export async function buildContext(
   } else {
     combinedSummary = existingSummary || "";
     summarizedCount = 0;
+  }
+
+  // Defensive truncation: if summary still exceeds budget after condensation
+  const summaryTokensAfter = estimateTokens(combinedSummary);
+  if (summaryTokensAfter > MAX_SUMMARY_TOKENS) {
+    console.warn(`⚠️ [Context] Summary still over budget (${summaryTokensAfter} > ${MAX_SUMMARY_TOKENS}), truncating`);
+    // Approximate char limit: MAX_SUMMARY_TOKENS * 3.5 chars/token (conservative)
+    const maxChars = Math.floor(MAX_SUMMARY_TOKENS * 3.5);
+    if (combinedSummary.length > maxChars) {
+      combinedSummary = combinedSummary.slice(0, maxChars).trimEnd() + "...";
+    }
   }
 
   // Persist the updated summary
