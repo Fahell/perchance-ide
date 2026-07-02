@@ -45,7 +45,7 @@ export function renderSetup(container: HTMLElement, props: {
   saveApiKey: (key: string) => void;
 }): void {
   injectAnimations();
-  render(h(SetupScreen, props), container);
+  render(h(ErrorBoundary, { name: "SetupScreen" }, h(SetupScreen, props)), container);
 }
 
 /** Full-page error fallback for the entire AgentPanel */

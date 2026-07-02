@@ -11,12 +11,13 @@ import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import { serializeProject } from "../utils/vfs-io.js";
 import {
-    vfsDeleteTree,
-    vfsExists, vfsGetAll, vfsMkdir,
-    vfsTree,
-    vfsWrite,
-    type VfsTreeNode
+  vfsDeleteTree,
+  vfsExists, vfsGetAll, vfsMkdir,
+  vfsTree,
+  vfsWrite,
+  type VfsTreeNode
 } from "../vfs.js";
+import { ErrorBoundary } from "./ErrorBoundary.js";
 import { OutputPanel } from "./OutputPanel.js";
 import { PreviewPanel } from "./PreviewPanel.js";
 import { colors, fonts } from "./theme.js";
@@ -436,11 +437,15 @@ export function RightPanel({ locale }: RightPanelProps) {
         </>
       ) : activeTab === "preview" ? (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <PreviewPanel locale={locale} />
+          <ErrorBoundary name="PreviewPanel">
+            <PreviewPanel locale={locale} />
+          </ErrorBoundary>
         </div>
       ) : (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <OutputPanel locale={locale} />
+          <ErrorBoundary name="OutputPanel">
+            <OutputPanel locale={locale} />
+          </ErrorBoundary>
         </div>
       )}
     </div>
