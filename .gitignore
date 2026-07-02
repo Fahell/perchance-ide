@@ -19,5 +19,7 @@ npm-debug.log*
 
 ai-text-plugin/
 .vscode/
-.github/
+.github/*
+!.github/workflows
+!.github/workflows/**
 super-fetch-plugin/
