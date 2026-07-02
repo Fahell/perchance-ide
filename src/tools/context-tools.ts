@@ -64,20 +64,43 @@ function searchMessages(messages: { author: string; content: string }[], query: 
   if (queryTerms.length === 0) return [];
 
   const totalMessages = messages.length;
-  const scored: ScoredMessage[] = [];
 
-  for (let i = 0; i < messages.length; i++) {
-    const msgTerms = tokenize(messages[i].content);
-    if (msgTerms.length === 0) continue;
+  // Phase 1: Pre-tokenize all messages once and build term-frequency maps
+  const msgTermFreqs: Map<string, number>[] = new Array(totalMessages);
+  const msgTermCounts: number[] = new Array(totalMessages);
+  for (let i = 0; i < totalMessages; i++) {
+    const terms = tokenize(messages[i].content);
+    msgTermCounts[i] = terms.length;
+    const freqMap = new Map<string, number>();
+    for (const t of terms) {
+      freqMap.set(t, (freqMap.get(t) ?? 0) + 1);
+    }
+    msgTermFreqs[i] = freqMap;
+  }
+
+  // Phase 2: Compute IDF for each query term exactly once
+  const idfCache = new Map<string, number>();
+  for (const qt of queryTerms) {
+    let docsWithTerm = 0;
+    for (let i = 0; i < totalMessages; i++) {
+      if (msgTermFreqs[i].has(qt)) docsWithTerm++;
+    }
+    idfCache.set(qt, Math.log((totalMessages + 1) / (docsWithTerm + 1)));
+  }
+
+  // Phase 3: Score messages using O(1) lookups
+  const scored: ScoredMessage[] = [];
+  for (let i = 0; i < totalMessages; i++) {
+    if (msgTermCounts[i] === 0) continue;
 
     let score = 0;
+    const freqMap = msgTermFreqs[i];
     for (const qt of queryTerms) {
-      // Term frequency: how often this term appears in the message
-      const tf = msgTerms.filter((t) => t === qt).length / msgTerms.length;
-      // Inverse document frequency: how rare this term is across all messages
-      const docsWithTerm = messages.filter((m) => tokenize(m.content).includes(qt)).length;
-      const idf = Math.log((totalMessages + 1) / (docsWithTerm + 1));
-      score += tf * idf;
+      const count = freqMap.get(qt);
+      if (count !== undefined) {
+        const tf = count / msgTermCounts[i];
+        score += tf * idfCache.get(qt)!;
+      }
     }
 
     if (score > 0) {
