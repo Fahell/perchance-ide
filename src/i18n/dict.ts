@@ -36,6 +36,8 @@ const en: Translations = {
   "settings.language": "language",
   "settings.toggle.on": "on",
   "settings.toggle.off": "off",
+  "settings.autoSave": "auto save",
+  "settings.autoSave.desc": "save files automatically on change",
   "settings.save": "save",
   "settings.close": "close",
 
@@ -106,6 +108,9 @@ const en: Translations = {
   "editor.unsavedConfirm": "Unsaved changes. Discard changes?",
   "editor.saving": "Saving…",
   "editor.saved": "Saved",
+  "editor.saveAndClose": "save & close",
+  "editor.closeAnyway": "close anyway",
+  "editor.cancel": "cancel",
 
   // Right Panel
   "rightPanel.placeholder": "panel coming soon",
@@ -174,6 +179,8 @@ const ptBR: Translations = {
   "settings.language": "idioma",
   "settings.toggle.on": "ligado",
   "settings.toggle.off": "desligado",
+  "settings.autoSave": "auto save",
+  "settings.autoSave.desc": "salvar arquivos automaticamente ao alterar",
   "settings.save": "salvar",
   "settings.close": "fechar",
 
@@ -244,6 +251,9 @@ const ptBR: Translations = {
   "editor.unsavedConfirm": "Alterações não salvas. Descartar alterações?",
   "editor.saving": "Salvando…",
   "editor.saved": "Salvo",
+  "editor.saveAndClose": "salvar e fechar",
+  "editor.closeAnyway": "fechar mesmo assim",
+  "editor.cancel": "cancelar",
 
   // Right Panel
   "rightPanel.placeholder": "painel em breve",
@@ -310,6 +320,8 @@ const es: Translations = {
   "settings.language": "idioma",
   "settings.toggle.on": "sí",
   "settings.toggle.off": "no",
+  "settings.autoSave": "auto save",
+  "settings.autoSave.desc": "guardar archivos automáticamente al cambiar",
   "settings.save": "guardar",
   "settings.close": "cerrar",
   "panel.ready": "listo",
@@ -367,6 +379,9 @@ const es: Translations = {
   "editor.unsavedConfirm": "¿Cambios sin guardar. Descartar cambios?",
   "editor.saving": "Guardando…",
   "editor.saved": "Guardado",
+  "editor.saveAndClose": "guardar y cerrar",
+  "editor.closeAnyway": "cerrar de todas formas",
+  "editor.cancel": "cancelar",
 
   // Right Panel
   "rightPanel.placeholder": "panel próximamente",
@@ -433,6 +448,8 @@ const ja: Translations = {
   "settings.language": "言語",
   "settings.toggle.on": "オン",
   "settings.toggle.off": "オフ",
+  "settings.autoSave": "auto save",
+  "settings.autoSave.desc": "変更時に自動保存",
   "settings.save": "保存",
   "settings.close": "閉じる",
   "panel.ready": "準備完了",
@@ -491,6 +508,9 @@ const ja: Translations = {
   "editor.unsavedConfirm": "未保存の変更があります。破棄しますか？",
   "editor.saving": "保存中…",
   "editor.saved": "保存完了",
+  "editor.saveAndClose": "保存して閉じる",
+  "editor.closeAnyway": "閉じる",
+  "editor.cancel": "キャンセル",
 
   // Right Panel
   "rightPanel.placeholder": "パネル準備中",
@@ -557,6 +577,8 @@ const zh: Translations = {
   "settings.language": "语言",
   "settings.toggle.on": "开",
   "settings.toggle.off": "关",
+  "settings.autoSave": "auto save",
+  "settings.autoSave.desc": "更改时自动保存文件",
   "settings.save": "保存",
   "settings.close": "关闭",
   "panel.ready": "就绪",
@@ -615,6 +637,9 @@ const zh: Translations = {
   "editor.unsavedConfirm": "有未保存的更改。放弃更改？",
   "editor.saving": "保存中…",
   "editor.saved": "已保存",
+  "editor.saveAndClose": "保存并关闭",
+  "editor.closeAnyway": "仍要关闭",
+  "editor.cancel": "取消",
 
   // Right Panel
   "rightPanel.placeholder": "面板即将推出",

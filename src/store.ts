@@ -28,6 +28,7 @@ export interface IdeSettings {
   fontSize: number;
   wordWrap: boolean;
   tabSize: number;
+  autoSave: boolean;
 }
 
 export interface OutputEntry {
@@ -139,6 +140,7 @@ const DEFAULT_SETTINGS: IdeSettings = {
   fontSize: 14,
   wordWrap: true,
   tabSize: 2,
+  autoSave: true,
 };
 
 // ─── Store ───────────────────────────────────────────────────

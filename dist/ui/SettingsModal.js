@@ -1,11 +1,18 @@
 import { jsx as _jsx, jsxs as _jsxs } from "preact/jsx-runtime";
 import { useState } from "preact/hooks";
 import { LOCALES, LOCALE_LABELS, t } from "../i18n/index.js";
+import { ideStore } from "../store.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onLocaleChange }) {
     const [key, setKey] = useState(currentKey);
     const [msg, setMsg] = useState("");
+    const [autoSave, setAutoSave] = useState(ideStore.getState().settings.autoSave);
+    function handleAutoSaveToggle(e) {
+        const val = e.target.value === "on";
+        setAutoSave(val);
+        ideStore.getState().updateSettings({ autoSave: val });
+    }
     async function handleSave() {
         if (!key.trim()) {
             setMsg(t("settings.apiKey.error.empty", locale));
@@ -29,7 +36,16 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
                                 padding: "3px 6px",
                                 outline: "none",
                                 cursor: "pointer",
-                            }, children: LOCALES.map((l) => (_jsx("option", { value: l, children: LOCALE_LABELS[l] }, l))) })] }) }), _jsxs("div", { style: { marginBottom: "14px" }, children: [_jsx("label", { htmlFor: "settings-api-key", style: { color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }, children: t("settings.apiKey", locale) }), _jsx("input", { id: "settings-api-key", type: "password", value: key, onInput: (e) => setKey(e.target.value), placeholder: t("settings.apiKey.placeholder", locale), style: {
+                            }, children: LOCALES.map((l) => (_jsx("option", { value: l, children: LOCALE_LABELS[l] }, l))) })] }) }), _jsxs("div", { style: { marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [_jsx("label", { htmlFor: "settings-autosave", style: { color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }, children: t("settings.autoSave", locale) }), _jsxs("select", { id: "settings-autosave", value: autoSave ? "on" : "off", onChange: handleAutoSaveToggle, style: {
+                                    fontFamily: fonts.mono,
+                                    fontSize: "10px",
+                                    background: colors.surface2,
+                                    color: colors.text,
+                                    border: `1px solid ${colors.border}`,
+                                    padding: "3px 6px",
+                                    outline: "none",
+                                    cursor: "pointer",
+                                }, children: [_jsx("option", { value: "on", children: t("settings.toggle.on", locale) }), _jsx("option", { value: "off", children: t("settings.toggle.off", locale) })] })] }), _jsx("div", { style: { color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }, children: t("settings.autoSave.desc", locale) })] }), _jsxs("div", { style: { marginBottom: "14px" }, children: [_jsx("label", { htmlFor: "settings-api-key", style: { color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }, children: t("settings.apiKey", locale) }), _jsx("input", { id: "settings-api-key", type: "password", value: key, onInput: (e) => setKey(e.target.value), placeholder: t("settings.apiKey.placeholder", locale), style: {
                             width: "100%",
                             padding: "8px 10px",
                             border: `1px solid ${colors.border}`,

@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { LOCALES, LOCALE_LABELS, t, type Locale } from "../i18n/index.js";
+import { ideStore } from "../store.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 
@@ -15,6 +16,13 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onLocaleChange }: SettingsModalProps) {
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
+  const [autoSave, setAutoSave] = useState(ideStore.getState().settings.autoSave);
+
+  function handleAutoSaveToggle(e: Event) {
+    const val = (e.target as HTMLSelectElement).value === "on";
+    setAutoSave(val);
+    ideStore.getState().updateSettings({ autoSave: val });
+  }
 
   async function handleSave() {
     if (!key.trim()) {
@@ -58,6 +66,36 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
               <option key={l} value={l}>{LOCALE_LABELS[l]}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Auto-save toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label htmlFor="settings-autosave" style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.autoSave", locale)}
+          </label>
+          <select
+            id="settings-autosave"
+            value={autoSave ? "on" : "off"}
+            onChange={handleAutoSaveToggle}
+            style={{
+              fontFamily: fonts.mono,
+              fontSize: "10px",
+              background: colors.surface2,
+              color: colors.text,
+              border: `1px solid ${colors.border}`,
+              padding: "3px 6px",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.autoSave.desc", locale)}
         </div>
       </div>
 

@@ -33,6 +33,7 @@ export function CodeEditor({ locale }) {
     const containerRef = useRef(null);
     const viewRef = useRef(null);
     const debounceRef = useRef(null);
+    const [pendingCloseFile, setPendingCloseFile] = useState(null);
     const persistRef = useRef(null);
     const saveStatusTimerRef = useRef(null);
     const prevActiveRef = useRef(null);
@@ -59,7 +60,20 @@ export function CodeEditor({ locale }) {
     // ── Mount / remount editor when activeFile changes ─────
     useEffect(() => {
         const path = activeFile;
-        if (!path || !containerRef.current)
+        // If activeFile is null (last tab closed), destroy view and clean up
+        if (!path) {
+            if (viewRef.current) {
+                setCurrentView(null);
+                viewRef.current.destroy();
+                viewRef.current = null;
+            }
+            if (containerRef.current) {
+                containerRef.current.innerHTML = "";
+            }
+            prevActiveRef.current = null;
+            return;
+        }
+        if (!containerRef.current)
             return;
         // Save previous file content before switching
         if (prevActiveRef.current && viewRef.current) {
@@ -110,6 +124,9 @@ export function CodeEditor({ locale }) {
                     debounceRef.current = window.setTimeout(() => {
                         if (!mountedRef.current)
                             return;
+                        // Skip auto-save if disabled in settings
+                        if (!ideStore.getState().settings.autoSave)
+                            return;
                         vfsWrite(path, doc);
                         ideStore.getState().setFileDirty(path, false);
                         ideStore.getState().setFileSaveStatus(path, "saved");
@@ -150,6 +167,26 @@ export function CodeEditor({ locale }) {
         document.addEventListener("editor:flush-save", handleFlushSave);
         return () => document.removeEventListener("editor:flush-save", handleFlushSave);
     }, []);
+    // ── Listen for close-tab requests (from Ctrl+W) ────────
+    useEffect(() => {
+        function handleCloseTabRequest(e) {
+            const { path } = e.detail;
+            const tab = files.find((f) => f.path === path);
+            if (!tab)
+                return;
+            if (tab.dirty) {
+                if (!store.settings.autoSave) {
+                    setPendingCloseFile(path);
+                    return;
+                }
+                if (!confirm(t("editor.unsavedConfirm", locale)))
+                    return;
+            }
+            doCloseFile(path);
+        }
+        document.addEventListener("editor:request-close-tab", handleCloseTabRequest);
+        return () => document.removeEventListener("editor:request-close-tab", handleCloseTabRequest);
+    }, [files, store.settings.autoSave, locale, activeFile]);
     // ── Cleanup on unmount ──────────────────────────────────
     useEffect(() => {
         mountedRef.current = true;
@@ -185,20 +222,40 @@ export function CodeEditor({ locale }) {
         }
         ideStore.getState().openFile(path, name, "js");
     }
-    function closeTab(path, e) {
-        e.stopPropagation();
-        // Check for unsaved changes
-        const tab = files.find((f) => f.path === path);
-        if (tab?.dirty) {
-            if (!confirm(t("editor.unsavedConfirm", locale)))
-                return;
-        }
-        // Save content before closing
+    function doCloseFile(path) {
         if (viewRef.current && path === activeFile) {
             vfsWrite(path, viewRef.current.state.doc.toString());
             schedulePersist();
         }
         ideStore.getState().closeFile(path);
+        setPendingCloseFile(null);
+    }
+    function closeTab(path, e) {
+        e.stopPropagation();
+        const tab = files.find((f) => f.path === path);
+        if (tab?.dirty) {
+            if (!store.settings.autoSave) {
+                // Show custom confirmation dialog when auto-save is off
+                setPendingCloseFile(path);
+                return;
+            }
+            if (!confirm(t("editor.unsavedConfirm", locale)))
+                return;
+        }
+        doCloseFile(path);
+    }
+    function handleSaveAndClose() {
+        if (pendingCloseFile && viewRef.current && pendingCloseFile === activeFile) {
+            vfsWrite(pendingCloseFile, viewRef.current.state.doc.toString());
+            schedulePersist();
+        }
+        ideStore.getState().closeFile(pendingCloseFile);
+        setPendingCloseFile(null);
+    }
+    function handleCloseAnyway() {
+        // Close without saving — VFS retains last saved state
+        ideStore.getState().closeFile(pendingCloseFile);
+        setPendingCloseFile(null);
     }
     function selectTab(path) {
         if (path === activeFile)
@@ -217,7 +274,26 @@ export function CodeEditor({ locale }) {
                         }, children: t("editor.noFiles", locale) || "no files open" })), activeTab && !viewRef.current && (_jsx("div", { style: {
                             padding: "12px", color: colors.textMuted,
                             fontSize: "11px", fontFamily: fonts.mono,
-                        }, children: t("editor.loading", locale) || "loading editor..." }))] })] }));
+                        }, children: t("editor.loading", locale) || "loading editor..." })), pendingCloseFile && (_jsx("div", { style: {
+                            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                            background: "rgba(0,0,0,0.85)", zIndex: 100,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                        }, children: _jsxs("div", { style: {
+                                background: colors.bg, padding: "16px", maxWidth: "300px", width: "90%",
+                                border: `1px solid ${colors.border}`,
+                            }, children: [_jsx("div", { style: { color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono, marginBottom: "12px", letterSpacing: "1px", textTransform: "uppercase" }, children: t("editor.unsavedConfirm", locale) }), _jsxs("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" }, children: [_jsx("button", { onClick: handleSaveAndClose, style: {
+                                                padding: "6px 10px", border: `1px solid ${colors.text}`,
+                                                background: "transparent", color: colors.text,
+                                                fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+                                            }, children: t("editor.saveAndClose", locale) }), _jsx("button", { onClick: handleCloseAnyway, style: {
+                                                padding: "6px 10px", border: `1px solid ${colors.border}`,
+                                                background: "transparent", color: colors.textMuted,
+                                                fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+                                            }, children: t("editor.closeAnyway", locale) }), _jsx("button", { onClick: () => setPendingCloseFile(null), style: {
+                                                padding: "6px 10px", border: `1px solid ${colors.border}`,
+                                                background: "transparent", color: colors.textMuted,
+                                                fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+                                            }, children: t("editor.cancel", locale) })] })] }) }))] })] }));
 }
 // ─── Tab Bar ────────────────────────────────────────────────
 function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }) {

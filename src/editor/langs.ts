@@ -7,6 +7,7 @@ import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
+import { python } from "@codemirror/lang-python";
 import type { LanguageSupport } from "@codemirror/language";
 
 /**
@@ -28,6 +29,7 @@ const LANG_MAP: Record<string, () => LanguageSupport> = {
   css: () => css(),
   md: () => markdown(),
   markdown: () => markdown(),
+  py: () => python(),
 };
 
 /**
@@ -60,6 +62,7 @@ export function getLanguageLabel(ext: string): string {
     css: "CSS",
     md: "Markdown",
     markdown: "Markdown",
+    py: "Python",
   };
   return labels[ext] ?? "Text";
 }

@@ -6,7 +6,6 @@
  */
 import { useEffect, useRef } from "preact/hooks";
 import { dbSaveVfs } from "../../db.js";
-import { t } from "../../i18n/index.js";
 import { ideStore } from "../../store.js";
 import { vfsGetAll } from "../../vfs.js";
 export function useKeyboardShortcuts(opts) {
@@ -41,8 +40,9 @@ export function useKeyboardShortcuts(opts) {
                 if (activeFile) {
                     const tab = ideStore.getState().files.find((f) => f.path === activeFile);
                     if (tab?.dirty) {
-                        if (!confirm(t("editor.unsavedConfirm", s.locale)))
-                            return;
+                        // Let CodeEditor handle confirmation (auto-save check + custom dialog)
+                        document.dispatchEvent(new CustomEvent("editor:request-close-tab", { detail: { path: activeFile } }));
+                        return;
                     }
                     document.dispatchEvent(new CustomEvent("editor:flush-save", { detail: { path: activeFile } }));
                     ideStore.getState().closeFile(activeFile);

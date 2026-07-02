@@ -6,6 +6,7 @@ import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
+import { python } from "@codemirror/lang-python";
 /**
  * Map of file extensions to factory functions.
  * Factories are used so language modules are only instantiated when needed.
@@ -25,6 +26,7 @@ const LANG_MAP = {
     css: () => css(),
     md: () => markdown(),
     markdown: () => markdown(),
+    py: () => python(),
 };
 /**
  * Get the CM6 LanguageSupport extension for a given filename.
@@ -56,6 +58,7 @@ export function getLanguageLabel(ext) {
         css: "CSS",
         md: "Markdown",
         markdown: "Markdown",
+        py: "Python",
     };
     return labels[ext] ?? "Text";
 }

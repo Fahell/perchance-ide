@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
     fontSize: 14,
     wordWrap: true,
     tabSize: 2,
+    autoSave: true,
 };
 // ─── Store ───────────────────────────────────────────────────
 export const ideStore = createStore()(subscribeWithSelector((set, get) => ({

@@ -30,7 +30,7 @@ export function UserMessage({ content, userName, locale, timestamp }: UserMessag
         <div style={{ color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
           {userName || t("user.you", locale)}
         </div>
-        <div>{content}</div>
+        <div style={{ textAlign: "right" }}>{content}</div>
         {timestamp && (
           <div
             title={formatAbsoluteTime(timestamp, locale)}

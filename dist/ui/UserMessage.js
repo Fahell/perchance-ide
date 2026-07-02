@@ -17,5 +17,5 @@ export function UserMessage({ content, userName, locale, timestamp }) {
                 color: colors.text,
                 fontFamily: fonts.mono,
                 wordBreak: "break-word",
-            }, children: [_jsx("div", { style: { color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }, children: userName || t("user.you", locale) }), _jsx("div", { children: content }), timestamp && (_jsx("div", { title: formatAbsoluteTime(timestamp, locale), style: { color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }, children: formatRelativeTime(timestamp, locale) }))] }) }));
+            }, children: [_jsx("div", { style: { color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }, children: userName || t("user.you", locale) }), _jsx("div", { style: { textAlign: "right" }, children: content }), timestamp && (_jsx("div", { title: formatAbsoluteTime(timestamp, locale), style: { color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }, children: formatRelativeTime(timestamp, locale) }))] }) }));
 }
