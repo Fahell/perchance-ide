@@ -18,6 +18,7 @@ import {
   type VfsTreeNode
 } from "../vfs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { OutlinePanel } from "./OutlinePanel.js";
 import { OutputPanel } from "./OutputPanel.js";
 import { PreviewPanel } from "./PreviewPanel.js";
 import { colors, fonts } from "./theme.js";
@@ -420,7 +421,7 @@ export function RightPanel({ locale }: RightPanelProps) {
               <a ref={downloadRef} download="project.json" style={{ display: "none" }} />
               <input ref={fileInputRef} type="file" style={{ display: "none" }}
                 onChange={handleUploadFile} />
-              <input ref={folderInputRef} type="file" {...{webkitdirectory: true}} style={{ display: "none" }}
+              <input ref={folderInputRef} type="file" {...{ webkitdirectory: true }} style={{ display: "none" }}
                 onChange={handleUploadFolder} />
               <button onClick={handleDownload}
                 title={t("vfs.download", locale) || "download project"}
@@ -435,6 +436,12 @@ export function RightPanel({ locale }: RightPanelProps) {
             <span>{t("fileExplorer.count", locale) || "files"}: {countFiles(tree)}</span>
           </div>
         </>
+      ) : activeTab === "outline" ? (
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <ErrorBoundary name="OutlinePanel">
+            <OutlinePanel locale={locale} />
+          </ErrorBoundary>
+        </div>
       ) : activeTab === "preview" ? (
         <div style={{ flex: 1, overflow: "auto" }}>
           <ErrorBoundary name="PreviewPanel">

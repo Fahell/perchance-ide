@@ -4,10 +4,9 @@ interface HeaderProps {
   version: string;
   commit: string;
   onFaq?: () => void;
-  onClear?: () => void;
 }
 
-export function Header({ version, commit, onFaq, onClear }: HeaderProps) {
+export function Header({ version, commit, onFaq }: HeaderProps) {
   return (
     <div style={{
       display: "flex",
@@ -21,14 +20,6 @@ export function Header({ version, commit, onFaq, onClear }: HeaderProps) {
         agent
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        {onClear && (
-          <button
-            onClick={onClear}
-            style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
-          >
-            [clear]
-          </button>
-        )}
         {onFaq && (
           <button
             onClick={onFaq}

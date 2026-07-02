@@ -5,6 +5,7 @@ import { colors, fonts } from "./theme.js";
 interface FooterProps {
   onSettings: () => void;
   onContext: () => void;
+  onClear?: () => void;
   inputEnabled: boolean;
   onSend: (text: string) => void;
   disabled: boolean;
@@ -12,7 +13,7 @@ interface FooterProps {
   locale?: Locale;
 }
 
-export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
+export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
   const placeholder = t("footer.waiting", locale);
   const [text, setText] = useState("");
 
@@ -111,39 +112,51 @@ export function Footer({ onSettings, onContext, inputEnabled, onSend, disabled, 
 
       <div style={{
         display: "flex",
-        justifyContent: "flex-end",
+        justifyContent: "space-between",
         alignItems: "center",
         padding: "6px 12px",
       }}>
-        <button
-          onClick={onSettings}
-          style={{
-            background: "none",
-            border: "none",
-            color: colors.textSecondary,
-            fontSize: "11px",
-            padding: "2px 6px",
-            cursor: "pointer",
-            fontFamily: fonts.mono,
-          }}
-        >
-          [=]
-        </button>
-        <span style={{ color: colors.border, margin: "0 4px" }}>/</span>
-        <button
-          onClick={onContext}
-          style={{
-            background: "none",
-            border: "none",
-            color: colors.textSecondary,
-            fontSize: "11px",
-            padding: "2px 6px",
-            cursor: "pointer",
-            fontFamily: fonts.mono,
-          }}
-        >
-          [ctx]
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {onClear && (
+            <button
+              onClick={onClear}
+              style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
+            >
+              [clear]
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <button
+            onClick={onSettings}
+            style={{
+              background: "none",
+              border: "none",
+              color: colors.textSecondary,
+              fontSize: "11px",
+              padding: "2px 6px",
+              cursor: "pointer",
+              fontFamily: fonts.mono,
+            }}
+          >
+            [=]
+          </button>
+          <span style={{ color: colors.border, margin: "0 4px" }}>/</span>
+          <button
+            onClick={onContext}
+            style={{
+              background: "none",
+              border: "none",
+              color: colors.textSecondary,
+              fontSize: "11px",
+              padding: "2px 6px",
+              cursor: "pointer",
+              fontFamily: fonts.mono,
+            }}
+          >
+            [ctx]
+          </button>
+        </div>
       </div>
     </div>
   );

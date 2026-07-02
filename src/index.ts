@@ -17,6 +17,8 @@ import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
 import { vfsLoadAll } from "./vfs.js";
 
+const INPUT_ENABLED = true; // panel input is always enabled
+
 // ─── Build Constants (injected by esbuild) ──────────────────
 declare const __VERSION__: string;
 declare const __COMMIT__: string;
@@ -37,8 +39,6 @@ function printBanner() {
 
 // ─── API Key Storage (localStorage) ─────────────────────────
 const API_KEY_STORAGE = "agent:jina_key";
-const PANEL_MODE_STORAGE = "agent:panel_mode";
-const INPUT_ENABLED_STORAGE = "agent:input_enabled";
 
 function loadApiKey(): string | null {
   return storageGet<string>(API_KEY_STORAGE) ?? null;
@@ -46,23 +46,6 @@ function loadApiKey(): string | null {
 
 function saveApiKey(key: string): void {
   storageSet(API_KEY_STORAGE, key);
-}
-
-function loadPanelMode(): "full" | "tools-only" {
-  const v = storageGet<string>(PANEL_MODE_STORAGE);
-  return v === "tools-only" ? "tools-only" : "full";
-}
-
-function savePanelMode(mode: "full" | "tools-only"): void {
-  storageSet(PANEL_MODE_STORAGE, mode);
-}
-
-function loadInputEnabled(): boolean {
-  return storageGet<string>(INPUT_ENABLED_STORAGE) !== "false";
-}
-
-function saveInputEnabled(enabled: boolean): void {
-  storageSet(INPUT_ENABLED_STORAGE, String(enabled));
 }
 
 function loadLocale(): Locale {
@@ -180,7 +163,6 @@ function startAgent() {
     version: __VERSION__,
     commit: __COMMIT__,
     currentApiKey: getApiKey(),
-    panelMode: loadPanelMode(),
     locale: loadLocale(),
     userName: "",
     onSettingsSave: async (key: string) => {
@@ -191,15 +173,6 @@ function startAgent() {
         return true;
       }
       return false;
-    },
-    onPanelModeChange: (mode) => {
-      savePanelMode(mode);
-      console.log("📊 [Agent] Panel mode:", mode);
-    },
-    inputEnabled: loadInputEnabled(),
-    onInputEnabledChange: (enabled) => {
-      saveInputEnabled(enabled);
-      console.log("📊 [Agent] Panel input:", enabled ? "enabled" : "disabled");
     },
     onLocaleChange: (locale) => {
       setI18nLocale(locale);

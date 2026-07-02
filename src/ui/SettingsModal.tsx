@@ -3,22 +3,16 @@ import { LOCALES, LOCALE_LABELS, t, type Locale } from "../i18n/index.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 
-import type { PanelMode } from "./types.js";
-
 interface SettingsModalProps {
   isOpen: boolean;
   currentKey: string;
-  panelMode: PanelMode;
-  inputEnabled: boolean;
   locale: Locale;
   onClose: () => void;
   onSave: (key: string) => Promise<boolean>;
-  onPanelModeChange: (mode: PanelMode) => void;
-  onInputEnabledChange: (enabled: boolean) => void;
   onLocaleChange: (locale: Locale) => void;
 }
 
-export function SettingsModal({ isOpen, currentKey, panelMode, inputEnabled, locale, onClose, onSave, onPanelModeChange, onInputEnabledChange, onLocaleChange }: SettingsModalProps) {
+export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onLocaleChange }: SettingsModalProps) {
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
 
@@ -36,8 +30,6 @@ export function SettingsModal({ isOpen, currentKey, panelMode, inputEnabled, loc
   const maskedKey = currentKey
     ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4)
     : "none";
-
-  const isCompact = panelMode === "tools-only";
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t("settings.title", locale)}>
@@ -66,66 +58,6 @@ export function SettingsModal({ isOpen, currentKey, panelMode, inputEnabled, loc
               <option key={l} value={l}>{LOCALE_LABELS[l]}</option>
             ))}
           </select>
-        </div>
-      </div>
-
-      {/* Panel mode toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>{t("settings.compactMode", locale)}</div>
-            <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono }}>{t("settings.compactMode.desc", locale)}</div>
-          </div>
-          <div
-            role="switch"
-            aria-checked={isCompact}
-            tabIndex={0}
-            onClick={() => onPanelModeChange(isCompact ? "full" : "tools-only")}
-            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPanelModeChange(isCompact ? "full" : "tools-only"); } }}
-            style={{
-              cursor: "pointer",
-              fontFamily: fonts.mono,
-              fontSize: "10px",
-              color: isCompact ? colors.text : colors.textMuted,
-              border: `1px solid ${isCompact ? colors.text : colors.border}`,
-              padding: "3px 8px",
-              letterSpacing: "0.5px",
-              transition: "all 0.15s",
-              userSelect: "none",
-            }}
-          >
-            {isCompact ? t("settings.toggle.on", locale) : t("settings.toggle.off", locale)}
-          </div>
-        </div>
-      </div>
-
-      {/* Panel input toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>{t("settings.panelInput", locale)}</div>
-            <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono }}>{t("settings.panelInput.desc", locale)}</div>
-          </div>
-          <div
-            role="switch"
-            aria-checked={inputEnabled}
-            tabIndex={0}
-            onClick={() => onInputEnabledChange(!inputEnabled)}
-            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onInputEnabledChange(!inputEnabled); } }}
-            style={{
-              cursor: "pointer",
-              fontFamily: fonts.mono,
-              fontSize: "10px",
-              color: inputEnabled ? colors.text : colors.textMuted,
-              border: `1px solid ${inputEnabled ? colors.text : colors.border}`,
-              padding: "3px 8px",
-              letterSpacing: "0.5px",
-              transition: "all 0.15s",
-              userSelect: "none",
-            }}
-          >
-            {inputEnabled ? t("settings.toggle.on", locale) : t("settings.toggle.off", locale)}
-          </div>
         </div>
       </div>
 

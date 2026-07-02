@@ -18,19 +18,15 @@ import { RightPanel } from "./RightPanel.js";
 import { ScrollFAB } from "./ScrollFAB.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { colors, fonts } from "./theme.js";
-import type { AgentStatus, PanelMode, ToolCallEntry } from "./types.js";
+import type { AgentStatus, ToolCallEntry } from "./types.js";
 
 export interface AgentPanelProps {
   version: string;
   commit: string;
   currentApiKey: string;
-  panelMode: PanelMode;
   userName?: string;
   locale?: Locale;
   onSettingsSave: (key: string) => Promise<boolean>;
-  onPanelModeChange: (mode: PanelMode) => void;
-  inputEnabled: boolean;
-  onInputEnabledChange: (enabled: boolean) => void;
   onLocaleChange: (locale: Locale) => void;
   onSendMessage: (text: string) => void;
   onCancel?: () => void;
@@ -44,7 +40,7 @@ export interface AgentPanelRef {
   setResponse(response: string): void;
 }
 
-export function AgentPanel({ version, commit, currentApiKey, panelMode: initialPanelMode, userName, locale: initialLocale, onSettingsSave, onPanelModeChange, inputEnabled: initialInputEnabled, onInputEnabledChange, onLocaleChange, onSendMessage, onCancel }: AgentPanelProps) {
+export function AgentPanel({ version, commit, currentApiKey, userName, locale: initialLocale, onSettingsSave, onLocaleChange, onSendMessage, onCancel }: AgentPanelProps) {
   const [store, setStore] = useState<IdeState>(ideStore.getState());
   useEffect(() => ideStore.subscribe((s) => setStore(s)), []);
   const { messages, agentStatus } = store;
@@ -54,20 +50,8 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
   const [faqOpen, setFaqOpen] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
-  const [panelMode, setPanelMode] = useState<PanelMode>(initialPanelMode);
-  const [inputEnabled, setInputEnabled] = useState(initialInputEnabled);
   const [locale, setLocale] = useState<Locale>(initialLocale || "en");
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const handlePanelModeChange = (mode: PanelMode) => {
-    setPanelMode(mode);
-    onPanelModeChange(mode);
-  };
-
-  const handleInputEnabledChange = (enabled: boolean) => {
-    setInputEnabled(enabled);
-    onInputEnabledChange(enabled);
-  };
 
   const handleLocaleChange = (l: Locale) => {
     setLocale(l);
@@ -108,7 +92,7 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
       boxSizing: "border-box",
       overflow: "hidden",
     }}>
-      <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} onClear={handleClearConversation} />
+      <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} />
 
       {/* ─── 3-Column Layout ──────────────────────────────── */}
       <div style={{
@@ -130,40 +114,40 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
           <div style={{ position: "relative", flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
             <ErrorBoundary name="MessageList">
               <MessageList outerRef={scrollRef}>
-              {messages.length === 0 && (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  color: colors.textMuted,
-                  textAlign: "center",
-                  padding: "20px",
-                  fontFamily: fonts.mono,
-                }}>
-                  <div style={{ fontSize: "12px", marginBottom: "6px" }}>
-                    {panelMode === "tools-only" ? (
-                      <span>{t("panel.compact", locale)}</span>
-                    ) : (
-                      <span>
-                        {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
-                      </span>
-                    )}
+                {messages.length === 0 && (
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
+                    color: colors.textMuted,
+                    textAlign: "center",
+                    padding: "20px",
+                    fontFamily: fonts.mono,
+                  }}>
+                    <div style={{ fontSize: "12px", marginBottom: "6px" }}>
+                      {panelMode === "tools-only" ? (
+                        <span>{t("panel.compact", locale)}</span>
+                      ) : (
+                        <span>
+                          {t("panel.ready", locale)}<span style={{ animation: "cursor-blink 1s step-end infinite" }}>|</span>
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
                   </div>
-                  <div style={{ fontSize: "9px", color: colors.textMuted }}>v{version}+{commit}</div>
-                </div>
-              )}
+                )}
 
-              <ChatMessages
-                messages={messages}
-                agentStatus={agentStatus}
-                panelMode={panelMode}
-                locale={locale}
-                userName={userName}
-              />
+                <ChatMessages
+                  messages={messages}
+                  agentStatus={agentStatus}
+                  panelMode={panelMode}
+                  locale={locale}
+                  userName={userName}
+                />
 
-            </MessageList>
+              </MessageList>
             </ErrorBoundary>
 
             {/* Scroll-to-bottom FAB */}
@@ -177,7 +161,8 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
           <Footer
             onSettings={() => setSettingsOpen(true)}
             onContext={() => setContextOpen(true)}
-            inputEnabled={inputEnabled}
+            onClear={handleClearConversation}
+            inputEnabled={true}
             onSend={onSendMessage}
             disabled={agentStatus !== "idle"}
             onCancel={onCancel}
@@ -219,16 +204,12 @@ export function AgentPanel({ version, commit, currentApiKey, panelMode: initialP
       <SettingsModal
         isOpen={settingsOpen}
         currentKey={apiKey}
-        panelMode={panelMode}
-        inputEnabled={inputEnabled}
         onClose={() => setSettingsOpen(false)}
         onSave={async (key) => {
           const ok = await onSettingsSave(key);
           if (ok) setApiKey(key);
           return ok;
         }}
-        onPanelModeChange={handlePanelModeChange}
-        onInputEnabledChange={handleInputEnabledChange}
         locale={locale}
         onLocaleChange={handleLocaleChange}
       />
