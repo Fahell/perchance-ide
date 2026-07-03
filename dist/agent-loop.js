@@ -208,7 +208,7 @@ function extractToolCalls(text) {
             }
         }
         catch {
-            console.warn(`[Agent] Failed to parse tool_call args: ${argsStr}`);
+            console.warn(`[Agent] Failed to parse tool_call args for '${name}': ${argsStr.slice(0, 200)}`);
         }
     }
     return calls;
@@ -216,6 +216,48 @@ function extractToolCalls(text) {
 // ─── Clean Response (remove tool_call tags) ─────────────────
 function cleanResponse(text) {
     return text.replace(TOOL_CALL_REGEX, "").trim();
+}
+// ─── Fix Tool Call Closing Syntax (Fase E) ──────────────────
+/**
+ * Fix an incomplete tool_call at the end of the response text.
+ * Only activates when `</tool_call>` is present (LLM explicitly tried to close).
+ *
+ * The LLM occasionally truncates the tool_call closing syntax:
+ * - Missing `</tool_call>` tag
+ * - Missing closing `}` in the JSON object
+ *
+ * This function ONLY balances XML tags and JSON braces — it NEVER
+ * inspects or modifies the generated content inside the tool call.
+ */
+function fixToolCallClosing(text) {
+    // Only fix when the LLM explicitly tried to close
+    if (!text.includes('</tool_call>'))
+        return text;
+    const openTags = (text.match(/<tool_call\s+name=/g) || []).length;
+    const closeTags = (text.match(/<\/tool_call>/g) || []).length;
+    // All tool calls are properly matched — no fix needed
+    if (openTags <= closeTags)
+        return text;
+    // Find the last <tool_call position
+    const lastOpenIdx = text.lastIndexOf('<tool_call');
+    if (lastOpenIdx === -1)
+        return text;
+    // Check if the last tool_call already has a matching </tool_call> after it
+    const afterLastOpen = text.slice(lastOpenIdx + '<tool_call'.length);
+    if (afterLastOpen.includes('</tool_call>')) {
+        // The last tool call is closed, but some earlier one isn't.
+        // This is unusual — just add </tool_call> at the end as best-effort.
+        return text + '</tool_call>';
+    }
+    // The last tool call is dangling — count braces to close JSON too
+    const openBraces = (afterLastOpen.match(/\{/g) || []).length;
+    const closeBraces = (afterLastOpen.match(/\}/g) || []).length;
+    let fixed = text;
+    if (openBraces > closeBraces) {
+        fixed += '}'.repeat(openBraces - closeBraces);
+    }
+    fixed += '</tool_call>';
+    return fixed;
 }
 class RepetitionDetector {
     recent = [];
@@ -313,8 +355,15 @@ export async function agentLoop(userMessage, context, onStatus, onToolResult, on
         // When continuing, text includes the partial tool call from startWith,
         // which is needed for proper extraction across multiple iterations.
         const fullText = result.text || result.generatedText || result.toString();
+        // ── Fase E: Fix tool_call closing syntax before extraction ─────────
+        // Only fix when </tool_call> is present (LLM explicitly tried to close).
+        // If the LLM didn't write </tool_call>, the auto-continue (Fase C) handles it.
+        const fullTextFixed = fixToolCallClosing(fullText);
+        if (fullTextFixed !== fullText) {
+            console.warn('[Agent] Fixed tool_call closing syntax');
+        }
         // Check for tool calls in the full accumulated text
-        const toolCalls = extractToolCalls(fullText);
+        const toolCalls = extractToolCalls(fullTextFixed);
         // ── Fase B: Detect dangling tool calls (truncated mid-XML) ─────
         const openTags = (fullText.match(/<tool_call\s+name=/g) || []).length;
         const closeTags = (fullText.match(/<\/tool_call>/g) || []).length;

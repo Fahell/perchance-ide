@@ -24,3 +24,4 @@ ai-text-plugin/
 !.github/workflows/**
 super-fetch-plugin/
 continue-generator/
+other-coder-perchance-generator/
