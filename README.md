@@ -51,7 +51,7 @@ pnpm test
 - **Web search** via Jina AI API for real-time information retrieval
 - **Page scraping** to fetch and parse web content as markdown
 - **Context management tools** enabling the agent to search its own conversation history
-- **Virtual File System (VFS)** operations for reading, writing, searching, and managing project files
+- **Virtual File System (VFS)** operations for reading, writing, searching, editing, and managing project files
 - **Python execution** via Pyodide WebAssembly with package installation support
 
 ### Code Editor
@@ -100,7 +100,7 @@ src/
 ├── tools/
 │   ├── index.ts              # Tool registry — generic ToolDefinition<TArgs> interface
 │   ├── context-tools.ts      # search_history (BM25-lite) + get_messages
-│   ├── vfs-tools.ts          # read_file, write_file, list_files, search_files, delete_file, rename_file
+│   ├── vfs-tools.ts          # read_file, write_file, edit_file, list_files, search_files, delete_file, rename_file
 │   ├── terminal-tools.ts     # run_python, execute_script, install_package
 │   └── web-search.ts         # Jina AI integration (search + scrape)
 │
@@ -160,12 +160,13 @@ The agent has access to the following tools, exposed through a generic `ToolDefi
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `read_file` | Read file contents from VFS | `{ path: string }` |
+| `read_file` | Read file contents from VFS (max 5000 chars) | `{ path: string }` |
 | `write_file` | Create or overwrite a file in VFS | `{ path: string, content: string }` |
-| `list_files` | Show project tree structure | `{ path?: string }` |
-| `search_files` | Search files by name or content | `{ query: string, mode?: "name" \| "content" }` |
+| `edit_file` | Replace exact text in a file (safer than write_file for partial edits) | `{ file_path: string, old_string: string, new_string: string }` |
+| `list_files` | Show project tree structure with icons | `{ dir?: string }` |
+| `search_files` | Search files by name or content (case-insensitive) | `{ query: string, maxResults?: number }` |
 | `delete_file` | Delete a file or folder recursively | `{ path: string }` |
-| `rename_file` | Rename or move a file/folder | `{ source: string, dest: string }` |
+| `rename_file` | Rename or move a file/folder | `{ oldPath: string, newPath: string }` |
 
 ### Python Execution Tools
 
