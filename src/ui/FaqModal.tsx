@@ -37,7 +37,7 @@ Agent Loop
   Your message is sent to the LLM with context (recent messages + summary).
   The LLM responds, possibly with <tool_call> XML tags.
   Tool calls are detected and executed — results go back to the LLM.
-  This repeats until the LLM gives a final answer (max 8 iterations).
+  This repeats until the LLM gives a final answer (you can cancel at any time).
 
 Tool Calls
   The LLM outputs <tool_call name="tool_name">{"args"}</tool_call> on its own line.

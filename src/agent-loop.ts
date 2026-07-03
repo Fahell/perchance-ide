@@ -16,7 +16,6 @@ import { truncateOutput } from "./utils/truncate.js";
 import { vfsGetAll } from "./vfs.js";
 
 // ─── Constants ──────────────────────────────────────────────
-const MAX_ITERATIONS = 8;
 const LLM_TIMEOUT_MS = 300_000; // 5 min — Perchance AI can be slow
 const MAX_TOOL_OUTPUT = 20_000; // Safety net for tool result truncation
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
@@ -184,7 +183,7 @@ ${getToolDescriptions(enabledCats)}
 WORKFLOW:
 1. **Search** → web_search for URLs with summaries.
 2. **Fetch** → scrape_url on the most relevant URLs.
-3. **Refine** → poor results? Try different queries/URLs. Up to 8 iterations.
+3. **Refine** → poor results? Try different queries/URLs. Continue iterating until you provide a final answer.
 4. **Answer** → synthesize from actual page content.
 
 CONTEXT (your prompt only includes the last 5 messages):
@@ -410,11 +409,10 @@ export async function agentLoop(
   // Continuation state for truncated responses (Fase B + C)
   let continuationText: string | null = null;
   let continuationCount = 0;
-  const MAX_CONSECUTIVE_CONTINUATIONS = 3;
 
   let iteration = 0;
 
-  while (iteration < MAX_ITERATIONS) {
+  while (true) {
     iteration++;
     onStatus?.(`Thinking... (step ${iteration})`);
 
@@ -481,9 +479,6 @@ export async function agentLoop(
       // 2nd+: result.text = prev startWith + new text
       continuationText = fullText;
       continuationCount++;
-      if (continuationCount > MAX_CONSECUTIVE_CONTINUATIONS) {
-        return "The agent was interrupted: too many consecutive truncated responses. The output limit (~1000 tokens) may be too restrictive for this task. Try splitting it into smaller requests.";
-      }
     } else {
       continuationText = null;
       continuationCount = 0;
@@ -495,7 +490,7 @@ export async function agentLoop(
       if (finalAnswer.length > 0) return finalAnswer;
 
       // Empty response — retry with explicit instruction (once)
-      if (iteration < MAX_ITERATIONS) {
+      if (!signal?.aborted) {
         onStatus?.("Retrying — empty response...");
         instructionParts.push("Your previous response was empty. Write a clear, concise answer to the user's question using the information above. Do NOT output tool_call XML — just write your answer directly.");
         continue;
@@ -594,5 +589,5 @@ export async function agentLoop(
     }
   }
 
-  return "I apologize, but I wasn't able to complete that task after multiple attempts.";
+  return "I apologize, but I wasn't able to complete that task.";
 }
