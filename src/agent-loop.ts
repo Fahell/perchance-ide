@@ -402,20 +402,29 @@ export async function agentLoop(
       throw err;
     }
 
-    const responseText = result.generatedText || result.text || result.toString();
+    // result.text includes everything (startWith + generatedText).
+    // When there's no continuationText (normal mode), generatedText === text.
+    // When continuing, text includes the partial tool call from startWith,
+    // which is needed for proper extraction across multiple iterations.
+    const fullText = result.text || result.generatedText || result.toString();
 
-    // Check for tool calls
-    const toolCalls = extractToolCalls(responseText);
+    // Check for tool calls in the full accumulated text
+    const toolCalls = extractToolCalls(fullText);
 
     // ── Fase B: Detect dangling tool calls (truncated mid-XML) ─────
-    const openTags = (responseText.match(/<tool_call\s+name=/g) || []).length;
-    const closeTags = (responseText.match(/<\/tool_call>/g) || []).length;
+    const openTags = (fullText.match(/<tool_call\s+name=/g) || []).length;
+    const closeTags = (fullText.match(/<\/tool_call>/g) || []).length;
     const hasDanglingToolCall = openTags > closeTags;
 
-    // Save cleaned text for continuation, or reset state (Fase C)
+    // Save the FULL accumulated text for continuation (Fase C).
+    // The model sees its own partial tool call across multiple iterations
+    // and continues completing it. Since startWith is not counted toward
+    // the output limit, only the completion needs to fit each round.
     if (hasDanglingToolCall) {
-      const lastOpenIdx = responseText.lastIndexOf("<tool_call");
-      continuationText = responseText.slice(0, lastOpenIdx).trim();
+      // Accumulates across iterations:
+      // 1st: responseText (no prev continuation)
+      // 2nd+: result.text = prev startWith + new text
+      continuationText = fullText;
       continuationCount++;
       if (continuationCount > MAX_CONSECUTIVE_CONTINUATIONS) {
         return "The agent was interrupted: too many consecutive truncated responses. The output limit (~1000 tokens) may be too restrictive for this task. Try splitting it into smaller requests.";
@@ -427,7 +436,7 @@ export async function agentLoop(
 
     if (toolCalls.length === 0 && !hasDanglingToolCall) {
       // No tool calls, not dangling — this is the final answer
-      const finalAnswer = cleanResponse(responseText);
+      const finalAnswer = cleanResponse(fullText);
       if (finalAnswer.length > 0) return finalAnswer;
 
       // Empty response — retry with explicit instruction (once)
