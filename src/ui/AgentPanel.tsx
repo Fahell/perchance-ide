@@ -30,6 +30,7 @@ export interface AgentPanelProps {
   onLocaleChange: (locale: Locale) => void;
   onSendMessage: (text: string) => void;
   onCancel?: () => void;
+  onContinue?: (content: string) => void;
 }
 
 export interface AgentPanelRef {
@@ -38,9 +39,10 @@ export interface AgentPanelRef {
   addToolCall(name: string, args: Record<string, unknown>): string;
   updateToolCall(id: string, updates: Partial<ToolCallEntry>): void;
   setResponse(response: string): void;
+  continueResponse(text: string): void;
 }
 
-export function AgentPanel({ version, commit, currentApiKey, userName, locale: initialLocale, onSettingsSave, onLocaleChange, onSendMessage, onCancel }: AgentPanelProps) {
+export function AgentPanel({ version, commit, currentApiKey, userName, locale: initialLocale, onSettingsSave, onLocaleChange, onSendMessage, onCancel, onContinue }: AgentPanelProps) {
   const [store, setStore] = useState<IdeState>(ideStore.getState());
   useEffect(() => ideStore.subscribe((s) => setStore(s)), []);
   const { messages, agentStatus } = store;
@@ -140,6 +142,7 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
                   agentStatus={agentStatus}
                   locale={locale}
                   userName={userName}
+                  onContinue={onContinue}
                 />
 
               </MessageList>

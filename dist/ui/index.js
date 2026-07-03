@@ -27,6 +27,9 @@ export function renderPanel(container, props) {
         setResponse(response) {
             ideStore.getState().appendAgentResponse(response);
         },
+        continueResponse(text) {
+            ideStore.getState().appendToLastAgentResponse(text);
+        },
     };
 }
 export function renderSetup(container, props) {

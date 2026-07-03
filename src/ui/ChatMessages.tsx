@@ -16,9 +16,10 @@ export interface ChatMessagesProps {
   agentStatus: AgentStatus;
   locale: Locale;
   userName?: string;
+  onContinue?: (content: string) => void;
 }
 
-export function ChatMessages({ messages, agentStatus, locale, userName }: ChatMessagesProps) {
+export function ChatMessages({ messages, agentStatus, locale, userName, onContinue }: ChatMessagesProps) {
   const isCompact = false;
 
   const filtered = isCompact
@@ -29,6 +30,12 @@ export function ChatMessages({ messages, agentStatus, locale, userName }: ChatMe
       return false;
     })
     : messages;
+
+  // Find index of last agent message to show Continue button
+  const lastAgentIdx = filtered
+    .map((m, i) => (m.role === "agent" ? i : -1))
+    .filter((i) => i !== -1)
+    .pop();
 
   const elements: preact.VNode[] = [];
   filtered.forEach((msg, i) => {
@@ -46,6 +53,8 @@ export function ChatMessages({ messages, agentStatus, locale, userName }: ChatMe
           agentStatus={agentStatus}
           compact={isCompact}
           locale={locale}
+          onContinue={onContinue}
+          isLastAgentMessage={i === lastAgentIdx}
         />
       );
     }

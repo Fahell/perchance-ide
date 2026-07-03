@@ -135,6 +135,7 @@ export interface IdeState {
   addToolCall: (name: string, args: Record<string, unknown>) => string;
   updateToolCall: (id: string, updates: Partial<ToolCallEntry>) => void;
   appendAgentResponse: (response: string) => void;
+  appendToLastAgentResponse: (text: string) => void;
   clearMessages: () => void;
 }
 
@@ -307,6 +308,18 @@ export const ideStore = createStore<IdeState>()(
           ],
           agentStatus: "idle",
         };
+      }),
+
+    appendToLastAgentResponse: (text) =>
+      set((state) => {
+        const msgs = [...state.messages];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "agent") {
+            msgs[i] = { ...msgs[i], content: msgs[i].content + text };
+            break;
+          }
+        }
+        return { messages: msgs };
       }),
 
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),

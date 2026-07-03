@@ -152,6 +152,16 @@ export const ideStore = createStore()(subscribeWithSelector((set, get) => ({
             agentStatus: "idle",
         };
     }),
+    appendToLastAgentResponse: (text) => set((state) => {
+        const msgs = [...state.messages];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === "agent") {
+                msgs[i] = { ...msgs[i], content: msgs[i].content + text };
+                break;
+            }
+        }
+        return { messages: msgs };
+    }),
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),
     bumpVfsVersion: () => set((s) => ({ vfsVersion: s.vfsVersion + 1 })),
     addOutput: (entry) => set((s) => {

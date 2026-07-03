@@ -2,7 +2,7 @@
  * Agent for Perchance Generator (standalone, with ai-text-plugin)
  * Entry point — imports here are bundled into dist/agent.js
  */
-import { agentLoop } from "./agent-loop.js";
+import { agentLoop, continueResponse } from "./agent-loop.js";
 import { buildContext } from "./context-manager.js";
 import { dbLoadVfs } from "./db.js";
 import { getLocale, setLocale as setI18nLocale } from "./i18n/index.js";
@@ -171,6 +171,21 @@ function startAgent() {
                 console.log("🛑 [Agent] User requested cancellation");
                 currentCancelController.abort();
                 panel?.setStatus("idle");
+            }
+        },
+        onContinue: async (content) => {
+            if (agentProcessing)
+                return;
+            agentProcessing = true;
+            try {
+                const newText = await continueResponse(content);
+                panel?.continueResponse(newText);
+            }
+            catch (err) {
+                console.error("❌ [Agent] Continue failed:", err);
+            }
+            finally {
+                agentProcessing = false;
             }
         },
     });

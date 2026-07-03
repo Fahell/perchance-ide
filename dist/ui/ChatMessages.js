@@ -2,7 +2,7 @@ import { jsx as _jsx, Fragment as _Fragment } from "preact/jsx-runtime";
 import { AgentMessage } from "./AgentMessage.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { UserMessage } from "./UserMessage.js";
-export function ChatMessages({ messages, agentStatus, locale, userName }) {
+export function ChatMessages({ messages, agentStatus, locale, userName, onContinue }) {
     const isCompact = false;
     const filtered = isCompact
         ? messages.filter((msg) => {
@@ -15,6 +15,11 @@ export function ChatMessages({ messages, agentStatus, locale, userName }) {
             return false;
         })
         : messages;
+    // Find index of last agent message to show Continue button
+    const lastAgentIdx = filtered
+        .map((m, i) => (m.role === "agent" ? i : -1))
+        .filter((i) => i !== -1)
+        .pop();
     const elements = [];
     filtered.forEach((msg, i) => {
         const prev = filtered[i - 1];
@@ -25,7 +30,7 @@ export function ChatMessages({ messages, agentStatus, locale, userName }) {
             elements.push(_jsx(UserMessage, { content: msg.content, userName: userName, locale: locale, timestamp: msg.timestamp }, msg.id));
         }
         else {
-            elements.push(_jsx(AgentMessage, { message: msg, agentStatus: agentStatus, compact: isCompact, locale: locale }, msg.id));
+            elements.push(_jsx(AgentMessage, { message: msg, agentStatus: agentStatus, compact: isCompact, locale: locale, onContinue: onContinue, isLastAgentMessage: i === lastAgentIdx }, msg.id));
         }
     });
     // Thinking gap after last user message

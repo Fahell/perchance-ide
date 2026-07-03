@@ -94,6 +94,7 @@ function combineSignals(...signals: AbortSignal[]): AbortSignal {
 export function aiCallWithSignal(
   options: {
     instruction: string;
+    startWith?: string;
     stopSequences?: string[];
   },
   signal?: AbortSignal
@@ -172,6 +173,11 @@ PROJECT STATE:
 - Files: ${vfsFileCount ?? '?'}
 - Python: ${pyodideLoaded ? '● Loaded' : '○ Loads on first use'}
 
+OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.
+- Keep responses short; use bullet points
+- Create files ONE AT A TIME (write_file per file)
+- For large operations, split across multiple <tool_call> responses
+
 TOOLS:
 ${getToolDescriptions(enabledCats)}
 
@@ -202,6 +208,30 @@ TOOL CALL FORMAT — one per line:
 <tool_call name="tool_name">{"param":"value"}</tool_call>
 
 Multiple <tool_call> blocks in one response run in parallel. If a tool depends on another's result, output them one per response — call, wait, then call next.`;
+}
+
+// ─── Manual Continue (Fase D) ────────────────────────────────
+/**
+ * Continue a truncated assistant response using startWith.
+ * The LLM picks up from where it left off in the same message.
+ * result.generatedText contains ONLY the new text (excludes startWith).
+ *
+ * This mirrors the continue-generator pattern:
+ *   startWith = existingText
+ *   result.generatedText = only the continuation
+ */
+export async function continueResponse(
+  truncatedText: string
+): Promise<string> {
+  const result = await getAi()({
+    instruction:
+      "Continue from where you left off in your previous response. " +
+      "Do NOT repeat what was already written — just continue naturally. " +
+      "Keep it concise. Do not use tool calls unless absolutely necessary.",
+    startWith: truncatedText,
+    stopSequences: ["</tool_call>"],
+  });
+  return (result.generatedText || result.text || "").trim();
 }
 
 // ─── Conversation History ────────────────────────────────────
@@ -330,6 +360,11 @@ export async function agentLoop(
   // Initialize repetition detector
   const detector = new RepetitionDetector();
 
+  // Continuation state for truncated responses (Fase B + C)
+  let continuationText: string | null = null;
+  let continuationCount = 0;
+  const MAX_CONSECUTIVE_CONTINUATIONS = 3;
+
   let iteration = 0;
 
   while (iteration < MAX_ITERATIONS) {
@@ -342,6 +377,7 @@ export async function agentLoop(
     }
 
     // Call the LLM via ai-text-plugin with timeout + cancellation
+    // Pass startWith for auto-continue if previous response was truncated (Fase C)
     const llmSignal = signal
       ? combineSignals(signal, AbortSignal.timeout(LLM_TIMEOUT_MS))
       : AbortSignal.timeout(LLM_TIMEOUT_MS);
@@ -351,6 +387,7 @@ export async function agentLoop(
         {
           instruction: instructionParts.join("\n\n"),
           stopSequences: ["</tool_call>"],
+          ...(continuationText ? { startWith: continuationText } : {}),
         },
         llmSignal
       );
@@ -370,8 +407,26 @@ export async function agentLoop(
     // Check for tool calls
     const toolCalls = extractToolCalls(responseText);
 
-    if (toolCalls.length === 0) {
-      // No tool calls — this is the final answer
+    // ── Fase B: Detect dangling tool calls (truncated mid-XML) ─────
+    const openTags = (responseText.match(/<tool_call\s+name=/g) || []).length;
+    const closeTags = (responseText.match(/<\/tool_call>/g) || []).length;
+    const hasDanglingToolCall = openTags > closeTags;
+
+    // Save cleaned text for continuation, or reset state (Fase C)
+    if (hasDanglingToolCall) {
+      const lastOpenIdx = responseText.lastIndexOf("<tool_call");
+      continuationText = responseText.slice(0, lastOpenIdx).trim();
+      continuationCount++;
+      if (continuationCount > MAX_CONSECUTIVE_CONTINUATIONS) {
+        return "The agent was interrupted: too many consecutive truncated responses. The output limit (~1000 tokens) may be too restrictive for this task. Try splitting it into smaller requests.";
+      }
+    } else {
+      continuationText = null;
+      continuationCount = 0;
+    }
+
+    if (toolCalls.length === 0 && !hasDanglingToolCall) {
+      // No tool calls, not dangling — this is the final answer
       const finalAnswer = cleanResponse(responseText);
       if (finalAnswer.length > 0) return finalAnswer;
 
@@ -383,7 +438,7 @@ export async function agentLoop(
       }
     }
 
-    // Execute all tool calls in parallel
+    // Execute all tool calls in parallel (only complete ones; dangling was ignored by extractToolCalls)
     const outcomes = await Promise.all(
       toolCalls.map(async (call) => {
         try {
@@ -462,6 +517,16 @@ export async function agentLoop(
         }
         // If !outcome.error && !outcome.result: tool not found — skip silently
       }
+    }
+
+    // ── Fase C: Add continuation marker when dangling detected ──────
+    if (hasDanglingToolCall) {
+      onStatus?.("Response was truncated — continuing...");
+      instructionParts.push(
+        "[CONTINUE]: Your previous response was cut off (~1000 token limit). " +
+        "The incomplete tool_call was NOT executed. Results from complete tool calls are above. " +
+        "Continue your response from where you left off, keeping it concise to avoid further truncation."
+      );
     }
   }
 

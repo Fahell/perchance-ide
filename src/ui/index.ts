@@ -34,6 +34,9 @@ export function renderPanel(container: HTMLElement, props: AgentPanelProps & { o
     setResponse(response: string) {
       ideStore.getState().appendAgentResponse(response);
     },
+    continueResponse(text: string) {
+      ideStore.getState().appendToLastAgentResponse(text);
+    },
   };
 }
 

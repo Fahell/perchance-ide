@@ -11,9 +11,11 @@ interface AgentMessageProps {
   agentStatus: AgentStatus;
   compact?: boolean;
   locale?: Locale;
+  onContinue?: (content: string) => void;
+  isLastAgentMessage?: boolean;
 }
 
-export function AgentMessage({ message, agentStatus, compact, locale }: AgentMessageProps) {
+export function AgentMessage({ message, agentStatus, compact, locale, onContinue, isLastAgentMessage }: AgentMessageProps) {
   const isActive = message.role === "agent" && agentStatus !== "idle";
 
   return (
@@ -29,6 +31,29 @@ export function AgentMessage({ message, agentStatus, compact, locale }: AgentMes
 
         {/* Final response — hidden in compact mode */}
         {!compact && <ResponseText content={message.content} loading={isActive && message.toolCalls.length > 0} locale={locale} />}
+
+        {/* Continue button — only on last agent message when idle */}
+        {isLastAgentMessage && onContinue && agentStatus === "idle" && message.content && (
+          <button
+            onClick={() => onContinue(message.content)}
+            style={{
+              background: "none",
+              border: `1px solid ${colors.border}`,
+              color: colors.textMuted,
+              fontSize: "9px",
+              padding: "2px 8px",
+              margin: "6px 12px 0",
+              cursor: "pointer",
+              fontFamily: fonts.mono,
+              opacity: 0.7,
+              transition: "opacity 0.15s",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "1")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "0.7")}
+          >
+            ▶ Continue
+          </button>
+        )}
 
         {/* Timestamp */}
         {message.timestamp && (
