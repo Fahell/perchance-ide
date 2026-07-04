@@ -2,7 +2,7 @@
  * Mapper Agent — subagent that maintains project documentation in _review/.
  *
  * Consumes VFS change events and uses a lightweight tool-calling loop
- * (max 5 iterations) with 3 internal tools: read_file, write_file, edit_file.
+ * with 4 internal tools: read_file, write_file, edit_file, rename_file.
  *
  * These tools operate on raw VFS (no event emission) to avoid infinite loops.
  * The mapper is fire-and-forget, called by the dispatcher after agent idle.
@@ -11,16 +11,26 @@
 import { getAi } from "./types.js";
 import type { VfsChangeEvent } from "./vfs-events.js";
 import { scheduleVfsPersist } from "./vfs-persist.js";
-import { vfsExists, vfsRead, vfsWrite } from "./vfs.js";
+import { vfsExists, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
 
 // ─── Constants ──────────────────────────────────────────────
-const MAX_ITERATIONS = 5;
+const MAX_ITERATIONS = 15;
+const WARN_ITERATIONS = 10;
 const REVIEW_DIR = "/_review";
 const INDEX_PATH = "/_review/index.md";
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
-// ─── System Prompt ──────────────────────────────────────────
-const MAPPER_SYSTEM_PROMPT = `You are a Project Mapper. Your ONLY job is to maintain structured documentation of the project in the virtual file system.
+// ─── System Prompt Builder ──────────────────────────────────
+
+function buildMapperSystemPrompt(timestamp: string): string {
+  // Tool call syntax examples use escaped angle brackets to avoid MCP corruption
+  const tcOpen = "<tool_call";
+  const tcClose = "</tool_call>";
+
+  return `You are a Project Mapper. Your ONLY job is to maintain structured documentation of the project in the virtual file system.
+
+CURRENT TIMESTAMP: ${timestamp}
+Use this exact timestamp in all "Updated:" fields. Do NOT invent or guess dates.
 
 RULES:
 - NEVER evaluate code quality, suggest improvements, or identify bugs.
@@ -33,7 +43,7 @@ EVENT TYPES YOU RECEIVE:
 - created: New file. Read it, create summary, update index.
 - modified: File changed. Read updated file + existing summary. Use edit_file to update only changed sections. Preserve existing findings.
 - deleted: File removed. Remove summary file, update index, update references in other summaries.
-- renamed: File moved. Rename summary file, update all references.
+- renamed: File moved. Use rename_file to move the summary, then update all references. Do NOT delete+recreate.
 
 SUMMARY FORMAT (_review/<path>.md):
 \`\`\`markdown
@@ -70,21 +80,27 @@ auth/login → db/sessions, types/auth
 
 TOOLS AVAILABLE (use this EXACT syntax to call tools):
 
-<tool_call name="read_file">{"path": "/src/example.ts"}<\tool_call>
+${tcOpen} name="read_file">{"path": "/src/example.ts"}${tcClose}
   - Reads source code or existing summaries from VFS.
   - Params: path (string, required) — absolute VFS path.
   - Returns file content (truncated to 4000 chars if too large).
 
-<tool_call name="write_file">{"path": "/_review/src/example.md", "content": "# Summary..."}<\tool_call>
+${tcOpen} name="write_file">{"path": "/_review/src/example.md", "content": "# Summary..."}${tcClose}
   - Creates or overwrites a file in ${REVIEW_DIR}/.
   - Params: path (string, required), content (string, required).
   - Path MUST start with ${REVIEW_DIR}/.
 
-<tool_call name="edit_file">{"file_path": "/_review/index.md", "old_string": "| old/path.md | ...", "new_string": "| new/path.md | ..."}<\tool_call>
+${tcOpen} name="edit_file">{"file_path": "/_review/index.md", "old_string": "| old/path.md | ...", "new_string": "| new/path.md | ..."}${tcClose}
   - Replaces exactly one occurrence of old_string with new_string in an existing file.
   - Params: file_path (string, required), old_string (string, required), new_string (string, required).
   - Path MUST start with ${REVIEW_DIR}/.
   - Fails if old_string not found or found multiple times. Prefer this over write_file for updates.
+
+${tcOpen} name="rename_file">{"oldPath": "/_review/old/path.md", "newPath": "/_review/new/path.md"}${tcClose}
+  - Renames/moves a file within ${REVIEW_DIR}/. Use for renamed events instead of delete+create.
+  - Params: oldPath (string, required), newPath (string, required).
+  - Both paths MUST start with ${REVIEW_DIR}/.
+  - Creates parent directories automatically. Fails if oldPath does not exist.
 
 IMPORTANT: You can only call ONE tool per response. Wait for the result before calling another tool.
 
@@ -95,6 +111,7 @@ WORKFLOW:
 4. Create/update summaries using write_file or edit_file
 5. Update index using edit_file (preferred) or write_file
 6. When done, respond with a brief confirmation message (no more tool calls)`;
+}
 
 // ─── Internal Tools (raw VFS, no events) ────────────────────
 
@@ -164,6 +181,25 @@ function mapperEditFile(
   return { success: true, output: `Success: Edited ${filePath} (replaced 1 occurrence)` };
 }
 
+function mapperRenameFile(oldPath: string, newPath: string): MapperToolResult {
+  if (!oldPath.startsWith(REVIEW_DIR)) {
+    return { success: false, output: `Error: Mapper can only rename files in ${REVIEW_DIR}/. Got: ${oldPath}` };
+  }
+  if (!newPath.startsWith(REVIEW_DIR)) {
+    return { success: false, output: `Error: Mapper can only rename files to ${REVIEW_DIR}/. Got: ${newPath}` };
+  }
+  if (!vfsExists(oldPath)) {
+    return { success: false, output: `Error: Source file not found: ${oldPath}` };
+  }
+
+  const ok = vfsRename(oldPath, newPath);
+  if (!ok) {
+    return { success: false, output: `Error: Failed to rename ${oldPath} → ${newPath}` };
+  }
+  scheduleVfsPersist();
+  return { success: true, output: `Success: Renamed ${oldPath} → ${newPath}` };
+}
+
 // ─── Tool Execution Router ──────────────────────────────────
 
 function executeMapperTool(name: string, args: Record<string, any>): string {
@@ -188,8 +224,15 @@ function executeMapperTool(name: string, args: Record<string, any>): string {
       if (!oldStr) return "Error: old_string is required.";
       return mapperEditFile(filePath, oldStr, newStr).output;
     }
+    case "rename_file": {
+      const oldPath = String(args.oldPath ?? "");
+      const newPath = String(args.newPath ?? "");
+      if (!oldPath) return "Error: oldPath is required.";
+      if (!newPath) return "Error: newPath is required.";
+      return mapperRenameFile(oldPath, newPath).output;
+    }
     default:
-      return `Error: Unknown tool '${name}'. Available: read_file, write_file, edit_file`;
+      return `Error: Unknown tool '${name}'. Available: read_file, write_file, edit_file, rename_file`;
   }
 }
 
@@ -264,7 +307,7 @@ function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
 
 /**
  * Run the mapper agent for a batch of VFS change events.
- * Uses a lightweight tool-calling loop (max 5 iterations).
+ * Uses a lightweight tool-calling loop (max 15 iterations, warns at 10).
  * Fire-and-forget — caller should .catch() errors.
  */
 export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
@@ -275,6 +318,9 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
   }
 
   console.log(`🗺️ [Mapper] Processing ${events.length} event(s)...`);
+
+  // Generate neutral ISO 8601 timestamp (no timezone/geographic info)
+  const timestamp = new Date().toISOString().slice(0, 19);
 
   const eventsDescription = formatEventsForPrompt(events);
 
@@ -287,7 +333,12 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
   let conversationHistory = `VFS CHANGE EVENTS:\n${eventsDescription}\n\n${indexHint}\n\nProcess these events. Read source files, create/update summaries, and update the index.`;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-    const instruction = `${MAPPER_SYSTEM_PROMPT}\n\n---\n\n${conversationHistory}`;
+    // Warn user when mapper has iterated many times
+    if (iteration === WARN_ITERATIONS) {
+      console.warn(`⚠️ [Mapper] Reached ${WARN_ITERATIONS} iterations — still processing, may take longer than usual`);
+    }
+
+    const instruction = `${buildMapperSystemPrompt(timestamp)}\n\n---\n\n${conversationHistory}`;
 
     let resultText: string;
     try {
