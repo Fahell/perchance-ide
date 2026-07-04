@@ -25,7 +25,7 @@ const REVIEW_DIR = "/_review";
 const INDEX_PATH = "/_review/index.md";
 
 /** Valid internal tool names for the mapper agent. */
-const MAPPER_TOOLS = new Set(["read_file", "write_file", "edit_file", "rename_file"]);
+const MAPPER_TOOLS = new Set(["read_file", "write_file", "edit_file", "rename_file", "delete_file"]);
 
 /** Max characters for injecting file content directly into prompt. */
 const MAX_INJECT_CHARS = 12000;
@@ -112,6 +112,11 @@ ${tcOpen}<name>rename_file</name><oldPath><![CDATA[/_review/old/path.md]]></oldP
   - Params: oldPath (string, required), newPath (string, required).
   - Both paths MUST start with ${REVIEW_DIR}/.
   - Creates parent directories automatically. Fails if oldPath does not exist.
+
+${tcOpen}<name>delete_file</name><path><![CDATA[/_review/src/old-file.md]]></path>${tcClose}
+  - Deletes a summary file from ${REVIEW_DIR}/. Use for deleted events to remove obsolete summaries.
+  - Params: path (string, required) — absolute VFS path within ${REVIEW_DIR}/.
+  - Cannot delete the index file itself. Fails if file does not exist.
 
 IMPORTANT: You can only call ONE tool per response. Wait for the result before calling another tool.
 
@@ -211,6 +216,21 @@ function mapperRenameFile(oldPath: string, newPath: string): MapperToolResult {
   return { success: true, output: `Success: Renamed ${oldPath} → ${newPath}` };
 }
 
+function mapperDeleteFile(path: string): MapperToolResult {
+  if (!path.startsWith(REVIEW_DIR + "/")) {
+    return { success: false, output: `Error: Mapper can only delete files in ${REVIEW_DIR}/. Got: ${path}` };
+  }
+  if (path === INDEX_PATH) {
+    return { success: false, output: `Error: Cannot delete the index file itself.` };
+  }
+  if (!vfsExists(path)) {
+    return { success: false, output: `Error: File not found: ${path}` };
+  }
+  vfsWrite(path, "");
+  scheduleVfsPersist();
+  return { success: true, output: `Success: Deleted ${path}` };
+}
+
 // ─── Tool Execution Router ──────────────────────────────────
 
 function executeMapperTool(name: string, args: Record<string, any>): string {
@@ -242,8 +262,13 @@ function executeMapperTool(name: string, args: Record<string, any>): string {
       if (!newPath) return "Error: newPath is required.";
       return mapperRenameFile(oldPath, newPath).output;
     }
+    case "delete_file": {
+      const path = String(args.path ?? "");
+      if (!path) return "Error: path is required.";
+      return mapperDeleteFile(path).output;
+    }
     default:
-      return `Error: Unknown tool '${name}'. Available: read_file, write_file, edit_file, rename_file`;
+      return `Error: Unknown tool '${name}'. Available: read_file, write_file, edit_file, rename_file, delete_file`;
   }
 }
 
