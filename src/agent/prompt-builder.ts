@@ -73,9 +73,8 @@ export function buildToolPrompt(
   // Tool call format instruction — uses flat XML tags with CDATA
   const formatExample = [
     `${tcOpen}`,
-    `  <name>tool_name</name>`,
-    `  <param1><![CDATA[value1]]></param1>`,
-    `  <param2><![CDATA[multiline or special chars here]]></param2>`,
+    `  <name>read_file</name>`,
+    `  <path><![CDATA[/src/example.ts]]></path>`,
     `${tcClose}`,
   ].join("\n");
 
