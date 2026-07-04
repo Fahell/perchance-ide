@@ -35,7 +35,7 @@ import {
 } from "./agent/tool-call-parser.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
-const tcOpen = "<tool_call";
+const tcOpen = "<tool_call>";
 const tcClose = "</tool_call>";
 
 // ─── Local Constants ────────────────────────────────────────
@@ -170,14 +170,9 @@ export async function agentLoop(
     const toolCalls = extractToolCalls(fullTextFixed);
 
     // Detect dangling tool calls (truncated mid-XML)
-    const openPattern = new RegExp(`${tcOpen}\\s+name=`, "g");
-    const closePattern = new RegExp(
-      (tcClose as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-      "g"
-    );
-    const openTags = (fullText.match(openPattern) || []).length;
-    const closeTags = (fullText.match(closePattern) || []).length;
-    const hasDanglingToolCall = openTags > closeTags;
+    const hasDanglingToolCall = tcOpen
+      ? countOccurrences(fullText, tcOpen) > countOccurrences(fullText, tcClose)
+      : false;
 
     // Save the FULL accumulated text for continuation
     if (hasDanglingToolCall) {
@@ -317,13 +312,27 @@ export async function agentLoop(
       onStatus?.("Response was truncated — continuing...");
       instructionParts.push(
         "[CONTINUE]: Your previous response was cut off. " +
-          "The incomplete tool_call was NOT executed. Results from complete tool calls are above. " +
-          "Continue your response from where you left off, and explicitly close the call with " +
-          tcClose +
-          " to exit the tool after finishing the content."
+        "The incomplete tool_call was NOT executed. Results from complete tool calls are above. " +
+        "Continue your response from where you left off, and explicitly close the call with " +
+        tcClose +
+        " to exit the tool after finishing the content."
       );
     }
   }
 
   return "I apologize, but I wasn't able to complete that task.";
+}
+
+/**
+ * Count non-overlapping occurrences of a substring.
+ */
+function countOccurrences(text: string, substr: string): number {
+  if (!substr) return 0;
+  let count = 0;
+  let pos = 0;
+  while ((pos = text.indexOf(substr, pos)) !== -1) {
+    count++;
+    pos += substr.length;
+  }
+  return count;
 }

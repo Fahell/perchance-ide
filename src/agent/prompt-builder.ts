@@ -11,8 +11,8 @@ import { ideStore } from "../store.js";
 import { getToolDescriptions } from "../tools/index.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
-const tcOpen = "<tool_call";
-const tcClose = "</tool_call>";
+const tcOpen: string = "<tool_call>";
+const tcClose: string = "</tool_call>";
 
 // ─── buildToolPrompt ────────────────────────────────────────
 export function buildToolPrompt(
@@ -46,7 +46,7 @@ export function buildToolPrompt(
 
   sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}`);
 
-  sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple ${tcOpen} responses`);
+  sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple responses`);
 
   sections.push(`ACTIVE TOOLS:\n${getToolDescriptions(enabledCats)}`);
 
@@ -70,7 +70,21 @@ export function buildToolPrompt(
     sections.push(`PYTHON (in-browser via Pyodide, VFS auto-synced):\n- run_python: Quick snippets.\n- execute_script: Run a .py file from VFS.\n- install_package: Install packages (numpy, pandas, etc.).\n- stdout, stderr, and exit code captured.`);
   }
 
-  sections.push(`TOOL CALL FORMAT — one per line:\n${tcOpen} name="tool_name">{"param":"value"}${tcClose}\n\nMultiple ${tcOpen} blocks in one response run in parallel. If a tool depends on another's result, output them one per response — call, wait, then call next.`);
+  // Tool call format instruction — uses flat XML tags with CDATA
+  const formatExample = [
+    `${tcOpen} name="tool_name">`,
+    `  <param1><![CDATA[value1]]></param1>`,
+    `  <param2><![CDATA[multiline or special chars here]]></param2>`,
+    `${tcClose}`,
+  ].join("\n");
+
+  sections.push(
+    `TOOL CALL FORMAT — one per response line:\n${formatExample}\n\n` +
+    `Each parameter MUST be wrapped in its own XML tag with CDATA section.\n` +
+    `Do NOT use JSON. Do NOT nest parameters.\n` +
+    `Multiple ${tcOpen || "tool_call"} blocks in one response run in parallel. ` +
+    `If a tool depends on another's result, output them one per response — call, wait, then call next.`
+  );
 
   return sections.join("\n\n");
 }

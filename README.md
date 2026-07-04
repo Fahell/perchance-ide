@@ -110,7 +110,7 @@ pnpm test:watch
 ### Agent Loop Internals
 
 - **Dynamic system prompt** built from enabled tool categories (web, context, VFS, terminal — each toggleable in settings)
-- **Tool call parsing** via XML-like `<tool_call name="...">{"args"}</tool_call>` syntax with auto-closing-tag repair
+- **Tool call parsing** via flat XML tags with CDATA sections — `<tool_call name="..."><param><![CDATA[value]]></param></tool_call>` — using depth-aware tag matching and auto-closing-tag repair
 - **Repetition detection** — warns at 3 consecutive identical calls, interrupts at 5
 - **Token estimation** heuristic: UTF-8 byte length / 4 (or / 3 for code-heavy content)
 - **Parallel execution** — multiple `<tool_call>` blocks in one response run simultaneously
@@ -145,7 +145,7 @@ src/
 │
 ├── agent/
 │   ├── prompt-builder.ts     # Dynamic system prompt from enabled tools + project state
-│   ├── tool-call-parser.ts   # XML parser, response cleaner, closing-tag fixer
+│   ├── tool-call-parser.ts   # Flat XML CDATA parser, response cleaner, closing-tag fixer
 │   ├── repetition-detector.ts # Fingerprint-based loop prevention
 │   └── timeout-helpers.ts    # AbortSignal composition, withTimeout, aiCallWithSignal
 │
@@ -485,7 +485,7 @@ Accessible via gear icon in header or `Ctrl+,`:
 ## Critical Development Patterns
 
 - **LLM calls**: All operations (agent loop, summarization, memory extraction) use `getAi()` helper which resolves `window[name]` / `window.root[name]` / `window.parent?.root?.[name]`. Never call `window.ai` directly.
-- **Tool calls**: AI outputs `<tool_call name="...">{JSON}` XML → runtime detects via regex, executes tool, feeds result back into next LLM iteration. Multiple `<tool_call>` blocks in one response run in parallel.
+- **Tool calls**: AI outputs `<tool_call name="..."><param><![CDATA[value]]></param></tool_call>` XML → runtime parses via depth-aware tag matching with CDATA extraction, executes tool, feeds result back into next LLM iteration. Multiple `<tool_call>` blocks in one response run in parallel.
 - **Tool interface**: Generic `ToolDefinition<TArgs>` with typed `execute(args: TArgs)` instead of untyped `Record<string, any>`.
 - **Runtime validation**: Zero-dependency `validateShape<T>()` and `isArrayOf()` utilities for type-safe runtime checks with `dbKvGetValidated()`.
 - **UI rendering**: Preact renders into `document.body` with semantic HTML and ARIA roles throughout.

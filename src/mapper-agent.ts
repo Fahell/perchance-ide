@@ -14,12 +14,18 @@ import type { VfsChangeEvent } from "./vfs-events.js";
 import { scheduleVfsPersist } from "./vfs-persist.js";
 import { vfsExists, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
 
+// ─── Tag Constants (fill in manually) ───────────────────────
+const tcOpen: string = "<tool_call>";
+const tcClose: string = "</tool_call>";
+
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 15;
 const WARN_ITERATIONS = 10;
 const REVIEW_DIR = "/_review";
 const INDEX_PATH = "/_review/index.md";
-const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
+
+/** Valid internal tool names for the mapper agent. */
+const MAPPER_TOOLS = new Set(["read_file", "write_file", "edit_file", "rename_file"]);
 
 /** Max characters for injecting file content directly into prompt. */
 const MAX_INJECT_CHARS = 12000;
@@ -27,10 +33,6 @@ const MAX_INJECT_CHARS = 12000;
 // ─── System Prompt Builder ──────────────────────────────────
 
 function buildMapperSystemPrompt(timestamp: string): string {
-  // Tool call syntax to avoid MCP corruption
-  const tcOpen = "<tool_call";
-  const tcClose = "</tool_call>";
-
   return `You are a Project Mapper. Your ONLY job is to maintain structured documentation of the project in the virtual file system.
 
 CURRENT TIMESTAMP: ${timestamp}
@@ -87,24 +89,25 @@ auth/login → db/sessions, types/auth
 \`\`\`
 
 TOOLS AVAILABLE (use this EXACT syntax to call tools):
+Each parameter must be wrapped in its own XML tag with CDATA. Do NOT use JSON.
 
-${tcOpen} name="read_file">{"path": "/src/example.ts"}${tcClose}
+${tcOpen}<name>read_file</name><path><![CDATA[/src/example.ts]]></path>${tcClose}
   - Reads source code or existing summaries from VFS.
   - Params: path (string, required) — absolute VFS path.
   - Returns file content (truncated to 4000 chars if too large).
 
-${tcOpen} name="write_file">{"path": "/_review/src/example.md", "content": "# Summary..."}${tcClose}
+${tcOpen}<name>write_file</name><path><![CDATA[/_review/src/example.md]]></path><content><![CDATA[# Summary...]]></content>${tcClose}
   - Creates or overwrites a file in ${REVIEW_DIR}/.
   - Params: path (string, required), content (string, required).
   - Path MUST start with ${REVIEW_DIR}/.
 
-${tcOpen} name="edit_file">{"file_path": "/_review/index.md", "old_string": "| old/path.md | ...", "new_string": "| new/path.md | ..."}${tcClose}
+${tcOpen}<name>edit_file</name><file_path><![CDATA[/_review/index.md]]></file_path><old_string><![CDATA[| old/path.md | ...]]></old_string><new_string><![CDATA[| new/path.md | ...]]></new_string>${tcClose}
   - Replaces exactly one occurrence of old_string with new_string in an existing file.
   - Params: file_path (string, required), old_string (string, required), new_string (string, required).
   - Path MUST start with ${REVIEW_DIR}/.
   - Fails if old_string not found or found multiple times. Prefer this over write_file for updates.
 
-${tcOpen} name="rename_file">{"oldPath": "/_review/old/path.md", "newPath": "/_review/new/path.md"}${tcClose}
+${tcOpen}<name>rename_file</name><oldPath><![CDATA[/_review/old/path.md]]></oldPath><newPath><![CDATA[/_review/new/path.md]]></newPath>${tcClose}
   - Renames/moves a file within ${REVIEW_DIR}/. Use for renamed events instead of delete+create.
   - Params: oldPath (string, required), newPath (string, required).
   - Both paths MUST start with ${REVIEW_DIR}/.
@@ -244,27 +247,113 @@ function executeMapperTool(name: string, args: Record<string, any>): string {
   }
 }
 
-// ─── Tool Call Parser ───────────────────────────────────────
+// ─── Tool Call Parser (XML flat-tags + CDATA) ───────────────
 
 interface ToolCall {
   name: string;
   args: Record<string, any>;
 }
 
-function extractToolCalls(text: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-  let match: RegExpExecArray | null;
-  TOOL_CALL_REGEX.lastIndex = 0;
+/**
+ * Extract the content of a CDATA section from raw text.
+ * Returns the inner text if CDATA wrappers are present, otherwise the raw text trimmed.
+ */
+function extractCdataContent(raw: string): string {
+  const cdataMatch = raw.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+  if (cdataMatch) return cdataMatch[1];
+  return raw.trim();
+}
 
-  while ((match = TOOL_CALL_REGEX.exec(text)) !== null) {
-    const [, name, argsStr] = match;
-    try {
-      const args = JSON.parse(argsStr);
-      calls.push({ name, args });
-    } catch {
-      console.warn(`[Mapper] Failed to parse tool_call args for '${name}'`);
+/**
+ * Find all top-level tool call blocks using depth-aware matching.
+ */
+function findToolCallBlocks(text: string): Array<{ name: string; body: string }> {
+  if (!tcOpen || !tcClose) return [];
+
+  const blocks: Array<{ name: string; body: string }> = [];
+  let searchFrom = 0;
+
+  while (searchFrom < text.length) {
+    const openIdx = text.indexOf(tcOpen, searchFrom);
+    if (openIdx === -1) break;
+
+    // Find the closing '>' of the opening tag
+    const gtIdx = text.indexOf(">", openIdx + tcOpen.length);
+    if (gtIdx === -1) {
+      searchFrom = openIdx + tcOpen.length;
+      continue;
+    }
+
+    const contentStart = gtIdx + 1;
+    let depth = 1;
+    let pos = contentStart;
+
+    while (pos < text.length && depth > 0) {
+      const nextOpen = text.indexOf(tcOpen, pos);
+      const nextClose = text.indexOf(tcClose, pos);
+
+      if (nextClose === -1) break;
+
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + tcOpen.length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          const body = text.slice(contentStart, nextClose);
+
+          // Extract name from <name>...</name> tag inside body
+          const nameMatch = body.match(/<name>([\s\S]*?)<\/name>/);
+          if (nameMatch) {
+            const name = extractCdataContent(nameMatch[1]);
+            blocks.push({ name, body });
+          }
+
+          searchFrom = nextClose + tcClose.length;
+        } else {
+          pos = nextClose + tcClose.length;
+        }
+      }
+    }
+
+    // If we didn't find a matching close, skip this open tag
+    if (depth > 0) {
+      searchFrom = openIdx + tcOpen.length;
     }
   }
+
+  return blocks;
+}
+
+/**
+ * Parse individual parameter tags from the body of a tool call block.
+ * Each parameter is expected as: <paramName><![CDATA[value]]></paramName>
+ */
+function parseParams(body: string): Record<string, any> {
+  const params: Record<string, any> = {};
+  const paramRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = paramRegex.exec(body)) !== null) {
+    const [, paramName, rawContent] = match;
+    if (paramName === "name") continue;
+    params[paramName] = extractCdataContent(rawContent);
+  }
+
+  return params;
+}
+
+function extractToolCalls(text: string): ToolCall[] {
+  const blocks = findToolCallBlocks(text);
+  const calls: ToolCall[] = [];
+
+  for (const block of blocks) {
+    if (!MAPPER_TOOLS.has(block.name)) continue;
+
+    const args = parseParams(block.body);
+    calls.push({ name: block.name, args });
+  }
+
   return calls;
 }
 
