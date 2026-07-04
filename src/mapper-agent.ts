@@ -1,8 +1,9 @@
 /**
  * Mapper Agent — subagent that maintains project documentation in _review/.
  *
- * Consumes VFS change events and uses a lightweight tool-calling loop
- * with 4 internal tools: read_file, write_file, edit_file, rename_file.
+ * Processes ONE VFS change event per invocation with clean context (no history).
+ * Uses a lightweight tool-calling loop with 4 internal tools:
+ * read_file, write_file, edit_file, rename_file.
  *
  * These tools operate on raw VFS (no event emission) to avoid infinite loops.
  * The mapper is fire-and-forget, called by the dispatcher after agent idle.
@@ -20,10 +21,13 @@ const REVIEW_DIR = "/_review";
 const INDEX_PATH = "/_review/index.md";
 const TOOL_CALL_REGEX = /<tool_call\s+name="(\w+)">\s*(\{.*?\})\s*<\/tool_call>/gs;
 
+/** Max characters for injecting file content directly into prompt. */
+const MAX_INJECT_CHARS = 12000;
+
 // ─── System Prompt Builder ──────────────────────────────────
 
 function buildMapperSystemPrompt(timestamp: string): string {
-  // Tool call syntax examples use escaped angle brackets to avoid MCP corruption
+  // Tool call syntax to avoid MCP corruption
   const tcOpen = "<tool_call";
   const tcClose = "</tool_call>";
 
@@ -40,8 +44,8 @@ RULES:
 - Individual summaries: ${REVIEW_DIR}/<path>.md (mirror source path)
 
 EVENT TYPES YOU RECEIVE:
-- created: New file. Read it, create summary, update index.
-- modified: File changed. Read updated file + existing summary. Use edit_file to update only changed sections. Preserve existing findings.
+- created: New file. Create summary, update index. If content is provided below, use it directly. Otherwise use read_file.
+- modified: File changed. Read existing summary. Use edit_file to update only changed sections. Preserve existing findings. If updated content is provided below, use it directly. Otherwise use read_file.
 - deleted: File removed. Remove summary file, update index, update references in other summaries.
 - renamed: File moved. Use rename_file to move the summary, then update all references. Do NOT delete+recreate.
 
@@ -105,11 +109,11 @@ ${tcOpen} name="rename_file">{"oldPath": "/_review/old/path.md", "newPath": "/_r
 IMPORTANT: You can only call ONE tool per response. Wait for the result before calling another tool.
 
 WORKFLOW:
-1. Read the source file(s) referenced in events
-2. Read existing summaries if updating
-3. Read current index
-4. Create/update summaries using write_file or edit_file
-5. Update index using edit_file (preferred) or write_file
+1. If file content is provided below, use it directly. Otherwise read the source file via read_file.
+2. Read existing summary if updating (via read_file).
+3. Read current index (via read_file).
+4. Create/update summary using write_file or edit_file.
+5. Update index using edit_file (preferred) or write_file.
 6. When done, respond with a brief confirmation message (no more tool calls)`;
 }
 
@@ -262,25 +266,33 @@ function extractToolCalls(text: string): ToolCall[] {
 
 // ─── Event Formatting ───────────────────────────────────────
 
-function formatEventsForPrompt(events: VfsChangeEvent[]): string {
-  const lines: string[] = [];
-  for (const e of events) {
-    switch (e.type) {
-      case "created":
-        lines.push(`- CREATED: ${e.path} (hash: ${e.currentHash}, size: ${e.size}B)`);
-        break;
-      case "modified":
-        lines.push(`- MODIFIED: ${e.path} (prev: ${e.previousHash} → curr: ${e.currentHash})`);
-        break;
-      case "deleted":
-        lines.push(`- DELETED: ${e.path} (was: ${e.previousHash})`);
-        break;
-      case "renamed":
-        lines.push(`- RENAMED: ${e.fromPath} → ${e.toPath} (hash: ${e.currentHash})`);
-        break;
-    }
+function formatSingleEventForPrompt(event: VfsChangeEvent): string {
+  switch (event.type) {
+    case "created":
+      return `- CREATED: ${event.path} (hash: ${event.currentHash}, size: ${event.size}B)`;
+    case "modified":
+      return `- MODIFIED: ${event.path} (prev: ${event.previousHash} → curr: ${event.currentHash})`;
+    case "deleted":
+      return `- DELETED: ${event.path} (was: ${event.previousHash})`;
+    case "renamed":
+      return `- RENAMED: ${event.fromPath} → ${event.toPath} (hash: ${event.currentHash})`;
+    default:
+      return `- UNKNOWN: ${event.path}`;
   }
-  return lines.join("\n");
+}
+
+/**
+ * Try to read file content for injection into the mapper prompt.
+ * Returns content if ≤ MAX_INJECT_CHARS, otherwise null (mapper will use read_file).
+ */
+function tryInjectContent(event: VfsChangeEvent): string | null {
+  if (event.type === "deleted" || event.type === "renamed") return null;
+
+  const content = vfsRead(event.path);
+  if (content === null) return null;
+  if (content.length > MAX_INJECT_CHARS) return null;
+
+  return content;
 }
 
 // ─── Filter Events ──────────────────────────────────────────
@@ -296,33 +308,24 @@ function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
     if (e.fromPath?.startsWith(REVIEW_DIR + "/")) return false;
     if (e.toPath?.startsWith(REVIEW_DIR + "/")) return false;
 
-    // Skip directories
+    // Skip no-op modifications
     if (e.type === "modified" && e.previousHash === e.currentHash) return false;
 
     return true;
   });
 }
 
-// ─── Main Entry Point ───────────────────────────────────────
+// ─── Single Event Processing ────────────────────────────────
 
 /**
- * Run the mapper agent for a batch of VFS change events.
- * Uses a lightweight tool-calling loop (max 15 iterations, warns at 10).
- * Fire-and-forget — caller should .catch() errors.
+ * Process a single VFS change event with clean context.
+ * Each invocation starts fresh — no accumulated history from previous events.
  */
-export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
-  const events = filterMapperEvents(rawEvents);
-  if (events.length === 0) {
-    console.log("🗺️ [Mapper] No relevant events, skipping");
-    return;
-  }
+async function processSingleEvent(event: VfsChangeEvent): Promise<void> {
+  const eventDescription = formatSingleEventForPrompt(event);
 
-  console.log(`🗺️ [Mapper] Processing ${events.length} event(s)...`);
-
-  // Generate neutral ISO 8601 timestamp (no timezone/geographic info)
-  const timestamp = new Date().toISOString().slice(0, 19);
-
-  const eventsDescription = formatEventsForPrompt(events);
+  // Try to inject file content for small files
+  const injectedContent = tryInjectContent(event);
 
   // Check if index exists
   const indexExists = vfsExists(INDEX_PATH);
@@ -330,12 +333,23 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
     ? `Current index exists at ${INDEX_PATH}. Read it first to understand the project structure.`
     : `No index exists yet. Create ${INDEX_PATH} as part of this run.`;
 
-  let conversationHistory = `VFS CHANGE EVENTS:\n${eventsDescription}\n\n${indexHint}\n\nProcess these events. Read source files, create/update summaries, and update the index.`;
+  // Build initial user message for this single event
+  let userMessage = `VFS CHANGE EVENT:\n${eventDescription}\n\n${indexHint}`;
+
+  if (injectedContent !== null) {
+    userMessage += `\n\nFILE CONTENT (provided directly — no need to call read_file for this file):\n\`\`\`\n${injectedContent}\n\`\`\``;
+  }
+
+  userMessage += `\n\nProcess this event. Create/update summary and update the index.`;
+
+  // Generate neutral ISO 8601 timestamp (no timezone/geographic info)
+  const timestamp = new Date().toISOString().slice(0, 19);
+
+  let conversationHistory = userMessage;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-    // Warn user when mapper has iterated many times
     if (iteration === WARN_ITERATIONS) {
-      console.warn(`⚠️ [Mapper] Reached ${WARN_ITERATIONS} iterations — still processing, may take longer than usual`);
+      console.warn(`⚠️ [Mapper] Reached ${WARN_ITERATIONS} iterations for ${event.path} — still processing`);
     }
 
     const instruction = `${buildMapperSystemPrompt(timestamp)}\n\n---\n\n${conversationHistory}`;
@@ -345,15 +359,14 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
       const aiResult = await getAi()({ instruction });
       resultText = (aiResult.generatedText || aiResult.text || "").trim();
     } catch (err) {
-      console.error("❌ [Mapper] AI call failed:", err);
+      console.error(`❌ [Mapper] AI call failed for ${event.path}:`, err);
       return;
     }
 
     const toolCalls = extractToolCalls(resultText);
 
     if (toolCalls.length === 0) {
-      // No tool calls — mapper is done
-      console.log(`🗺️ [Mapper] Completed in ${iteration + 1} iteration(s)`);
+      console.log(`🗺️ [Mapper] Completed ${event.type} ${event.path} in ${iteration + 1} iteration(s)`);
       return;
     }
 
@@ -368,5 +381,29 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
     conversationHistory += `\n\nAssistant: ${resultText}\n\nTool Results:\n${feedbackLines.join("\n")}`;
   }
 
-  console.warn(`⚠️ [Mapper] Reached max iterations (${MAX_ITERATIONS})`);
+  console.warn(`⚠️ [Mapper] Reached max iterations (${MAX_ITERATIONS}) for ${event.path}`);
+}
+
+// ─── Main Entry Point ───────────────────────────────────────
+
+/**
+ * Run the mapper agent for a batch of VFS change events.
+ * Processes each event individually with clean context (no history accumulation).
+ * Events are processed sequentially to respect API rate limits.
+ * Fire-and-forget — caller should .catch() errors.
+ */
+export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
+  const events = filterMapperEvents(rawEvents);
+  if (events.length === 0) {
+    console.log("🗺️ [Mapper] No relevant events, skipping");
+    return;
+  }
+
+  console.log(`🗺️ [Mapper] Processing ${events.length} event(s) individually...`);
+
+  for (const event of events) {
+    await processSingleEvent(event);
+  }
+
+  console.log(`🗺️ [Mapper] Batch complete (${events.length} event(s))`);
 }
