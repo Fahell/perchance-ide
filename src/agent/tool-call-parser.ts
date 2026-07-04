@@ -30,7 +30,7 @@ export interface ToolCall {
  * Extract the content of a CDATA section from raw text.
  * Returns the inner text if CDATA wrappers are present, otherwise the raw text trimmed.
  */
-function extractCdataContent(raw: string): string {
+export function extractCdataContent(raw: string): string {
   const cdataMatch = raw.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
   if (cdataMatch) return cdataMatch[1];
   return raw.trim();
@@ -41,7 +41,7 @@ function extractCdataContent(raw: string): string {
  * Flat-tags format has no nesting, so simple pair matching suffices.
  * Extracts <name> from the body as a child tag, not an attribute.
  */
-function findToolCallBlocks(text: string): Array<{ name: string; body: string }> {
+export function findToolCallBlocks(text: string): Array<{ name: string; body: string }> {
   if (!tcOpen || !tcClose) return [];
 
   const blocks: Array<{ name: string; body: string }> = [];
@@ -76,7 +76,7 @@ function findToolCallBlocks(text: string): Array<{ name: string; body: string }>
  * Each parameter is expected as: <paramName><![CDATA[value]]></paramName>
  * Falls back to plain text content if CDATA is absent.
  */
-function parseParams(body: string): Record<string, any> {
+export function parseParams(body: string): Record<string, any> {
   const params: Record<string, any> = {};
   const paramRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
   let match: RegExpExecArray | null;

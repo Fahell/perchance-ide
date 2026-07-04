@@ -9,6 +9,7 @@
  * The mapper is fire-and-forget, called by the dispatcher after agent idle.
  */
 
+import { findToolCallBlocks, parseParams } from "./agent/tool-call-parser.js";
 import { getAi } from "./types.js";
 import type { VfsChangeEvent } from "./vfs-events.js";
 import { scheduleVfsPersist } from "./vfs-persist.js";
@@ -272,100 +273,11 @@ function executeMapperTool(name: string, args: Record<string, any>): string {
   }
 }
 
-// ─── Tool Call Parser (XML flat-tags + CDATA) ───────────────
+// ─── Tool Call Extraction (uses shared parser) ──────────────
 
 interface ToolCall {
   name: string;
   args: Record<string, any>;
-}
-
-/**
- * Extract the content of a CDATA section from raw text.
- * Returns the inner text if CDATA wrappers are present, otherwise the raw text trimmed.
- */
-function extractCdataContent(raw: string): string {
-  const cdataMatch = raw.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
-  if (cdataMatch) return cdataMatch[1];
-  return raw.trim();
-}
-
-/**
- * Find all top-level tool call blocks using depth-aware matching.
- */
-function findToolCallBlocks(text: string): Array<{ name: string; body: string }> {
-  if (!tcOpen || !tcClose) return [];
-
-  const blocks: Array<{ name: string; body: string }> = [];
-  let searchFrom = 0;
-
-  while (searchFrom < text.length) {
-    const openIdx = text.indexOf(tcOpen, searchFrom);
-    if (openIdx === -1) break;
-
-    // Find the closing '>' of the opening tag
-    const gtIdx = text.indexOf(">", openIdx + tcOpen.length);
-    if (gtIdx === -1) {
-      searchFrom = openIdx + tcOpen.length;
-      continue;
-    }
-
-    const contentStart = gtIdx + 1;
-    let depth = 1;
-    let pos = contentStart;
-
-    while (pos < text.length && depth > 0) {
-      const nextOpen = text.indexOf(tcOpen, pos);
-      const nextClose = text.indexOf(tcClose, pos);
-
-      if (nextClose === -1) break;
-
-      if (nextOpen !== -1 && nextOpen < nextClose) {
-        depth++;
-        pos = nextOpen + tcOpen.length;
-      } else {
-        depth--;
-        if (depth === 0) {
-          const body = text.slice(contentStart, nextClose);
-
-          // Extract name from <name>...</name> tag inside body
-          const nameMatch = body.match(/<name>([\s\S]*?)<\/name>/);
-          if (nameMatch) {
-            const name = extractCdataContent(nameMatch[1]);
-            blocks.push({ name, body });
-          }
-
-          searchFrom = nextClose + tcClose.length;
-        } else {
-          pos = nextClose + tcClose.length;
-        }
-      }
-    }
-
-    // If we didn't find a matching close, skip this open tag
-    if (depth > 0) {
-      searchFrom = openIdx + tcOpen.length;
-    }
-  }
-
-  return blocks;
-}
-
-/**
- * Parse individual parameter tags from the body of a tool call block.
- * Each parameter is expected as: <paramName><![CDATA[value]]></paramName>
- */
-function parseParams(body: string): Record<string, any> {
-  const params: Record<string, any> = {};
-  const paramRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = paramRegex.exec(body)) !== null) {
-    const [, paramName, rawContent] = match;
-    if (paramName === "name") continue;
-    params[paramName] = extractCdataContent(rawContent);
-  }
-
-  return params;
 }
 
 function extractToolCalls(text: string): ToolCall[] {
