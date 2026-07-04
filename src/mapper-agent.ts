@@ -353,7 +353,11 @@ function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
  * @param event The VFS change event to process
  * @param cachedIndex Pre-read index content (null if index doesn't exist yet)
  */
-async function processSingleEvent(event: VfsChangeEvent, cachedIndex: string | null): Promise<void> {
+async function processSingleEvent(
+  event: VfsChangeEvent,
+  cachedIndex: string | null,
+  updateCachedIndex: (newContent: string) => void,
+): Promise<void> {
   const eventDescription = formatSingleEventForPrompt(event);
 
   // Try to inject file content for small files
@@ -407,6 +411,18 @@ async function processSingleEvent(event: VfsChangeEvent, cachedIndex: string | n
     for (const tc of toolCalls) {
       const output = executeMapperTool(tc.name, tc.args);
       feedbackLines.push(`Tool ${tc.name}: ${output}`);
+
+      // If this was a write_file to the index, update the in-memory cache
+      // so subsequent events in the same batch see the latest state.
+      if (tc.name === "write_file") {
+        const targetPath = String(tc.args.path ?? "");
+        if (targetPath === INDEX_PATH) {
+          const newContent = String(tc.args.content ?? "");
+          if (newContent) {
+            updateCachedIndex(newContent);
+          }
+        }
+      }
     }
 
     // Append assistant response + tool results to conversation history
@@ -421,8 +437,8 @@ async function processSingleEvent(event: VfsChangeEvent, cachedIndex: string | n
 /**
  * Run the mapper agent for a batch of VFS change events.
  * Processes each event individually with clean context (no history accumulation).
- * The index is read once before the batch and passed to each event processor,
- * eliminating redundant read_file calls for the index.
+ * The index is read once before the batch and updated in-memory after each event's
+ * write_file to the index, ensuring subsequent events always see the latest state.
  * Events are processed sequentially to respect API rate limits.
  * Fire-and-forget — caller should .catch() errors.
  */
@@ -435,11 +451,14 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
 
   console.log(`🗺️ [Mapper] Processing ${events.length} event(s) individually...`);
 
-  // Read index once for the entire batch — avoids redundant read_file per event
-  const cachedIndex = vfsExists(INDEX_PATH) ? vfsRead(INDEX_PATH) : null;
+  // Mutable cache: updated after each event's write_file to the index,
+  // preventing stale index reads across sequential events in the same batch.
+  let cachedIndex: string | null = vfsExists(INDEX_PATH) ? vfsRead(INDEX_PATH) : null;
 
   for (const event of events) {
-    await processSingleEvent(event, cachedIndex);
+    await processSingleEvent(event, cachedIndex, (newContent: string) => {
+      cachedIndex = newContent;
+    });
   }
 
   console.log(`🗺️ [Mapper] Batch complete (${events.length} event(s))`);
