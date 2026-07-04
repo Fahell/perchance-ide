@@ -2,12 +2,13 @@
  * Tool call XML parser — flat-tag format with CDATA support.
  *
  * Expected format:
- *   <tcOpen name="tool_name">
- *     <param1><![CDATA[value1]]></param1>
- *     <param2><![CDATA[value2]]></param2>
- *   </tcClose>
+ *   ${tcOpen}
+ *     <name>read_file</name>
+ *     <path><![CDATA[/src/example.ts]]></path>
+ *   ${tcClose}
  *
  * Each tool parameter is its own XML tag wrapping a CDATA section.
+ * The tag name MUST match the parameter name from the tool schema.
  * This eliminates JSON-in-XML parsing issues entirely.
  */
 
