@@ -15,6 +15,7 @@ import { initContextTools, initTerminalTools, initVfsTools, initWebTools } from 
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
+import { initHashes } from "./vfs-events.js";
 import { vfsLoadAll } from "./vfs.js";
 
 const INPUT_ENABLED = true; // panel input is always enabled
@@ -155,6 +156,7 @@ function startAgent() {
   // Fire-and-forget: VFS loads incrementally, no need to block
   dbLoadVfs().then((entries) => {
     vfsLoadAll(entries);
+    initHashes();
     console.log("📁 [Agent] VFS restored: " + entries.length + " entries");
   }).catch((e) => console.error("[Agent] dbLoadVfs failed:", e));
 

@@ -10,9 +10,9 @@
 import type { EditorView } from "codemirror";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
-import { dbSaveVfs } from "./db.js";
 import type { AgentStatus, PanelMessage, ToolCallEntry } from "./ui/types.js";
-import { vfsGetAll, vfsRename } from "./vfs.js";
+import { trackedRename } from "./vfs-events.js";
+import { scheduleVfsPersist } from "./vfs-persist.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
 let msgCounter = 0;
@@ -349,7 +349,8 @@ export const ideStore = createStore<IdeState>()(
     setEditorView: (view) => set({ editorView: view }),
 
     renameFile: (oldPath, newPath) => {
-      if (!vfsRename(oldPath, newPath)) return;
+      const events = trackedRename(oldPath, newPath);
+      if (events.length === 0) return;
       const state = get();
       const oldTab = state.files.find((f) => f.path === oldPath);
       if (oldTab) {
@@ -366,10 +367,7 @@ export const ideStore = createStore<IdeState>()(
             s.activeFile === oldPath ? newPath : s.activeFile,
         }));
       }
-      // Fire-and-forget persist
-      dbSaveVfs(vfsGetAll()).catch((e) =>
-        console.warn("[Store] renameFile persist failed:", e)
-      );
+      scheduleVfsPersist();
     },
   }))
 );

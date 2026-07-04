@@ -8,30 +8,19 @@
  * Each tool returns descriptive strings (success or error) — never throws.
  */
 
-import { dbSaveVfs } from "../db.js";
 import { ideStore } from "../store.js";
 import { setDiff } from "../utils/diff-cache.js";
 import { truncateOutput } from "../utils/truncate.js";
+import { trackedWrite, trackedDelete, trackedRename } from "../vfs-events.js";
+import { scheduleVfsPersist } from "../vfs-persist.js";
 import {
-  vfsDeleteTree,
   vfsExists,
   vfsGetAll,
   vfsRead,
-  vfsRename,
   vfsTree,
-  vfsWrite,
   type VfsTreeNode,
 } from "../vfs.js";
 import type { Tool } from "./index.js";
-
-// ─── Persistence ────────────────────────────────────────────
-async function persistVfs(): Promise<void> {
-  try {
-    await dbSaveVfs(vfsGetAll());
-  } catch (e) {
-    console.warn("[VfsTools] dbSaveVfs failed:", e);
-  }
-}
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatTreeNode(node: VfsTreeNode, indent: string = ""): string {
@@ -128,7 +117,7 @@ export function createVfsTools(): Record<string, Tool> {
         // Capture before content for diff view (11.1)
         const oldContent = vfsRead(path);
 
-        vfsWrite(path, content);
+        trackedWrite(path, content);
 
         // Store diff data if file was modified
         if (oldContent !== null && oldContent !== content) {
@@ -142,8 +131,8 @@ export function createVfsTools(): Record<string, Tool> {
         }
 
         state.bumpVfsVersion();
+        scheduleVfsPersist();
 
-        await persistVfs();
         const size = content.length;
         const isNew = oldContent === null;
         return `Success: ${isNew ? "Created" : "Updated"} ${path} (${size} byte${size === 1 ? "" : "s"})`;
@@ -223,8 +212,8 @@ export function createVfsTools(): Record<string, Tool> {
         if (!vfsExists(path)) return `Error: Path not found: ${path}`;
 
         const count = countEntries(path);
-        const success = vfsDeleteTree(path);
-        if (!success) return `Error: Could not delete ${path}.`;
+        const events = trackedDelete(path);
+        if (events.length === 0) return `Error: Could not delete ${path}.`;
 
         // Close any open tabs with this path or descendants
         const state = ideStore.getState();
@@ -234,7 +223,7 @@ export function createVfsTools(): Record<string, Tool> {
           }
         }
 
-        await persistVfs();
+        scheduleVfsPersist();
         const label = count > 1 ? ` (${count} entries)` : "";
         return `Success: Deleted ${path}${label}`;
       },
@@ -257,8 +246,8 @@ export function createVfsTools(): Record<string, Tool> {
         if (!vfsExists(oldPath)) return `Error: Path not found: ${oldPath}`;
         if (vfsExists(newPath)) return `Error: Target already exists: ${newPath}`;
 
-        const success = vfsRename(oldPath, newPath);
-        if (!success) return `Error: Could not rename ${oldPath} to ${newPath}.`;
+        const events = trackedRename(oldPath, newPath);
+        if (events.length === 0) return `Error: Could not rename ${oldPath} to ${newPath}.`;
 
         // Update open tabs (close old path, open new path)
         const state = ideStore.getState();
@@ -283,7 +272,7 @@ export function createVfsTools(): Record<string, Tool> {
           }
         }
 
-        await persistVfs();
+        scheduleVfsPersist();
         return `Success: Renamed ${oldPath} → ${newPath}`;
       },
     },
@@ -330,7 +319,7 @@ export function createVfsTools(): Record<string, Tool> {
         // Store diff data
         setDiff(filePath, content, newContent);
 
-        vfsWrite(filePath, newContent);
+        trackedWrite(filePath, newContent);
 
         // Mark tab as dirty if file is open in editor
         const state = ideStore.getState();
@@ -338,7 +327,7 @@ export function createVfsTools(): Record<string, Tool> {
           state.setFileDirty(filePath, true);
         }
         state.bumpVfsVersion();
-        await persistVfs();
+        scheduleVfsPersist();
 
         const size = newContent.length;
         return `Success: Edited ${filePath} (replaced 1 occurrence, ${size} byte${size === 1 ? "" : "s"})`;

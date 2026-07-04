@@ -10,13 +10,14 @@
  */
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { dbSaveVfs } from "../db.js";
 import { getEmmetSyntax } from "../editor/emmet-langs.js";
 import { getEmmetExtensions } from "../editor/emmet.js";
 import { setCurrentView } from "../editor/view-store.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
-import { vfsExists, vfsGetAll, vfsRead, vfsWrite } from "../vfs.js";
+import { trackedWrite } from "../vfs-events.js";
+import { scheduleVfsPersist, flushVfsPersist, cancelScheduledPersist } from "../vfs-persist.js";
+import { vfsExists, vfsRead } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -42,20 +43,9 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const viewRef = useRef<import("codemirror").EditorView | null>(null);
   const debounceRef = useRef<number | null>(null);
   const [pendingCloseFile, setPendingCloseFile] = useState<string | null>(null);
-  const persistRef = useRef<number | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
-
-  // Persist VFS to IndexedDB (debounced, not on every keystroke)
-  function schedulePersist() {
-    if (persistRef.current) clearTimeout(persistRef.current);
-    persistRef.current = window.setTimeout(() => {
-      dbSaveVfs(vfsGetAll()).catch((e) =>
-        console.warn("[CodeEditor] dbSaveVfs failed:", e)
-      );
-    }, 2000);
-  }
 
   // Auto-clear save status after a delay (replaces orphan setTimeout calls)
   function scheduleSaveStatusClear(path: string, delay = 2000) {
@@ -91,9 +81,9 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     if (prevActiveRef.current && viewRef.current) {
       if (vfsExists(prevActiveRef.current)) {
         const content = viewRef.current.state.doc.toString();
-        vfsWrite(prevActiveRef.current, content);
+        trackedWrite(prevActiveRef.current, content);
         ideStore.getState().setFileDirty(prevActiveRef.current, false);
-        schedulePersist();
+        scheduleVfsPersist();
       }
     }
     prevActiveRef.current = path;
@@ -140,11 +130,11 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             if (!mountedRef.current) return;
             // Skip auto-save if disabled in settings
             if (!ideStore.getState().settings.autoSave) return;
-            vfsWrite(path, doc);
+            trackedWrite(path, doc);
             ideStore.getState().setFileDirty(path, false);
             ideStore.getState().setFileSaveStatus(path, "saved");
             ideStore.getState().bumpVfsVersion();
-            schedulePersist();
+            scheduleVfsPersist();
             scheduleSaveStatusClear(path);
           }, 500);
           ideStore.getState().setFileDirty(path, true);
@@ -168,14 +158,13 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       if (!viewRef.current) return;
       // Flush debounced write
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      vfsWrite(path, viewRef.current.state.doc.toString());
+      trackedWrite(path, viewRef.current.state.doc.toString());
       ideStore.getState().setFileDirty(path, false);
       ideStore.getState().setFileSaveStatus(path, "saved");
       ideStore.getState().bumpVfsVersion();
       scheduleSaveStatusClear(path);
-      // Trigger persist
-      if (persistRef.current) clearTimeout(persistRef.current);
-      dbSaveVfs(vfsGetAll()).catch((err: unknown) =>
+      // Trigger immediate persist
+      flushVfsPersist().catch((err: unknown) =>
         console.warn("[CodeEditor] flush-save persist failed:", err)
       );
     }
@@ -209,19 +198,19 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       mountedRef.current = false;
       setCurrentView(null);
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (persistRef.current) clearTimeout(persistRef.current);
+      cancelScheduledPersist();
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       if (viewRef.current) {
         const currentFile = activeFile;
         if (currentFile) {
-          vfsWrite(currentFile, viewRef.current.state.doc.toString());
+          trackedWrite(currentFile, viewRef.current.state.doc.toString());
         }
         viewRef.current.destroy();
         viewRef.current = null;
       }
       // Flush pending persist on unmount
-      dbSaveVfs(vfsGetAll()).catch((e) =>
-        console.warn("[CodeEditor] final dbSaveVfs failed:", e)
+      flushVfsPersist().catch((e) =>
+        console.warn("[CodeEditor] final persist failed:", e)
       );
     };
   }, []);
@@ -232,16 +221,16 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     const name = `untitled-${count}.js`;
     const path = "/" + name;
     if (!vfsExists(path)) {
-      vfsWrite(path, "");
-      schedulePersist();
+      trackedWrite(path, "");
+      scheduleVfsPersist();
     }
     ideStore.getState().openFile(path, name, "js");
   }
 
   function doCloseFile(path: string) {
     if (viewRef.current && path === activeFile) {
-      vfsWrite(path, viewRef.current.state.doc.toString());
-      schedulePersist();
+      trackedWrite(path, viewRef.current.state.doc.toString());
+      scheduleVfsPersist();
     }
     ideStore.getState().closeFile(path);
     setPendingCloseFile(null);
@@ -263,8 +252,8 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 
   function handleSaveAndClose() {
     if (pendingCloseFile && viewRef.current && pendingCloseFile === activeFile) {
-      vfsWrite(pendingCloseFile, viewRef.current.state.doc.toString());
-      schedulePersist();
+      trackedWrite(pendingCloseFile, viewRef.current.state.doc.toString());
+      scheduleVfsPersist();
     }
     ideStore.getState().closeFile(pendingCloseFile!);
     setPendingCloseFile(null);

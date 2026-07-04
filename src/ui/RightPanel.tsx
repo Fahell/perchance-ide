@@ -6,15 +6,14 @@
  */
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { dbSaveVfs } from "../db.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import { serializeProject } from "../utils/vfs-io.js";
+import { trackedDelete, trackedWrite } from "../vfs-events.js";
+import { flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import {
-  vfsDeleteTree,
-  vfsExists, vfsGetAll, vfsMkdir,
+  vfsExists, vfsMkdir,
   vfsTree,
-  vfsWrite,
   type VfsTreeNode
 } from "../vfs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -77,9 +76,9 @@ export function RightPanel({ locale }: RightPanelProps) {
     if (!file) return;
     try {
       const content = await file.text();
-      vfsWrite("/" + file.name, content);
+      trackedWrite("/" + file.name, content);
       ideStore.getState().bumpVfsVersion();
-      await persistVfs();
+      scheduleVfsPersist();
       refresh();
     } catch (err) {
       console.warn("[RightPanel] Upload failed:", err);
@@ -102,7 +101,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       if (!vfsPath || vfsPath === "/") continue;
       try {
         const content = await file.text();
-        vfsWrite(vfsPath, content);
+        trackedWrite(vfsPath, content);
         count++;
       } catch (err) {
         console.warn(`[RightPanel] Failed to upload ${relPath}:`, err);
@@ -111,7 +110,7 @@ export function RightPanel({ locale }: RightPanelProps) {
 
     if (count > 0) {
       ideStore.getState().bumpVfsVersion();
-      await persistVfs();
+      scheduleVfsPersist();
       refresh();
     }
     input.value = "";
@@ -170,13 +169,7 @@ export function RightPanel({ locale }: RightPanelProps) {
     closeCtxMenu();
   }
 
-  async function persistVfs() {
-    try {
-      await dbSaveVfs(vfsGetAll());
-    } catch (e) {
-      console.warn("[RightPanel] dbSaveVfs failed:", e);
-    }
-  }
+  // persistVfs removed — using centralized vfs-persist module
 
   function commitRename() {
     if (!renaming || !renameValue.trim()) {
@@ -209,7 +202,7 @@ export function RightPanel({ locale }: RightPanelProps) {
     if (creatingIsDir) {
       vfsMkdir(path);
     } else {
-      vfsWrite(path, "");
+      trackedWrite(path, "");
       const name = createName.trim();
       const ext = path.split(".").pop()?.toLowerCase() ?? "js";
       ideStore.getState().openFile(path, name, ext);
@@ -220,7 +213,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       return next;
     });
     setCreatingIn(null);
-    await persistVfs();
+    scheduleVfsPersist();
     refresh();
   }
 
@@ -240,7 +233,7 @@ export function RightPanel({ locale }: RightPanelProps) {
 
     if (!confirm(message)) return;
 
-    vfsDeleteTree(path);
+    trackedDelete(path);
     // Close any open tabs with this path or descendants
     const state = ideStore.getState();
     for (const f of [...state.files]) {
@@ -249,7 +242,7 @@ export function RightPanel({ locale }: RightPanelProps) {
       }
     }
     if (selectedPath === path) setSelectedPath(null);
-    await persistVfs();
+    await flushVfsPersist();
     refresh();
   }
 
