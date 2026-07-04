@@ -41,7 +41,10 @@ RULES:
 - ONLY describe structure, interfaces, dependencies, and logic hotspots.
 - All summaries go in ${REVIEW_DIR}/ directory.
 - Index file: ${INDEX_PATH}
-- Individual summaries: ${REVIEW_DIR}/<path>.md (mirror source path)
+- Individual summaries MUST mirror the FULL source path: ${REVIEW_DIR}/<full-source-path>.md
+  Example: /src/pages/index.html → ${REVIEW_DIR}/src/pages/index.html.md
+  Example: /src/admin/index.html → ${REVIEW_DIR}/src/admin/index.html.md
+  This prevents name collisions when different directories have files with the same name.
 
 EVENT TYPES YOU RECEIVE:
 - created: New file. Create summary, update index. If content is provided below, use it directly. Otherwise use read_file.
@@ -49,7 +52,7 @@ EVENT TYPES YOU RECEIVE:
 - deleted: File removed. Remove summary file, update index, update references in other summaries.
 - renamed: File moved. Use rename_file to move the summary, then update all references. Do NOT delete+recreate.
 
-SUMMARY FORMAT (_review/<path>.md):
+SUMMARY FORMAT (${REVIEW_DIR}/<full-source-path>.md):
 \`\`\`markdown
 # Summary: <source-path>
 > Hash: <hash> | Lines: <count> | Updated: <timestamp>
@@ -76,7 +79,8 @@ INDEX FORMAT (${INDEX_PATH}):
 
 | Path | Purpose | Hash |
 |------|---------|------|
-| src/auth/login.md | User authentication | a3f8c2d |
+| src/auth/login.html.md | User authentication | a3f8c2d |
+| src/admin/dashboard.html.md | Admin dashboard | b7e1f4a |
 
 ## Dependency Graph
 auth/login → db/sessions, types/auth
