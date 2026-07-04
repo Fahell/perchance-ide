@@ -106,7 +106,7 @@ ${tcOpen}<name>edit_file</name><file_path><![CDATA[/_review/index.md]]></file_pa
   - Replaces exactly one occurrence of old_string with new_string in an existing file.
   - Params: file_path (string, required), old_string (string, required), new_string (string, required).
   - Path MUST start with ${REVIEW_DIR}/.
-  - Fails if old_string not found or found multiple times. Prefer this over write_file for updates.
+  - Fails if old_string not found or found multiple times. Use for summary updates only.
 
 ${tcOpen}<name>rename_file</name><oldPath><![CDATA[/_review/old/path.md]]></oldPath><newPath><![CDATA[/_review/new/path.md]]></newPath>${tcClose}
   - Renames/moves a file within ${REVIEW_DIR}/. Use for renamed events instead of delete+create.
@@ -124,9 +124,9 @@ IMPORTANT: You can only call ONE tool per response. Wait for the result before c
 WORKFLOW:
 1. If file content is provided below, use it directly. Otherwise read the source file via read_file.
 2. Read existing summary if updating (via read_file).
-3. Read current index (via read_file).
+3. The current index content is provided below — do NOT call read_file for the index.
 4. Create/update summary using write_file or edit_file.
-5. Update index using edit_file (preferred) or write_file.
+5. Update index using write_file with the FULL updated index content (not edit_file). Include all existing entries plus your changes.
 6. When done, respond with a brief confirmation message (no more tool calls)`;
 }
 
@@ -350,21 +350,23 @@ function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
 /**
  * Process a single VFS change event with clean context.
  * Each invocation starts fresh — no accumulated history from previous events.
+ * @param event The VFS change event to process
+ * @param cachedIndex Pre-read index content (null if index doesn't exist yet)
  */
-async function processSingleEvent(event: VfsChangeEvent): Promise<void> {
+async function processSingleEvent(event: VfsChangeEvent, cachedIndex: string | null): Promise<void> {
   const eventDescription = formatSingleEventForPrompt(event);
 
   // Try to inject file content for small files
   const injectedContent = tryInjectContent(event);
 
-  // Check if index exists
-  const indexExists = vfsExists(INDEX_PATH);
-  const indexHint = indexExists
-    ? `Current index exists at ${INDEX_PATH}. Read it first to understand the project structure.`
-    : `No index exists yet. Create ${INDEX_PATH} as part of this run.`;
-
   // Build initial user message for this single event
-  let userMessage = `VFS CHANGE EVENT:\n${eventDescription}\n\n${indexHint}`;
+  let userMessage = `VFS CHANGE EVENT:\n${eventDescription}`;
+
+  if (cachedIndex !== null) {
+    userMessage += `\n\nCURRENT INDEX CONTENT (do NOT call read_file for this — use it directly):\n\`\`\`\n${cachedIndex}\n\`\`\``;
+  } else {
+    userMessage += `\n\nNo index exists yet. Create ${INDEX_PATH} as part of this run.`;
+  }
 
   if (injectedContent !== null) {
     userMessage += `\n\nFILE CONTENT (provided directly — no need to call read_file for this file):\n\`\`\`\n${injectedContent}\n\`\`\``;
@@ -419,6 +421,8 @@ async function processSingleEvent(event: VfsChangeEvent): Promise<void> {
 /**
  * Run the mapper agent for a batch of VFS change events.
  * Processes each event individually with clean context (no history accumulation).
+ * The index is read once before the batch and passed to each event processor,
+ * eliminating redundant read_file calls for the index.
  * Events are processed sequentially to respect API rate limits.
  * Fire-and-forget — caller should .catch() errors.
  */
@@ -431,8 +435,11 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
 
   console.log(`🗺️ [Mapper] Processing ${events.length} event(s) individually...`);
 
+  // Read index once for the entire batch — avoids redundant read_file per event
+  const cachedIndex = vfsExists(INDEX_PATH) ? vfsRead(INDEX_PATH) : null;
+
   for (const event of events) {
-    await processSingleEvent(event);
+    await processSingleEvent(event, cachedIndex);
   }
 
   console.log(`🗺️ [Mapper] Batch complete (${events.length} event(s))`);
