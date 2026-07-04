@@ -11,7 +11,7 @@
  * Stdout/stderr are captured via batched handlers and returned as strings.
  */
 
-import { withTimeout } from "../agent-loop.js";
+import { withTimeout } from "../agent/timeout-helpers.js";
 import { dbSaveVfs } from "../db.js";
 import { ideStore } from "../store.js";
 import { vfsGetAll, vfsSnapshot, vfsWrite } from "../vfs.js";
