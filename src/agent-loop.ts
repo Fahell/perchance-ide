@@ -582,9 +582,9 @@ export async function agentLoop(
     if (hasDanglingToolCall) {
       onStatus?.("Response was truncated — continuing...");
       instructionParts.push(
-        "[CONTINUE]: Your previous response was cut off (~1000 token limit). " +
+        "[CONTINUE]: Your previous response was cut off. " +
         "The incomplete tool_call was NOT executed. Results from complete tool calls are above. " +
-        "Continue your response from where you left off, keeping it concise to avoid further truncation."
+        "Continue your response from where you left off, and explicitly close the call with </tool_call> to exit the tool after finishing the content."
       );
     }
   }
