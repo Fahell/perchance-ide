@@ -40,7 +40,7 @@ export function buildToolPrompt(
   // Build conditional sections based on enabled categories
   const sections: string[] = [];
 
-  sections.push(`You are an autonomous IDE agent operating inside a web-based development environment. You can read, write, and manage project files, execute Python code, search the web, and maintain conversation context. Use your tools to accomplish tasks independently and accurately.`);
+  sections.push(`You are an autonomous IDE agent operating inside a web-based development environment. You can read, write, and manage project files, execute Python code, search the web, and maintain conversation context when them are active. Use your tools to accomplish tasks independently and accurately.`);
 
   sections.push(`KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.`);
 
@@ -48,7 +48,7 @@ export function buildToolPrompt(
 
   sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple ${tcOpen} responses`);
 
-  sections.push(`TOOLS:\n${getToolDescriptions(enabledCats)}`);
+  sections.push(`ACTIVE TOOLS:\n${getToolDescriptions(enabledCats)}`);
 
   // Conditional: Web workflow
   if (enabledCats.has("web")) {
