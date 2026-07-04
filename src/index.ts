@@ -7,6 +7,7 @@ import { agentLoop, continueResponse } from "./agent-loop.js";
 import { buildContext } from "./context-manager.js";
 import { dbLoadVfs } from "./db.js";
 import { getLocale, setLocale as setI18nLocale, type Locale } from "./i18n/index.js";
+import { flushPendingEvents, initMapperDispatcher } from "./mapper-dispatcher.js";
 import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
@@ -141,6 +142,9 @@ async function handleSendMessage(text: string, signal?: AbortSignal): Promise<vo
 
   // Extract memories in background (non-blocking)
   extractMemories(text, response).catch(() => { });
+
+  // Flush pending mapper events after agent finishes
+  flushPendingEvents();
 }
 
 // ─── Start Agent ─────────────────────────────────────────────
@@ -157,6 +161,7 @@ function startAgent() {
   dbLoadVfs().then((entries) => {
     vfsLoadAll(entries);
     initHashes();
+    initMapperDispatcher(() => agentProcessing);
     console.log("📁 [Agent] VFS restored: " + entries.length + " entries");
   }).catch((e) => console.error("[Agent] dbLoadVfs failed:", e));
 
