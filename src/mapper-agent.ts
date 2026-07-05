@@ -96,8 +96,10 @@ SUMMARY FORMAT (${mapDir}/<relative-path>.md):
 - \`exportName(params): ReturnType\` (L10-L25)
 
 ## Dependencies
-- Internal: ./relative/path
+- Internal: ./relative/path | optional description (imports, symbols)
 - External: package-name
+
+IMPORTANT: For Internal dependencies, ALWAYS use the pipe separator (|) between the path and any description. The path MUST come before the first pipe. Example: \`- Internal: /project/settings | SCREEN_WIDTH, HEIGHT\`
 
 ## Logic Hotspots
 - **Feature name** (L30-L45): Brief description of complex logic
@@ -460,20 +462,19 @@ export function parseSummaryMeta(content: string, relativePath: string): Summary
   const lines = parseInt(headerMatch[2], 10);
   const purpose = headerMatch[3].trim();
 
-  // Extract internal dependencies: lines matching "- Internal: <dep>"
+  // Extract internal dependencies: lines matching "- Internal: <path> | <desc>"
+  // The path is everything before the first pipe (or end of line if no pipe)
   const internalDeps: string[] = [];
   const depRegex = /^-\s*Internal:\s*(.+)$/gm;
   let depMatch: RegExpExecArray | null;
   while ((depMatch = depRegex.exec(content)) !== null) {
-    const dep = depMatch[1].trim();
-    if (dep && dep.toLowerCase() !== "none" && dep.toLowerCase() !== "(none)") {
-      // Handle comma-separated deps on same line
-      for (const d of dep.split(",")) {
-        const trimmed = d.trim();
-        if (trimmed && trimmed.toLowerCase() !== "none" && trimmed.toLowerCase() !== "(none)") {
-          internalDeps.push(trimmed);
-        }
-      }
+    const raw = depMatch[1].trim();
+    if (!raw || raw.toLowerCase() === "none" || raw.toLowerCase() === "(none)") continue;
+
+    // Split by pipe and take only the first part (the path)
+    const pathPart = raw.split("|")[0].trim();
+    if (pathPart && pathPart.toLowerCase() !== "none" && pathPart.toLowerCase() !== "(none)") {
+      internalDeps.push(pathPart);
     }
   }
 
@@ -644,9 +645,13 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
     await processSingleEvent(event, projectRoot);
   }
 
-  // Rebuild index once per affected project
+  // Rebuild index once per affected project (skip if _map/ was deleted with the project)
   for (const projectRoot of affectedProjects) {
     const mapDir = getMapDir(projectRoot);
+    if (!vfsExists(mapDir)) {
+      console.log(`🗺️ [Mapper] Skipping index rebuild for /${projectRoot} — _map/ directory no longer exists`);
+      continue;
+    }
     console.log(`🗺️ [Mapper] Rebuilding index for /${projectRoot}`);
     rebuildIndex(mapDir);
   }
