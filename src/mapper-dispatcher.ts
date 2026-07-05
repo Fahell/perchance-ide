@@ -10,9 +10,9 @@
  * 5. Fire-and-forget mapper execution
  */
 
-import { onVfsChange, getAllHashes, type VfsChangeEvent } from "./vfs-events.js";
 import { dbKvGet, dbKvSet } from "./db.js";
 import { runMapper } from "./mapper-agent.js";
+import { getAllHashes, onVfsChange, type VfsChangeEvent } from "./vfs-events.js";
 
 // ─── Constants ──────────────────────────────────────────────
 const HASHES_KEY = "_mapper:hashes";
@@ -141,10 +141,10 @@ async function dispatchMapper(): Promise<void> {
 // ─── Event Listener ─────────────────────────────────────────
 
 function handleVfsEvent(event: VfsChangeEvent): void {
-  // Skip review directory self-writes
-  if (event.path.startsWith("/_review/")) return;
-  if (event.fromPath?.startsWith("/_review/")) return;
-  if (event.toPath?.startsWith("/_review/")) return;
+  // Skip _map directory self-writes (any project)
+  if (event.path.includes("/_map/")) return;
+  if (event.fromPath?.includes("/_map/")) return;
+  if (event.toPath?.includes("/_map/")) return;
 
   _pendingEvents.push(event);
   scheduleDispatch();

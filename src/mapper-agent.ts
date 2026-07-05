@@ -1,9 +1,13 @@
 /**
- * Mapper Agent — subagent that maintains project documentation in _review/.
+ * Mapper Agent — subagent that maintains project documentation in <project>/_map/.
+ *
+ * Each project (top-level directory in /) has its own _map/ directory containing:
+ * - Individual summary files mirroring the project structure
+ * - An auto-generated index.md (rebuilt deterministically after each batch)
  *
  * Processes ONE VFS change event per invocation with clean context (no history).
- * Uses a lightweight tool-calling loop with 4 internal tools:
- * read_file, write_file, edit_file, rename_file.
+ * Uses a lightweight tool-calling loop with 5 internal tools:
+ * read_file, write_file, edit_file, rename_file, delete_file.
  *
  * These tools operate on raw VFS (no event emission) to avoid infinite loops.
  * The mapper is fire-and-forget, called by the dispatcher after agent idle.
@@ -13,17 +17,16 @@ import { findToolCallBlocks, parseParams } from "./agent/tool-call-parser.js";
 import { getAi } from "./types.js";
 import type { VfsChangeEvent } from "./vfs-events.js";
 import { scheduleVfsPersist } from "./vfs-persist.js";
-import { vfsExists, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
+import { vfsExists, vfsGetAll, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
-const tcOpen: string = "<tool_call>";
-const tcClose: string = "</tool_call>";
+const tcOpen: string = "";
+const tcClose: string = "";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 15;
 const WARN_ITERATIONS = 10;
-const REVIEW_DIR = "/_review";
-const INDEX_PATH = "/_review/index.md";
+const MAP_DIR_NAME = "_map";
 
 /** Valid internal tool names for the mapper agent. */
 const MAPPER_TOOLS = new Set(["read_file", "write_file", "edit_file", "rename_file", "delete_file"]);
@@ -31,10 +34,41 @@ const MAPPER_TOOLS = new Set(["read_file", "write_file", "edit_file", "rename_fi
 /** Max characters for injecting file content directly into prompt. */
 const MAX_INJECT_CHARS = 12000;
 
+// ─── Project Detection Helpers ──────────────────────────────
+
+/**
+ * Extract project root from an absolute VFS path.
+ * Returns the first path segment (e.g., "/gacha-game/index.html" → "gacha-game").
+ * Returns null for root-level files (e.g., "/readme.md").
+ */
+function getProjectRoot(path: string): string | null {
+  const normalized = path.startsWith("/") ? path.slice(1) : path;
+  const slashIdx = normalized.indexOf("/");
+  if (slashIdx === -1) return null; // root-level file
+  const first = normalized.slice(0, slashIdx);
+  if (!first || first === MAP_DIR_NAME) return null;
+  return first;
+}
+
+/** Get the _map directory path for a project. */
+function getMapDir(projectRoot: string): string {
+  return `/${projectRoot}/${MAP_DIR_NAME}`;
+}
+
+/** Check if a path is inside any _map/ directory. */
+function isInsideMapDir(path: string): boolean {
+  return path.includes(`/${MAP_DIR_NAME}/`);
+}
+
+/** Check if a path is a _map/index.md file. */
+function isMapIndex(path: string): boolean {
+  return path.endsWith(`/${MAP_DIR_NAME}/index.md`);
+}
+
 // ─── System Prompt Builder ──────────────────────────────────
 
-function buildMapperSystemPrompt(timestamp: string): string {
-  return `You are a Project Mapper. Your ONLY job is to maintain structured documentation of the project in the virtual file system.
+function buildMapperSystemPrompt(timestamp: string, mapDir: string): string {
+  return `You are a Project Mapper. Your ONLY job is to maintain structured documentation of individual files in the virtual file system. You do NOT manage any index file — that is handled automatically by the system.
 
 CURRENT TIMESTAMP: ${timestamp}
 Use this exact timestamp in all "Updated:" fields. Do NOT invent or guess dates.
@@ -42,23 +76,21 @@ Use this exact timestamp in all "Updated:" fields. Do NOT invent or guess dates.
 RULES:
 - NEVER evaluate code quality, suggest improvements, or identify bugs.
 - ONLY describe structure, interfaces, dependencies, and logic hotspots.
-- All summaries go in ${REVIEW_DIR}/ directory.
-- Index file: ${INDEX_PATH}
-- Individual summaries MUST mirror the FULL source path: ${REVIEW_DIR}/<full-source-path>.md
-  Example: /src/pages/index.html → ${REVIEW_DIR}/src/pages/index.html.md
-  Example: /src/admin/index.html → ${REVIEW_DIR}/src/admin/index.html.md
+- All summaries go in ${mapDir}/ directory.
+- Individual summaries MUST mirror the source path relative to the project root: ${mapDir}/<relative-path>.md
+  Example: If project root is /my-project and source is /my-project/src/index.html → ${mapDir}/src/index.html.md
   This prevents name collisions when different directories have files with the same name.
 
 EVENT TYPES YOU RECEIVE:
-- created: New file. Create summary, update index. If content is provided below, use it directly. Otherwise use read_file.
-- modified: File changed. Read existing summary. Use edit_file to update only changed sections. Preserve existing findings. If updated content is provided below, use it directly. Otherwise use read_file.
-- deleted: File removed. Remove summary file, update index, update references in other summaries.
-- renamed: File moved. Use rename_file to move the summary, then update all references. Do NOT delete+recreate.
+- created: New file. Create summary. If content is provided below, use it directly. Otherwise use read_file.
+- modified: File changed. Read existing summary. Use edit_file to update only changed sections. Preserve existing findings. Re-evaluate Purpose if the change alters the file's role. If updated content is provided below, use it directly. Otherwise use read_file.
+- deleted: File removed. Remove summary file via delete_file.
+- renamed: File moved. Use rename_file to move the summary. Do NOT delete+recreate.
 
-SUMMARY FORMAT (${REVIEW_DIR}/<full-source-path>.md):
+SUMMARY FORMAT (${mapDir}/<relative-path>.md):
 \`\`\`markdown
 # Summary: <source-path>
-> Hash: <hash> | Lines: <count> | Updated: <timestamp>
+> Hash: <hash> | Lines: <count> | Updated: <timestamp> | Purpose: <brief description of file role>
 
 ## Interface & Exports
 - \`exportName(params): ReturnType\` (L10-L25)
@@ -75,19 +107,7 @@ SUMMARY FORMAT (${REVIEW_DIR}/<full-source-path>.md):
 - Calls: /another/file.ts::functionName
 \`\`\`
 
-INDEX FORMAT (${INDEX_PATH}):
-\`\`\`markdown
-# Project Review Index
-> Updated: <timestamp> | Files: <count>
-
-| Path | Purpose | Hash |
-|------|---------|------|
-| src/auth/login.html.md | User authentication | a3f8c2d |
-| src/admin/dashboard.html.md | Admin dashboard | b7e1f4a |
-
-## Dependency Graph
-auth/login → db/sessions, types/auth
-\`\`\`
+Purpose is a brief description of the file's role in the project (e.g., "User authentication", "Visual styling and layout", "Gacha pull logic & probability"). On modified events, re-evaluate if the structural change alters the file's purpose and update accordingly.
 
 TOOLS AVAILABLE (use this EXACT syntax to call tools):
 Each parameter must be wrapped in its own XML tag with CDATA. Do NOT use JSON.
@@ -97,37 +117,35 @@ ${tcOpen}<name>read_file</name><path><![CDATA[/src/example.ts]]></path>${tcClose
   - Params: path (string, required) — absolute VFS path.
   - Returns file content (truncated to 4000 chars if too large).
 
-${tcOpen}<name>write_file</name><path><![CDATA[/_review/src/example.md]]></path><content><![CDATA[# Summary...]]></content>${tcClose}
-  - Creates or overwrites a file in ${REVIEW_DIR}/.
+${tcOpen}<name>write_file</name><path><![CDATA[${mapDir}/src/example.md]]></path><content><![CDATA[# Summary...]]></content>${tcClose}
+  - Creates or overwrites a summary file in ${mapDir}/.
   - Params: path (string, required), content (string, required).
-  - Path MUST start with ${REVIEW_DIR}/.
+  - Path MUST start with ${mapDir}/.
 
-${tcOpen}<name>edit_file</name><file_path><![CDATA[/_review/index.md]]></file_path><old_string><![CDATA[| old/path.md | ...]]></old_string><new_string><![CDATA[| new/path.md | ...]]></new_string>${tcClose}
+${tcOpen}<name>edit_file</name><file_path><![CDATA[${mapDir}/src/example.md]]></file_path><old_string><![CDATA[old text]]></old_string><new_string><![CDATA[new text]]></new_string>${tcClose}
   - Replaces exactly one occurrence of old_string with new_string in an existing file.
   - Params: file_path (string, required), old_string (string, required), new_string (string, required).
-  - Path MUST start with ${REVIEW_DIR}/.
-  - Fails if old_string not found or found multiple times. Use for summary updates only.
+  - Path MUST start with ${mapDir}/.
+  - Fails if old_string not found or found multiple times. Use for targeted summary updates.
 
-${tcOpen}<name>rename_file</name><oldPath><![CDATA[/_review/old/path.md]]></oldPath><newPath><![CDATA[/_review/new/path.md]]></newPath>${tcClose}
-  - Renames/moves a file within ${REVIEW_DIR}/. Use for renamed events instead of delete+create.
+${tcOpen}<name>rename_file</name><oldPath><![CDATA[${mapDir}/old/path.md]]></oldPath><newPath><![CDATA[${mapDir}/new/path.md]]></newPath>${tcClose}
+  - Renames/moves a file within ${mapDir}/. Use for renamed events instead of delete+create.
   - Params: oldPath (string, required), newPath (string, required).
-  - Both paths MUST start with ${REVIEW_DIR}/.
+  - Both paths MUST start with ${mapDir}/.
   - Creates parent directories automatically. Fails if oldPath does not exist.
 
-${tcOpen}<name>delete_file</name><path><![CDATA[/_review/src/old-file.md]]></path>${tcClose}
-  - Deletes a summary file from ${REVIEW_DIR}/. Use for deleted events to remove obsolete summaries.
-  - Params: path (string, required) — absolute VFS path within ${REVIEW_DIR}/.
-  - Cannot delete the index file itself. Fails if file does not exist.
+${tcOpen}<name>delete_file</name><path><![CDATA[${mapDir}/src/old-file.md]]></path>${tcClose}
+  - Deletes a summary file from ${mapDir}/. Use for deleted events to remove obsolete summaries.
+  - Params: path (string, required) — absolute VFS path within ${mapDir}/.
+  - Fails if file does not exist.
 
 IMPORTANT: You can only call ONE tool per response. Wait for the result before calling another tool.
 
 WORKFLOW:
 1. If file content is provided below, use it directly. Otherwise read the source file via read_file.
 2. Read existing summary if updating (via read_file).
-3. The current index content is provided below — do NOT call read_file for the index.
-4. Create/update summary using write_file or edit_file.
-5. Update index using write_file with the FULL updated index content (not edit_file). Include all existing entries plus your changes.
-6. When done, respond with a brief confirmation message (no more tool calls)`;
+3. Create/update summary using write_file or edit_file.
+4. When done, respond with a brief confirmation message (no more tool calls)`;
 }
 
 // ─── Internal Tools (raw VFS, no events) ────────────────────
@@ -157,8 +175,8 @@ function mapperReadFile(path: string): MapperToolResult {
 }
 
 function mapperWriteFile(path: string, content: string): MapperToolResult {
-  if (!path.startsWith(REVIEW_DIR)) {
-    return { success: false, output: `Error: Mapper can only write to ${REVIEW_DIR}/. Got: ${path}` };
+  if (!isInsideMapDir(path)) {
+    return { success: false, output: `Error: Mapper can only write to _map/ directories. Got: ${path}` };
   }
   vfsWrite(path, content);
   scheduleVfsPersist();
@@ -170,8 +188,8 @@ function mapperEditFile(
   oldString: string,
   newString: string
 ): MapperToolResult {
-  if (!filePath.startsWith(REVIEW_DIR)) {
-    return { success: false, output: `Error: Mapper can only edit files in ${REVIEW_DIR}/. Got: ${filePath}` };
+  if (!isInsideMapDir(filePath)) {
+    return { success: false, output: `Error: Mapper can only edit files in _map/ directories. Got: ${filePath}` };
   }
   if (!vfsExists(filePath)) {
     return { success: false, output: `Error: File not found: ${filePath}` };
@@ -199,11 +217,11 @@ function mapperEditFile(
 }
 
 function mapperRenameFile(oldPath: string, newPath: string): MapperToolResult {
-  if (!oldPath.startsWith(REVIEW_DIR)) {
-    return { success: false, output: `Error: Mapper can only rename files in ${REVIEW_DIR}/. Got: ${oldPath}` };
+  if (!isInsideMapDir(oldPath)) {
+    return { success: false, output: `Error: Mapper can only rename files in _map/ directories. Got: ${oldPath}` };
   }
-  if (!newPath.startsWith(REVIEW_DIR)) {
-    return { success: false, output: `Error: Mapper can only rename files to ${REVIEW_DIR}/. Got: ${newPath}` };
+  if (!isInsideMapDir(newPath)) {
+    return { success: false, output: `Error: Mapper can only rename files to _map/ directories. Got: ${newPath}` };
   }
   if (!vfsExists(oldPath)) {
     return { success: false, output: `Error: Source file not found: ${oldPath}` };
@@ -218,10 +236,10 @@ function mapperRenameFile(oldPath: string, newPath: string): MapperToolResult {
 }
 
 function mapperDeleteFile(path: string): MapperToolResult {
-  if (!path.startsWith(REVIEW_DIR + "/")) {
-    return { success: false, output: `Error: Mapper can only delete files in ${REVIEW_DIR}/. Got: ${path}` };
+  if (!isInsideMapDir(path)) {
+    return { success: false, output: `Error: Mapper can only delete files in _map/ directories. Got: ${path}` };
   }
-  if (path === INDEX_PATH) {
+  if (isMapIndex(path)) {
     return { success: false, output: `Error: Cannot delete the index file itself.` };
   }
   if (!vfsExists(path)) {
@@ -328,15 +346,18 @@ function tryInjectContent(event: VfsChangeEvent): string | null {
 // ─── Filter Events ──────────────────────────────────────────
 
 /**
- * Filter out events for files inside _review/ to avoid self-triggering loops.
- * Also filter non-file events and trivial changes.
+ * Filter out events for files inside _map/ to avoid self-triggering loops.
+ * Also filter root-level files (no project) and trivial changes.
  */
 function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
   return events.filter((e) => {
-    // Skip review directory changes (self-writes)
-    if (e.path.startsWith(REVIEW_DIR + "/")) return false;
-    if (e.fromPath?.startsWith(REVIEW_DIR + "/")) return false;
-    if (e.toPath?.startsWith(REVIEW_DIR + "/")) return false;
+    // Skip _map directory changes (self-writes)
+    if (isInsideMapDir(e.path)) return false;
+    if (e.fromPath && isInsideMapDir(e.fromPath)) return false;
+    if (e.toPath && isInsideMapDir(e.toPath)) return false;
+
+    // Skip root-level files (no project directory)
+    if (!getProjectRoot(e.path)) return false;
 
     // Skip no-op modifications
     if (e.type === "modified" && e.previousHash === e.currentHash) return false;
@@ -351,13 +372,13 @@ function filterMapperEvents(events: VfsChangeEvent[]): VfsChangeEvent[] {
  * Process a single VFS change event with clean context.
  * Each invocation starts fresh — no accumulated history from previous events.
  * @param event The VFS change event to process
- * @param cachedIndex Pre-read index content (null if index doesn't exist yet)
+ * @param projectRoot The project root directory name
  */
 async function processSingleEvent(
   event: VfsChangeEvent,
-  cachedIndex: string | null,
-  updateCachedIndex: (newContent: string) => void,
+  projectRoot: string,
 ): Promise<void> {
+  const mapDir = getMapDir(projectRoot);
   const eventDescription = formatSingleEventForPrompt(event);
 
   // Try to inject file content for small files
@@ -366,17 +387,11 @@ async function processSingleEvent(
   // Build initial user message for this single event
   let userMessage = `VFS CHANGE EVENT:\n${eventDescription}`;
 
-  if (cachedIndex !== null) {
-    userMessage += `\n\nCURRENT INDEX CONTENT (do NOT call read_file for this — use it directly):\n\`\`\`\n${cachedIndex}\n\`\`\``;
-  } else {
-    userMessage += `\n\nNo index exists yet. Create ${INDEX_PATH} as part of this run.`;
-  }
-
   if (injectedContent !== null) {
     userMessage += `\n\nFILE CONTENT (provided directly — no need to call read_file for this file):\n\`\`\`\n${injectedContent}\n\`\`\``;
   }
 
-  userMessage += `\n\nProcess this event. Create/update summary and update the index.`;
+  userMessage += `\n\nProcess this event. Create or update the summary.`;
 
   // Generate neutral ISO 8601 timestamp (no timezone/geographic info)
   const timestamp = new Date().toISOString().slice(0, 19);
@@ -388,7 +403,7 @@ async function processSingleEvent(
       console.warn(`⚠️ [Mapper] Reached ${WARN_ITERATIONS} iterations for ${event.path} — still processing`);
     }
 
-    const instruction = `${buildMapperSystemPrompt(timestamp)}\n\n---\n\n${conversationHistory}`;
+    const instruction = `${buildMapperSystemPrompt(timestamp, mapDir)}\n\n---\n\n${conversationHistory}`;
 
     let resultText: string;
     try {
@@ -411,18 +426,6 @@ async function processSingleEvent(
     for (const tc of toolCalls) {
       const output = executeMapperTool(tc.name, tc.args);
       feedbackLines.push(`Tool ${tc.name}: ${output}`);
-
-      // If this was a write_file to the index, update the in-memory cache
-      // so subsequent events in the same batch see the latest state.
-      if (tc.name === "write_file") {
-        const targetPath = String(tc.args.path ?? "");
-        if (targetPath === INDEX_PATH) {
-          const newContent = String(tc.args.content ?? "");
-          if (newContent) {
-            updateCachedIndex(newContent);
-          }
-        }
-      }
     }
 
     // Append assistant response + tool results to conversation history
@@ -432,14 +435,193 @@ async function processSingleEvent(
   console.warn(`⚠️ [Mapper] Reached max iterations (${MAX_ITERATIONS}) for ${event.path}`);
 }
 
+// ─── Index Builder (deterministic, no LLM) ──────────────────
+
+interface SummaryMeta {
+  path: string;       // relative path within map dir (e.g., "index.html.md")
+  hash: string;
+  lines: number;
+  purpose: string;
+  internalDeps: string[];
+}
+
+/**
+ * Parse metadata from a summary markdown file.
+ * Returns null if the file doesn't have the expected header format.
+ */
+export function parseSummaryMeta(content: string, relativePath: string): SummaryMeta | null {
+  // Match: > Hash: <hash> | Lines: <count> | Updated: <timestamp> | Purpose: <purpose>
+  const headerMatch = content.match(
+    /^>\s*Hash:\s*(\S+)\s*\|\s*Lines:\s*(\d+)\s*\|\s*Updated:\s*\S+\s*\|\s*Purpose:\s*(.+)$/m
+  );
+  if (!headerMatch) return null;
+
+  const hash = headerMatch[1];
+  const lines = parseInt(headerMatch[2], 10);
+  const purpose = headerMatch[3].trim();
+
+  // Extract internal dependencies: lines matching "- Internal: <dep>"
+  const internalDeps: string[] = [];
+  const depRegex = /^-\s*Internal:\s*(.+)$/gm;
+  let depMatch: RegExpExecArray | null;
+  while ((depMatch = depRegex.exec(content)) !== null) {
+    const dep = depMatch[1].trim();
+    if (dep && dep.toLowerCase() !== "none" && dep.toLowerCase() !== "(none)") {
+      // Handle comma-separated deps on same line
+      for (const d of dep.split(",")) {
+        const trimmed = d.trim();
+        if (trimmed && trimmed.toLowerCase() !== "none" && trimmed.toLowerCase() !== "(none)") {
+          internalDeps.push(trimmed);
+        }
+      }
+    }
+  }
+
+  return { path: relativePath, hash, lines, purpose, internalDeps };
+}
+
+/**
+ * Rebuild the project index deterministically from summary files.
+ * Lists all .md files in the map directory, parses their metadata,
+ * and generates a complete index with Files table, Dependency Graph,
+ * Reverse Lookup, Entry Points, and Leaves sections.
+ *
+ * @param mapDir The _map directory path (e.g., "/gacha-game/_map")
+ */
+export function rebuildIndex(mapDir: string): void {
+  const indexPath = `${mapDir}/index.md`;
+  const prefix = mapDir.endsWith("/") ? mapDir : mapDir + "/";
+
+  // Collect all summary .md files (exclude index.md itself)
+  const allEntries = vfsGetAll();
+  const summaryFiles: { path: string; relativePath: string }[] = [];
+
+  for (const entry of allEntries) {
+    if (entry.type !== "file") continue;
+    if (!entry.path.startsWith(prefix)) continue;
+    if (!entry.path.endsWith(".md")) continue;
+    if (entry.path === indexPath) continue;
+
+    const relativePath = entry.path.slice(prefix.length);
+    summaryFiles.push({ path: entry.path, relativePath });
+  }
+
+  // Parse metadata from each summary
+  const metas: SummaryMeta[] = [];
+  for (const sf of summaryFiles) {
+    const content = vfsRead(sf.path);
+    if (content === null) continue;
+    const meta = parseSummaryMeta(content, sf.relativePath);
+    if (meta) metas.push(meta);
+  }
+
+  // Sort by path for deterministic output
+  metas.sort((a, b) => a.path.localeCompare(b.path));
+
+  // Build Files table
+  const timestamp = new Date().toISOString().slice(0, 19);
+  const fileRows = metas.map((m) => `| ${m.path} | ${m.purpose} | ${m.hash} |`);
+
+  // Build Dependency Graph: source → targets
+  const depGraphLines: string[] = [];
+  for (const m of metas) {
+    const targets = m.internalDeps.length > 0 ? m.internalDeps.join(", ") : "(none)";
+    const sourceDisplay = m.path.replace(/\.md$/, "");
+    depGraphLines.push(`${sourceDisplay} → ${targets}`);
+  }
+
+  // Build Reverse Lookup: target ← sources
+  const reverseMap = new Map<string, string[]>();
+  for (const m of metas) {
+    for (const dep of m.internalDeps) {
+      const existing = reverseMap.get(dep) || [];
+      const sourceDisplay = m.path.replace(/\.md$/, "");
+      existing.push(sourceDisplay);
+      reverseMap.set(dep, existing);
+    }
+  }
+  const reverseLines: string[] = [];
+  for (const [target, sources] of [...reverseMap.entries()].sort()) {
+    reverseLines.push(`${target} ← ${sources.join(", ")}`);
+  }
+
+  // Entry Points: files with no incoming dependencies
+  const allTargets = new Set<string>();
+  for (const m of metas) {
+    for (const dep of m.internalDeps) {
+      allTargets.add(dep);
+    }
+  }
+  const entryPoints = metas
+    .filter((m) => {
+      const display = m.path.replace(/\.md$/, "");
+      return !allTargets.has(display);
+    })
+    .map((m) => `- ${m.path.replace(/\.md$/, "")}`);
+
+  // Leaves: files with no outgoing dependencies
+  const leaves = metas
+    .filter((m) => m.internalDeps.length === 0)
+    .map((m) => `- ${m.path.replace(/\.md$/, "")}`);
+
+  // Assemble index markdown
+  const sections: string[] = [
+    `# Project Review Index`,
+    `> Updated: ${timestamp} | Files: ${metas.length}`,
+    ``,
+    `## Files`,
+    `| Path | Purpose | Hash |`,
+    `|------|---------|------|`,
+    ...fileRows,
+    ``,
+    `## Dependency Graph`,
+    `> Source → depends on → Targets`,
+    ``,
+    ...depGraphLines,
+  ];
+
+  if (reverseLines.length > 0) {
+    sections.push(
+      ``,
+      `## Reverse Lookup`,
+      `> Target ← is used by ← Sources`,
+      ``,
+      ...reverseLines,
+    );
+  }
+
+  if (entryPoints.length > 0) {
+    sections.push(
+      ``,
+      `## Entry Points`,
+      `> Files with no incoming dependencies (start here)`,
+      ``,
+      ...entryPoints,
+    );
+  }
+
+  if (leaves.length > 0) {
+    sections.push(
+      ``,
+      `## Leaves`,
+      `> Files with no outgoing dependencies (safe to change)`,
+      ``,
+      ...leaves,
+    );
+  }
+
+  const indexContent = sections.join("\n") + "\n";
+  vfsWrite(indexPath, indexContent);
+  scheduleVfsPersist();
+}
+
 // ─── Main Entry Point ───────────────────────────────────────
 
 /**
  * Run the mapper agent for a batch of VFS change events.
  * Processes each event individually with clean context (no history accumulation).
- * The index is read once before the batch and updated in-memory after each event's
- * write_file to the index, ensuring subsequent events always see the latest state.
- * Events are processed sequentially to respect API rate limits.
+ * Groups events by project and rebuilds each project's index once after all
+ * its events are processed.
  * Fire-and-forget — caller should .catch() errors.
  */
 export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
@@ -451,15 +633,23 @@ export async function runMapper(rawEvents: VfsChangeEvent[]): Promise<void> {
 
   console.log(`🗺️ [Mapper] Processing ${events.length} event(s) individually...`);
 
-  // Mutable cache: updated after each event's write_file to the index,
-  // preventing stale index reads across sequential events in the same batch.
-  let cachedIndex: string | null = vfsExists(INDEX_PATH) ? vfsRead(INDEX_PATH) : null;
+  // Group events by project to know which indexes to rebuild
+  const affectedProjects = new Set<string>();
 
   for (const event of events) {
-    await processSingleEvent(event, cachedIndex, (newContent: string) => {
-      cachedIndex = newContent;
-    });
+    const projectRoot = getProjectRoot(event.path);
+    if (!projectRoot) continue;
+
+    affectedProjects.add(projectRoot);
+    await processSingleEvent(event, projectRoot);
   }
 
-  console.log(`🗺️ [Mapper] Batch complete (${events.length} event(s))`);
+  // Rebuild index once per affected project
+  for (const projectRoot of affectedProjects) {
+    const mapDir = getMapDir(projectRoot);
+    console.log(`🗺️ [Mapper] Rebuilding index for /${projectRoot}`);
+    rebuildIndex(mapDir);
+  }
+
+  console.log(`🗺️ [Mapper] Batch complete (${events.length} event(s), ${affectedProjects.size} project(s))`);
 }
