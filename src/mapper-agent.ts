@@ -20,8 +20,8 @@ import { scheduleVfsPersist } from "./vfs-persist.js";
 import { vfsExists, vfsGetAll, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
-const tcOpen: string = "";
-const tcClose: string = "";
+const tcOpen: string = "<tool_call>";
+const tcClose: string = "</tool_call>";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_ITERATIONS = 15;
