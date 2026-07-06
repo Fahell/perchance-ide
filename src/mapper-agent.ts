@@ -96,10 +96,11 @@ SUMMARY FORMAT (${mapDir}/<relative-path>.md):
 - \`exportName(params): ReturnType\` (L10-L25)
 
 ## Dependencies
-- Internal: ./relative/path | optional description (imports, symbols)
+- Internal: /project-root/path/to/file | optional description (imports, symbols)
 - External: package-name
 
-IMPORTANT: For Internal dependencies, ALWAYS use the pipe separator (|) between the path and any description. The path MUST come before the first pipe. Example: \`- Internal: /project/settings | SCREEN_WIDTH, HEIGHT\`
+IMPORTANT: For Internal dependencies, ALWAYS use absolute VFS paths starting with / (e.g., /my-project/js/auth.js). ALWAYS use the pipe separator (|) between the path and any description. The path MUST come before the first pipe. Example: \`- Internal: /my-project/settings.py | SCREEN_WIDTH, HEIGHT\`
+If there are no internal dependencies, write: \`- Internal: (none)\`
 
 ## Logic Hotspots
 - **Feature name** (L30-L45): Brief description of complex logic
@@ -469,11 +470,13 @@ export function parseSummaryMeta(content: string, relativePath: string): Summary
   let depMatch: RegExpExecArray | null;
   while ((depMatch = depRegex.exec(content)) !== null) {
     const raw = depMatch[1].trim();
-    if (!raw || raw.toLowerCase() === "none" || raw.toLowerCase() === "(none)") continue;
+    const lower = raw.toLowerCase();
+    if (!raw || lower === "none" || lower === "(none)" || lower === "n/a") continue;
 
     // Split by pipe and take only the first part (the path)
     const pathPart = raw.split("|")[0].trim();
-    if (pathPart && pathPart.toLowerCase() !== "none" && pathPart.toLowerCase() !== "(none)") {
+    const ppLower = pathPart.toLowerCase();
+    if (pathPart && ppLower !== "none" && ppLower !== "(none)" && ppLower !== "n/a") {
       internalDeps.push(pathPart);
     }
   }
