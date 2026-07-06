@@ -41,6 +41,7 @@ interface BrowserPodInstance {
   run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
   createFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
   openFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
+  createDirectory(path: string): Promise<void>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
   createCustomTerminal(config: { onOutput: (data: string) => void }): Promise<BrowserPodTerminal>;
   dispose(): Promise<void>;
@@ -183,12 +184,38 @@ class BrowserPodManager {
   }
 
   /**
+   * Ensure all parent directories exist in the pod's FS before creating a file.
+   * BrowserPod does not create intermediate directories automatically.
+   */
+  private async ensureDirectory(filePath: string): Promise<void> {
+    if (!this.pod) return;
+
+    const parts = filePath.split("/").filter(Boolean);
+    // Remove the filename (last segment) — only create directories
+    parts.pop();
+
+    let currentPath = "";
+    for (const part of parts) {
+      currentPath += "/" + part;
+      try {
+        await this.pod.createDirectory(currentPath);
+      } catch {
+        // Directory may already exist — ignore errors
+      }
+    }
+  }
+
+  /**
    * Write a file into the pod's virtual filesystem.
+   * Creates parent directories recursively before writing.
    */
   async writeFile(path: string, content: string): Promise<boolean> {
     if (!this.pod) return false;
 
     try {
+      // Ensure parent directories exist first
+      await this.ensureDirectory(path);
+
       // createFile(path, "utf-8") per official error debugging docs.
       // "text" causes "Unsupported mode argument"; "utf-8" is the correct value.
       const file = await this.pod.createFile(path, "utf-8");
