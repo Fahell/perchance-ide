@@ -5,8 +5,9 @@
  * keeping the main thread responsive during Pyodide load and script execution.
  *
  * VFS sync:
- *   Before execution: VFS snapshot is sent to worker for MEMFS sync.
- *   After execution:  Changed files are received from worker and written back to VFS.
+ *   - Incremental: onVfsChange events propagate file changes to worker MEMFS automatically.
+ *   - Full snapshot: sent on first execution or when incremental sync is not active.
+ *   - Post-execution: changed files from worker are written back to VFS with anti-loop guard.
  *
  * Public API remains identical to the previous direct-Pyodide implementation.
  */
@@ -20,6 +21,10 @@ import { PyodideWorkerManager } from "../workers/pyodide-manager.js";
 let _manager: PyodideWorkerManager | null = null;
 let _initPromise: Promise<void> | null = null;
 let _loadError: string | null = null;
+
+// Anti-loop guard: prevents VFS writes from post-execution sync
+// from triggering onVfsChange → worker sync → infinite loop
+let _isSyncingFromWorker: boolean = false;
 
 // ─── Persistence ────────────────────────────────────────────
 async function persistVfs(): Promise<void> {
@@ -68,6 +73,8 @@ export async function ensurePyodideReady(): Promise<void> {
     try {
       const manager = getManager();
       await manager.init();
+      // Enable incremental VFS sync after worker is ready
+      manager.subscribeToVfs();
       ideStore.getState().setPyodideStatus("loaded");
       console.log("🐍 [Pyodide] Worker ready");
     } catch (err: any) {
@@ -91,15 +98,15 @@ export interface PythonResult {
 
 /**
  * Execute Python code with full stdout/stderr capture.
- * Syncs VFS → Worker MEMFS before, Worker MEMFS → VFS after.
+ * When incremental sync is active, skips full VFS snapshot (worker already has latest state).
  * Runs entirely in a Web Worker — main thread stays responsive.
  */
 export async function executePython(code: string): Promise<PythonResult> {
   await ensurePyodideReady();
   const manager = getManager();
 
-  // Prepare VFS data for worker
-  const snapshot = vfsSnapshot();
+  // Only send full snapshot if incremental sync is NOT active
+  const snapshot = manager.syncActive ? null : vfsSnapshot();
   const knownPaths = vfsGetAll()
     .filter((e) => e.type === "file")
     .map((e) => e.path);
@@ -107,15 +114,20 @@ export async function executePython(code: string): Promise<PythonResult> {
   // Execute in worker (includes timeout handling)
   const result = await manager.runPython(code, snapshot, knownPaths);
 
-  // Apply changed files back to VFS
+  // Apply changed files back to VFS with anti-loop guard
   let changed = 0;
-  if (result.changedFiles) {
-    for (const [path, content] of Object.entries(result.changedFiles)) {
-      const existing = vfsGetAll().find((e) => e.path === path);
-      if (!existing || existing.content !== content) {
-        vfsWrite(path, content);
-        changed++;
+  if (result.changedFiles && Object.keys(result.changedFiles).length > 0) {
+    _isSyncingFromWorker = true;
+    try {
+      for (const [path, content] of Object.entries(result.changedFiles)) {
+        const existing = vfsGetAll().find((e) => e.path === path);
+        if (!existing || existing.content !== content) {
+          vfsWrite(path, content);
+          changed++;
+        }
       }
+    } finally {
+      _isSyncingFromWorker = false;
     }
   }
 
@@ -173,5 +185,14 @@ export function terminatePyodide(): void {
   }
   _initPromise = null;
   _loadError = null;
+  _isSyncingFromWorker = false;
   ideStore.getState().setPyodideStatus("idle");
+}
+
+/**
+ * Check if VFS writes are currently being synced from worker output.
+ * Used by external consumers to avoid reacting to programmatic VFS updates.
+ */
+export function isSyncingFromWorker(): boolean {
+  return _isSyncingFromWorker;
 }

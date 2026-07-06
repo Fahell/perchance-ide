@@ -202,6 +202,42 @@ async function installPackage(requestId, name) {
   }
 }
 
+// ─── Incremental Sync Files ─────────────────────────────────
+function handleSyncFiles(requestId, added, deleted) {
+  if (!pyodide) {
+    sendMsg({ type: "error", requestId, message: "Pyodide not initialized" });
+    return;
+  }
+  const FS = pyodide.FS;
+  let applied = 0;
+  let errors = 0;
+
+  if (added) {
+    for (const [path, content] of Object.entries(added)) {
+      try {
+        ensureParentDirs(FS, path);
+        FS.writeFile(path, content, { encoding: "utf8" });
+        applied++;
+      } catch (err) {
+        errors++;
+      }
+    }
+  }
+
+  if (deleted) {
+    for (const path of deleted) {
+      try {
+        FS.unlink(path);
+        applied++;
+      } catch (err) {
+        errors++;
+      }
+    }
+  }
+
+  sendMsg({ type: "result", requestId, message: "Synced " + applied + " files (" + errors + " errors)" });
+}
+
 // ─── Message Handler ────────────────────────────────────────
 self.onmessage = async (e) => {
   const msg = e.data;
@@ -216,6 +252,9 @@ self.onmessage = async (e) => {
       break;
     case "installPackage":
       await installPackage(msg.requestId, msg.name);
+      break;
+    case "syncFiles":
+      handleSyncFiles(msg.requestId, msg.added, msg.deleted);
       break;
     case "terminate":
       self.close();

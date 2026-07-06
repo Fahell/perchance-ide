@@ -63,7 +63,7 @@ pnpm test:watch
 - **Page scraping** to fetch and parse web content as markdown with retry + exponential backoff
 - **Context management tools**: BM25-lite keyword search + index-based message retrieval
 - **Virtual File System (VFS)** operations: read, write, edit (exact string replacement), list tree, search (name+content), delete, rename — all with change tracking via FNV-1a hashing
-- **Python execution** via Pyodide WebAssembly (v314.0.2) in a dedicated Web Worker — keeps main thread responsive during load and execution; automatic VFS↔MEMFS bidirectional sync via message passing
+- **Python execution** via Pyodide WebAssembly (v314.0.2) in a dedicated Web Worker — keeps main thread responsive during load and execution; automatic VFS↔MEMFS bidirectional sync via message passing with incremental change propagation (no full snapshot on repeated executions)
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
@@ -167,12 +167,12 @@ src/
 │   └── vfs-io.ts             # Project export/import JSON serialization with path sanitization
 │
 ├── terminal/
-│   ├── pyodide.ts            # Pyodide Web Worker bridge — delegates to PyodideWorkerManager
+│   ├── pyodide.ts            # Pyodide Web Worker bridge — delegates to PyodideWorkerManager; incremental VFS sync
 │   └── pyodide.test.ts       # Pyodide bridge tests
 │
 ├── workers/
-│   ├── pyodide-manager.ts     # Worker lifecycle, request/response correlation, retry with backoff
-│   └── pyodide-worker-code.ts # Inline worker code as string (Blob URL) — init, runPython, installPackage, syncFiles
+│   ├── pyodide-manager.ts     # Worker lifecycle, request/response correlation, retry with backoff, incremental VFS sync
+│   └── pyodide-worker-code.ts # Inline worker code as string (Blob URL) — init, runPython, installPackage, syncFiles, incremental sync
 │
 ├── editor/
 │   ├── index.ts              # CM6 factory — basicSetup, theme, keymap, change listener

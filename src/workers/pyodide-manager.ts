@@ -8,10 +8,13 @@
  * Lifecycle:
  *   1. construct() → creates Worker, sends init
  *   2. waitForReady() → resolves when Pyodide is loaded in worker
- *   3. runPython() / installPackage() → async calls with timeout
- *   4. terminate() → cleanup
+ *   3. runPython() / installPackage() / syncFiles() → async calls with timeout
+ *   4. subscribeToVfs() → incremental VFS sync via onVfsChange events
+ *   5. terminate() → cleanup
  */
 
+import { onVfsChange } from "../vfs-events.js";
+import { vfsRead } from "../vfs.js";
 import { PYODIDE_WORKER_CODE } from "./pyodide-worker-code.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -44,8 +47,10 @@ export interface PythonWorkerResult {
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 const INIT_TIMEOUT_MS = 180_000;     // 3 minutes for Pyodide load
 const PACKAGE_TIMEOUT_MS = 120_000; // 2 minutes for package install
+const SYNC_TIMEOUT_MS = 30_000;     // 30 seconds for VFS sync
 const MAX_INIT_RETRIES = 2;
 const INIT_RETRY_DELAYS = [5_000, 15_000]; // backoff: 5s, 15s
+const SYNC_DEBOUNCE_MS = 300;
 
 // ─── Manager ────────────────────────────────────────────────
 
@@ -59,8 +64,19 @@ export class PyodideWorkerManager {
   private _blobUrl: string | null = null;
   private onLog: ((msg: string) => void) | null = null;
 
+  // VFS incremental sync state
+  private _vfsUnsubscribe: (() => void) | null = null;
+  private _syncBuffer: { added: Record<string, string>; deleted: string[] } = { added: {}, deleted: [] };
+  private _syncTimer: ReturnType<typeof setTimeout> | null = null;
+  private _syncActive: boolean = false;
+
   constructor(options?: { onLog?: (msg: string) => void }) {
     this.onLog = options?.onLog ?? null;
+  }
+
+  /** Whether incremental VFS sync is currently active. */
+  get syncActive(): boolean {
+    return this._syncActive;
   }
 
   /** Check if the worker is ready for execution. */
@@ -172,13 +188,13 @@ export class PyodideWorkerManager {
   /**
    * Execute Python code in the worker.
    * @param code - Python source code
-   * @param vfsSnapshot - Current VFS file contents (path → content)
+   * @param vfsSnapshot - Current VFS file contents (path → content). Optional when incremental sync is active.
    * @param knownPaths - List of known VFS file paths for change detection
    * @param timeoutMs - Execution timeout in milliseconds
    */
   async runPython(
     code: string,
-    vfsSnapshot: Record<string, string>,
+    vfsSnapshot: Record<string, string> | null,
     knownPaths: string[],
     timeoutMs: number = DEFAULT_TIMEOUT_MS,
   ): Promise<PythonWorkerResult> {
@@ -217,6 +233,8 @@ export class PyodideWorkerManager {
 
   /** Terminate the worker and clean up resources. */
   terminate(): void {
+    this._stopVfsSync();
+
     if (this.worker) {
       this.worker.postMessage({ type: "terminate" });
       this.worker.terminate();
@@ -235,6 +253,114 @@ export class PyodideWorkerManager {
     this._ready = false;
     this._readyPromise = null;
     this._error = null;
+  }
+
+  // ─── Incremental VFS Sync ────────────────────────────────
+
+  /**
+   * Subscribe to VFS change events and propagate incremental updates to the worker.
+   * Buffers changes with debounce to batch rapid mutations into single sync messages.
+   * Safe to call multiple times — subsequent calls are no-ops.
+   */
+  subscribeToVfs(): void {
+    if (this._vfsUnsubscribe) return;
+
+    this._syncActive = true;
+    this._vfsUnsubscribe = onVfsChange((event) => {
+      switch (event.type) {
+        case "created":
+        case "modified": {
+          const content = vfsRead(event.path);
+          if (content != null) {
+            this._syncBuffer.added[event.path] = content;
+            // Remove from deleted if previously marked
+            const delIdx = this._syncBuffer.deleted.indexOf(event.path);
+            if (delIdx !== -1) this._syncBuffer.deleted.splice(delIdx, 1);
+          }
+          break;
+        }
+        case "deleted": {
+          delete this._syncBuffer.added[event.path];
+          if (!this._syncBuffer.deleted.includes(event.path)) {
+            this._syncBuffer.deleted.push(event.path);
+          }
+          break;
+        }
+        case "renamed": {
+          // Treat rename as delete old + create new
+          delete this._syncBuffer.added[event.fromPath!];
+          if (!this._syncBuffer.deleted.includes(event.fromPath!)) {
+            this._syncBuffer.deleted.push(event.fromPath!);
+          }
+          const newContent = vfsRead(event.toPath!);
+          if (newContent != null) {
+            this._syncBuffer.added[event.toPath!] = newContent;
+            const delIdx = this._syncBuffer.deleted.indexOf(event.toPath!);
+            if (delIdx !== -1) this._syncBuffer.deleted.splice(delIdx, 1);
+          }
+          break;
+        }
+      }
+      this._scheduleFlush();
+    });
+
+    console.log("🐍 [Pyodide] VFS incremental sync enabled");
+  }
+
+  /** Send incremental VFS changes to the worker MEMFS. */
+  async syncFiles(
+    added: Record<string, string>,
+    deleted: string[],
+    timeoutMs: number = SYNC_TIMEOUT_MS,
+  ): Promise<string> {
+    await this.init();
+
+    const requestId = this._nextRequestId();
+    this.worker!.postMessage({
+      type: "syncFiles",
+      requestId,
+      added,
+      deleted,
+    });
+
+    const result = await this._waitForResponse(requestId, timeoutMs);
+    return (result as { message: string }).message;
+  }
+
+  private _scheduleFlush(): void {
+    if (this._syncTimer) clearTimeout(this._syncTimer);
+    this._syncTimer = setTimeout(() => {
+      this._flushSyncBuffer();
+    }, SYNC_DEBOUNCE_MS);
+  }
+
+  private async _flushSyncBuffer(): Promise<void> {
+    const added = { ...this._syncBuffer.added };
+    const deleted = [...this._syncBuffer.deleted];
+    this._syncBuffer = { added: {}, deleted: [] };
+
+    const totalChanges = Object.keys(added).length + deleted.length;
+    if (totalChanges === 0) return;
+    if (!this._ready || !this.worker) return;
+
+    try {
+      await this.syncFiles(added, deleted);
+    } catch (err) {
+      console.warn("🐍 [Pyodide] VFS sync failed:", err);
+    }
+  }
+
+  private _stopVfsSync(): void {
+    if (this._syncTimer) {
+      clearTimeout(this._syncTimer);
+      this._syncTimer = null;
+    }
+    if (this._vfsUnsubscribe) {
+      this._vfsUnsubscribe();
+      this._vfsUnsubscribe = null;
+    }
+    this._syncActive = false;
+    this._syncBuffer = { added: {}, deleted: [] };
   }
 
   // ─── Internal ─────────────────────────────────────────────
