@@ -88,7 +88,7 @@ export class PyodideWorkerManager {
       // Create inline worker from embedded code
       const blob = new Blob([PYODIDE_WORKER_CODE], { type: "application/javascript" });
       this._blobUrl = URL.createObjectURL(blob);
-      this.worker = new Worker(this._blobUrl);
+      this.worker = new Worker(this._blobUrl, { type: "module" });
 
       // Set up message handler
       this.worker.onmessage = (e: MessageEvent<WorkerMessage>) => {

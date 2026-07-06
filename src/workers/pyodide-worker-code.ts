@@ -11,7 +11,7 @@
  */
 
 export const PYODIDE_WORKER_CODE = `
-"use strict";
+// Module Worker context — top-level await supported
 
 // ─── State ──────────────────────────────────────────────────
 let pyodide = null;
