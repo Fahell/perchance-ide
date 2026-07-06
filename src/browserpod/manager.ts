@@ -189,7 +189,9 @@ class BrowserPodManager {
     if (!this.pod) return false;
 
     try {
-      const file = await this.pod.createFile(path, "text");
+      // createFile(path) — no second argument; type inferred from write() content.
+      // Passing "text" causes "Unsupported mode argument" in some CDN versions.
+      const file = await this.pod.createFile(path);
       await file.write(content);
       await file.close();
       return true;
