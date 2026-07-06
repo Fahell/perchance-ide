@@ -63,7 +63,7 @@ pnpm test:watch
 - **Page scraping** to fetch and parse web content as markdown with retry + exponential backoff
 - **Context management tools**: BM25-lite keyword search + index-based message retrieval
 - **Virtual File System (VFS)** operations: read, write, edit (exact string replacement), list tree, search (name+content), delete, rename — all with change tracking via FNV-1a hashing
-- **Python execution** via Pyodide WebAssembly (v314.0.2) with automatic VFS↔MEMFS bidirectional sync
+- **Python execution** via Pyodide WebAssembly (v314.0.2) in a dedicated Web Worker — keeps main thread responsive during load and execution; automatic VFS↔MEMFS bidirectional sync via message passing
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
@@ -88,11 +88,12 @@ pnpm test:watch
 
 ### Project Documentation (Mapper Agent)
 
-- **Automatic documentation subagent** that maintains structured summaries in `/_review/` after every file change
+- **Automatic documentation subagent** that maintains structured summaries per-project in `/<project>/_map/` after every file change
 - Tracks all VFS mutations via hash-based change detection (FNV-1a)
-- Uses its own lightweight tool loop (read_file, write_file, edit_file, rename_file)
+- Uses its own lightweight tool loop (5 tools: read_file, write_file, edit_file, rename_file, delete_file)
 - Coalesces rapid successive edits before dispatching
-- Index file at `/_review/index.md` with dependency graph
+- Index file (`index.md`) is auto-generated deterministically — mapper focuses on individual file summaries
+- Summary format includes **Purpose** field and absolute VFS paths with pipe-separated dependency descriptions
 
 ### Internationalization
 
@@ -137,8 +138,8 @@ src/
 ├── storage.ts                # localStorage wrapper with legacy migration
 ├── store.ts                  # Zustand vanilla store — IDE-wide state (files, settings, messages, UI)
 ├── types.ts                  # Perchance ai-text-plugin types + getAi() resolver
-├── mapper-agent.ts           # Subagent — auto-maintains /_review/ documentation
-├── mapper-dispatcher.ts      # Listens to VFS events, coalesces, dispatches mapper
+├── mapper-agent.ts           # Subagent — auto-maintains /<project>/_map/ documentation
+├── mapper-dispatcher.ts      # Listens to VFS events, coalesces, dispatches per-project mapper
 ├── vfs.ts                    # Virtual File System — path operations, tree, snapshot
 ├── vfs-events.ts             # Hash-based (FNV-1a) change tracking + event emitter
 ├── vfs-persist.ts            # Debounced IndexedDB persistence (2s) with flush
@@ -166,8 +167,12 @@ src/
 │   └── vfs-io.ts             # Project export/import JSON serialization with path sanitization
 │
 ├── terminal/
-│   ├── pyodide.ts            # Pyodide WebAssembly loader (lazy, v314.0.2) + VFS↔MEMFS sync
+│   ├── pyodide.ts            # Pyodide Web Worker bridge — delegates to PyodideWorkerManager
 │   └── pyodide.test.ts       # Pyodide bridge tests
+│
+├── workers/
+│   ├── pyodide-manager.ts     # Worker lifecycle, request/response correlation, retry with backoff
+│   └── pyodide-worker-code.ts # Inline worker code as string (Blob URL) — init, runPython, installPackage, syncFiles
 │
 ├── editor/
 │   ├── index.ts              # CM6 factory — basicSetup, theme, keymap, change listener
@@ -248,10 +253,10 @@ The agent has access to the following tools, exposed through a generic `ToolDefi
 
 ### Python Execution Tools
 
-| Tool              | Description                                  | Parameters         |
-| ----------------- | -------------------------------------------- | ------------------ |
-| `run_python`      | Execute Python via Pyodide (VFS auto-synced) | `{ code: string }` |
-| `execute_script`  | Run a `.py` file from VFS                    | `{ path: string }` |
+| Tool              | Description                                  | Parameters            |
+| ----------------- | -------------------------------------------- | --------------------- |
+| `run_python`      | Execute Python via Pyodide (VFS auto-synced) | `{ code: string }`    |
+| `execute_script`  | Run a `.py` file from VFS                    | `{ path: string }`    |
 | `install_package` | Install via micropip (numpy, pandas, etc.)   | `{ pkgName: string }` |
 
 ## Context Management Architecture
@@ -493,7 +498,7 @@ Accessible via gear icon in header or `Ctrl+,`:
 - **Message flow**: User message → `handleSendMessage()` → `addMessage()` (cache + IndexedDB) → `buildContext()` (token-aware) → `formatMemories()` → `agentLoop()` (up to 8 iterations, with continuation for truncation) → `extractMemories()` (async background).
 - **Cancellation**: User can cancel an in-progress agent response via AbortController. The LLM call is stopped via `aiResult.stop()`, and any running tool executions are aborted.
 - **"Continue" mechanism**: When agent response is truncated (>~1000 tokens), the panel shows a "Continue" button that re-calls the LLM with `startWith: truncatedText` to pick up where it left off.
-- **Mapper Agent**: After the main agent finishes, pending VFS changes are coalesced and dispatched to a lightweight subagent that auto-maintains project documentation in `/_review/`. This subagent runs with clean context (no history) and has its own internal tool loop (read_file, write_file, edit_file, rename_file).
+- **Mapper Agent**: After the main agent finishes, per-project VFS changes are coalesced and dispatched to a lightweight subagent that auto-maintains documentation in `/<project>/_map/`. This subagent runs with clean context (no history) and has its own internal tool loop (read_file, write_file, edit_file, rename_file, delete_file). Uses the same CDATA-based flat XML tool call format as the main agent.
 - **Retry policy**: All external API calls (Jina AI) use exponential backoff with full jitter (AWS-recommended). Retryable errors: network errors (TypeError), HTTP 429, 5xx. Non-retryable: 4xx (except 429), AbortError.
 
 ## Build & Deployment
