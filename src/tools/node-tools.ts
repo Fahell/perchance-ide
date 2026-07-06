@@ -11,7 +11,7 @@
  */
 
 import { browserPodManager } from "../browserpod/manager.js";
-import { vfsGetAll } from "../vfs.js";
+import { vfsGetAll, vfsWrite } from "../vfs.js";
 import type { Tool } from "./index.js";
 
 // ─── VFS Sync Helper ────────────────────────────────────────
@@ -33,6 +33,24 @@ async function syncVfsToPod(): Promise<void> {
 
   if (vfsEntries.length > 0) {
     await browserPodManager.syncFiles(vfsEntries);
+  }
+}
+
+// ─── Post-execution Pull Helper ──────────────────────────────
+/**
+ * Pull specific files from BrowserPod back to VFS after npm commands.
+ * Only metadata files (package.json, package-lock.json) are synced back;
+ * node_modules stays in the Pod (too heavy for VFS/editor).
+ */
+async function pullMetadataFromPod(): Promise<void> {
+  const metadataFiles = ["/home/user/package.json", "/home/user/package-lock.json"];
+
+  for (const filePath of metadataFiles) {
+    const content = await browserPodManager.readFile(filePath);
+    if (content !== null) {
+      vfsWrite(filePath, content);
+      console.log(`[NodeTools] Pulled ${filePath} → VFS`);
+    }
   }
 }
 
@@ -62,6 +80,11 @@ function createNpmInstallTool(): Tool {
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
       const result = await browserPodManager.run("npm", cmdArgs);
+
+      // Pull metadata back to VFS so agent can see package.json changes
+      if (result.exitCode === 0) {
+        await pullMetadataFromPod();
+      }
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
@@ -145,6 +168,11 @@ function createExecuteNpmCommandTool(): Tool {
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
       const result = await browserPodManager.run("npm", cmdArgs);
+
+      // Pull metadata back to VFS if command may have modified package.json
+      if (result.exitCode === 0) {
+        await pullMetadataFromPod();
+      }
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
