@@ -39,8 +39,8 @@ interface BrowserPodTerminal {
 
 interface BrowserPodInstance {
   run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
-  createFile(path: string, encoding?: string): Promise<BrowserPodFile>;
-  openFile(path: string, encoding?: string): Promise<BrowserPodFile>;
+  createFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
+  openFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
   createCustomTerminal(config: { onOutput: (data: string) => void }): Promise<BrowserPodTerminal>;
   dispose(): Promise<void>;
@@ -189,9 +189,9 @@ class BrowserPodManager {
     if (!this.pod) return false;
 
     try {
-      // createFile(path) — no second argument; type inferred from write() content.
-      // Passing "text" causes "Unsupported mode argument" in some CDN versions.
-      const file = await this.pod.createFile(path);
+      // createFile(path, "utf-8") per official error debugging docs.
+      // "text" causes "Unsupported mode argument"; "utf-8" is the correct value.
+      const file = await this.pod.createFile(path, "utf-8");
       await file.write(content);
       await file.close();
       return true;
@@ -208,7 +208,7 @@ class BrowserPodManager {
     if (!this.pod) return null;
 
     try {
-      const file = await this.pod.openFile(path, "text");
+      const file = await this.pod.openFile(path, "utf-8");
       const content = await file.read();
       await file.close();
       return content;
