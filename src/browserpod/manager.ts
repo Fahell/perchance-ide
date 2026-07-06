@@ -6,6 +6,7 @@
  *
  * Architecture: Main-thread boot (required by BrowserPod API),
  * async communication pattern similar to pyodide-manager.
+ * Uses createCustomTerminal with onOutput callback for headless execution.
  */
 
 // ─── Types ──────────────────────────────────────────────────
@@ -22,7 +23,7 @@ export interface BrowserPodConfig {
   storageKey?: string;
 }
 
-// ─── Dynamic import type ────────────────────────────────────
+// ─── Dynamic import types ───────────────────────────────────
 interface BrowserPodFile {
   write(content: string): Promise<void>;
   read(): Promise<string>;
@@ -30,13 +31,11 @@ interface BrowserPodFile {
 }
 
 interface BrowserPodTerminal {
-  // Opaque terminal handle returned by createDefaultTerminal
+  // Opaque terminal handle — created via createDefaultTerminal or createCustomTerminal
 }
 
 interface BrowserPodProcess {
   wait(): Promise<{ exitCode: number }>;
-  stdout: ReadableStream<Uint8Array> | null;
-  stderr: ReadableStream<Uint8Array> | null;
 }
 
 interface BrowserPodInstance {
@@ -44,6 +43,7 @@ interface BrowserPodInstance {
   createFile(path: string, encoding?: string): Promise<BrowserPodFile>;
   openFile(path: string, encoding?: string): Promise<BrowserPodFile>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
+  createCustomTerminal(config: { onOutput: (data: string) => void }): Promise<BrowserPodTerminal>;
   dispose(): Promise<void>;
 }
 
@@ -51,34 +51,11 @@ interface BrowserPodClass {
   boot(config: { apiKey: string; storageKey?: string }): Promise<BrowserPodInstance>;
 }
 
-// ─── Stream reader helper ───────────────────────────────────
-async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
-  if (!stream) return "";
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-  const merged = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new TextDecoder().decode(merged);
-}
-
 // ─── Manager ────────────────────────────────────────────────
 class BrowserPodManager {
   private pod: BrowserPodInstance | null = null;
   private terminal: BrowserPodTerminal | null = null;
+  private outputBuffer: string[] = [];
   private status: BrowserPodStatus = "idle";
   private error: string | null = null;
   private config: BrowserPodConfig | null = null;
@@ -116,7 +93,7 @@ class BrowserPodManager {
   /**
    * Boot the BrowserPod runtime. Must be called from main thread.
    * Requires valid API key from console.browserpod.io.
-   * Creates a headless terminal (offscreen div) required by pod.run().
+   * Creates a custom headless terminal with onOutput callback for capturing output.
    */
   async boot(config: BrowserPodConfig): Promise<boolean> {
     if (this.pod) {
@@ -141,12 +118,13 @@ class BrowserPodManager {
         storageKey: config.storageKey ?? "agent-perchance",
       });
 
-      // Create headless terminal — required by pod.run()
-      // Uses offscreen div since we don't have a visible terminal UI yet
-      const termContainer = document.createElement("div");
-      termContainer.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;";
-      document.body.appendChild(termContainer);
-      this.terminal = await this.pod.createDefaultTerminal(termContainer);
+      // Create custom headless terminal with onOutput callback
+      // This is the correct headless approach per BrowserPod docs
+      this.terminal = await this.pod.createCustomTerminal({
+        onOutput: (data: string) => {
+          this.outputBuffer.push(data);
+        },
+      });
 
       this.setStatus("ready");
       console.log("[BrowserPod] Ready");
@@ -163,7 +141,7 @@ class BrowserPodManager {
 
   /**
    * Execute a command inside the pod (e.g., "node", "npm").
-   * Automatically passes the headless terminal created during boot.
+   * Captures output via the custom terminal's onOutput callback.
    */
   async run(command: string, args: string[] = [], cwd?: string): Promise<RunResult> {
     if (!this.pod) {
@@ -171,20 +149,20 @@ class BrowserPodManager {
     }
 
     try {
+      // Clear output buffer before each execution
+      this.outputBuffer = [];
+
       const options: Record<string, unknown> = {};
       if (cwd) options.cwd = cwd;
       if (this.terminal) options.terminal = this.terminal;
 
       const process = await this.pod.run(command, args, options);
+      const result = await process.wait();
 
-      // Read stdout/stderr concurrently
-      const [stdout, stderr, result] = await Promise.all([
-        readStream(process.stdout),
-        readStream(process.stderr),
-        process.wait(),
-      ]);
+      // Collect all captured output
+      const stdout = this.outputBuffer.join("");
 
-      return { stdout, stderr, exitCode: result.exitCode };
+      return { stdout, stderr: "", exitCode: result.exitCode };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[BrowserPod] run(${command}) failed:`, message);
@@ -199,7 +177,6 @@ class BrowserPodManager {
     if (!this.pod) return false;
 
     try {
-      // Ensure parent directories exist by creating file directly
       const file = await this.pod.createFile(path, "text");
       await file.write(content);
       await file.close();
@@ -253,6 +230,7 @@ class BrowserPodManager {
       this.pod = null;
       this.terminal = null;
     }
+    this.outputBuffer = [];
     this.setStatus("idle");
     this.config = null;
     console.log("[BrowserPod] Disposed");
