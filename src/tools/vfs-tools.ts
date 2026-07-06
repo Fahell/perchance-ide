@@ -11,14 +11,15 @@
 import { ideStore } from "../store.js";
 import { setDiff } from "../utils/diff-cache.js";
 import { truncateOutput } from "../utils/truncate.js";
-import { trackedWrite, trackedDelete, trackedRename } from "../vfs-events.js";
+import { trackedDelete, trackedRename, trackedWrite } from "../vfs-events.js";
 import { scheduleVfsPersist } from "../vfs-persist.js";
 import {
   vfsExists,
+  PROJECT_ROOT,
   vfsGetAll,
   vfsRead,
   vfsTree,
-  type VfsTreeNode,
+  type VfsTreeNode
 } from "../vfs.js";
 import type { Tool } from "./index.js";
 
@@ -82,7 +83,7 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Read the contents of a file from the project's virtual file system. Returns the file content (max 5000 characters). Use this to examine code, configs, documentation, or any text file in the project.",
       parameters: {
-        path: { description: "Absolute path of the file to read (e.g., /src/index.ts). Must start with /.", type: "string", required: true },
+        path: { description: `Absolute path of the file to read (e.g., ${PROJECT_ROOT}/src/index.ts). Must start with /.`, type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
@@ -104,7 +105,7 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Create a new file or overwrite an existing file in the project's virtual file system. Parent directories are created automatically. The file will be persisted to IndexedDB. If the file is currently open in the editor, it will be marked as modified (dirty).",
       parameters: {
-        path: { description: "Absolute path of the file to write (e.g., /src/utils/helpers.ts). Must start with /.", type: "string", required: true },
+        path: { description: `Absolute path of the file to write (e.g., ${PROJECT_ROOT}/src/utils/helpers.ts). Must start with /.`, type: "string", required: true },
         content: { description: "The full text content to write to the file.", type: "string" },
       },
       timeoutMs: 15_000,
@@ -144,11 +145,11 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "List files and folders in a directory of the virtual file system. Returns a formatted tree view with icons (📁 for folders, 📄 for files). Use this to explore the project structure.",
       parameters: {
-        dir: { description: "Directory path to list (default: /). Example: /src", type: "string" },
+        dir: { description: `Directory path to list (default: ${PROJECT_ROOT}). Example: ${PROJECT_ROOT}/src`, type: "string" },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
-        const dir = String(args.dir ?? "/");
+        const dir = String(args.dir ?? PROJECT_ROOT);
         if (!vfsExists(dir)) return `Error: Directory not found: ${dir}`;
         const tree = vfsTree(dir);
         if (tree.length === 0) return `(empty directory: ${dir})`;
@@ -203,7 +204,7 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Delete a file or folder (recursively) from the virtual file system. If any open editor tabs point to the deleted path, they will be closed automatically. Changes are persisted to IndexedDB. Use with caution — this operation cannot be undone.",
       parameters: {
-        path: { description: "Absolute path of the file or folder to delete (e.g., /src/old-file.ts). Cannot delete root (/).", type: "string", required: true },
+        path: { description: `Absolute path of the file or folder to delete (e.g., ${PROJECT_ROOT}/src/old-file.ts). Cannot delete root (${PROJECT_ROOT}).`, type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
@@ -234,8 +235,8 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Rename or move a file or folder within the virtual file system. If the renamed file is currently open in the editor, its tab will be updated to reflect the new path. Cannot overwrite an existing path. Changes are persisted to IndexedDB.",
       parameters: {
-        oldPath: { description: "Current absolute path of the file or folder (e.g., /src/old-name.ts).", type: "string", required: true },
-        newPath: { description: "New absolute path (e.g., /src/new-name.ts). Must not already exist.", type: "string", required: true },
+        oldPath: { description: `Current absolute path of the file or folder (e.g., ${PROJECT_ROOT}/src/old-name.ts).`, type: "string", required: true },
+        newPath: { description: `New absolute path (e.g., ${PROJECT_ROOT}/src/new-name.ts). Must not already exist.`, type: "string", required: true },
       },
       timeoutMs: 15_000,
       execute: async (args) => {
@@ -282,7 +283,7 @@ export function createVfsTools(): Record<string, Tool> {
       description:
         "Edit a file by replacing exact text. Safer than write_file for partial edits — only modifies the specified string. Returns error if old_string is not found or matches multiple locations.",
       parameters: {
-        file_path: { description: "Absolute path of the file to edit (e.g., /src/utils/helpers.ts). Must start with /.", type: "string", required: true },
+        file_path: { description: `Absolute path of the file to edit (e.g., ${PROJECT_ROOT}/src/utils/helpers.ts). Must start with /.`, type: "string", required: true },
         old_string: { description: "The exact text to search for and replace. Must match exactly — whitespace, indentation, and line endings matter.", type: "string", required: true },
         new_string: { description: "The replacement text.", type: "string", required: true },
       },

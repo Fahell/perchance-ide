@@ -27,7 +27,7 @@ async function syncVfsToPod(): Promise<void> {
   const vfsEntries = entries
     .filter((e) => e.type === "file")
     .map((e) => ({
-      path: e.path.startsWith("/") ? e.path : `/app/${e.path}`,
+      path: e.path,
       content: e.content ?? "",
     }));
 
@@ -81,7 +81,7 @@ function createRunNodeScriptTool(): Tool {
     description: "Execute a Node.js script file in the BrowserPod environment. The file must exist in the VFS or be written first.",
     parameters: {
       path: {
-        description: "Path to the .js file to execute (relative to /app)",
+        description: "Absolute path to the .js file to execute (e.g., /home/user/hello.js)",
         type: "string",
         required: true,
       },

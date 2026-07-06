@@ -64,7 +64,7 @@ export function buildToolPrompt(
 
   // Conditional: VFS tools
   if (enabledCats.has("vfs")) {
-    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /src/index.ts):\n- read: read_file, search_files, list_files\n- write: write_file (read target first, summarize changes after)\n- delete: delete_file (only when asked)\n- rename: rename_file`);
+    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /home/user/src/index.ts):\n- read: read_file, search_files, list_files\n- write: write_file (read target first, summarize changes after)\n- delete: delete_file (only when asked)\n- rename: rename_file`);
   }
 
   // Conditional: Terminal tools
@@ -77,7 +77,7 @@ export function buildToolPrompt(
     const nodeExample1 = [
       `${tcOpen}`,
       `  <name>run_node_script</name>`,
-      `  <path><![CDATA[hello.js]]></path>`,
+      `  <path><![CDATA[/home/user/hello.js]]></path>`,
       `${tcClose}`,
     ].join("\n");
     const nodeExample2 = [
@@ -93,7 +93,7 @@ export function buildToolPrompt(
   const formatExample = [
     `${tcOpen}`,
     `  <name>read_file</name>`,
-    `  <path><![CDATA[/src/example.ts]]></path>`,
+    `  <path><![CDATA[/home/user/src/example.ts]]></path>`,
     `${tcClose}`,
   ].join("\n");
 
