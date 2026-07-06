@@ -252,7 +252,7 @@ The agent has access to the following tools, exposed through a generic `ToolDefi
 | ----------------- | -------------------------------------------- | ------------------ |
 | `run_python`      | Execute Python via Pyodide (VFS auto-synced) | `{ code: string }` |
 | `execute_script`  | Run a `.py` file from VFS                    | `{ path: string }` |
-| `install_package` | Install via micropip (numpy, pandas, etc.)   | `{ name: string }` |
+| `install_package` | Install via micropip (numpy, pandas, etc.)   | `{ pkgName: string }` |
 
 ## Context Management Architecture
 

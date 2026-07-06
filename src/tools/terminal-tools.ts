@@ -100,15 +100,15 @@ export function createTerminalTools(): Record<string, Tool> {
       description:
         "Install a Python package in the Pyodide runtime. Tries pre-compiled packages first (numpy, pandas, matplotlib, etc.), then falls back to micropip for pure-Python wheels from PyPI. The package is available for all subsequent run_python and execute_script calls. Use this before running code that imports external libraries.",
       parameters: {
-        name: { description: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).", type: "string", required: true },
+        pkgName: { description: "The name of the Python package to install (e.g., numpy, pandas, requests, beautifulsoup4).", type: "string", required: true },
       },
       timeoutMs: 120_000,
       execute: async (args) => {
-        const name = String(args.name || "").trim();
-        if (!name) return "Error: package name is required.";
+        const pkgName = String(args.pkgName || "").trim();
+        if (!pkgName) return "Error: package name is required.";
 
         try {
-          const result = await installPackage(name);
+          const result = await installPackage(pkgName);
           return result;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
