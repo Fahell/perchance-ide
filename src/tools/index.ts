@@ -4,6 +4,7 @@
 
 import { SlidingWindowRateLimiter, type RateLimitConfig, type RateLimitResult } from "../utils/rate-limiter.js";
 import { createContextTools } from "./context-tools.js";
+import { createNodeTools } from "./node-tools.js";
 import { createTerminalTools } from "./terminal-tools.js";
 import { createVfsTools } from "./vfs-tools.js";
 import { createWebTools } from "./web-search.js";
@@ -149,4 +150,14 @@ export function initTerminalTools(): void {
     toolCategories[name] = "terminal";
   }
   console.log("🐍 [Tools] Terminal tools registered:", Object.keys(terminalTools).join(", "));
+}
+
+// ─── Node.js Tools (BrowserPod) ─────────────────────────────
+export function initNodeTools(): void {
+  const nodeTools = createNodeTools();
+  Object.assign(tools, nodeTools);
+  for (const name of Object.keys(nodeTools)) {
+    toolCategories[name] = "node";
+  }
+  console.log("🟢 [Tools] Node.js tools registered:", Object.keys(nodeTools).join(", "));
 }

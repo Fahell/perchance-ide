@@ -21,6 +21,8 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
   const [toolCtx, setToolCtx] = useState(ideStore.getState().settings.toolContextEnabled);
   const [toolVfs, setToolVfs] = useState(ideStore.getState().settings.toolVfsEnabled);
   const [toolTerm, setToolTerm] = useState(ideStore.getState().settings.toolTerminalEnabled);
+  const [toolNode, setToolNode] = useState(ideStore.getState().settings.toolNodeEnabled);
+  const [bpKey, setBpKey] = useState(ideStore.getState().settings.browserPodApiKey);
 
   function handleAutoSaveToggle(e: Event) {
     const val = (e.target as HTMLSelectElement).value === "on";
@@ -41,6 +43,10 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
 
   const maskedKey = currentKey
     ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4)
+    : "none";
+
+  const maskedBpKey = bpKey
+    ? bpKey.slice(0, 6) + "..." + bpKey.slice(-4)
     : "none";
 
   return (
@@ -201,6 +207,62 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         </div>
         <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
           {t("settings.tools.terminal.desc", locale)}
+        </div>
+      </div>
+
+      {/* Node.js tools toggle */}
+      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tools.node", locale)}
+          </label>
+          <select
+            value={toolNode ? "on" : "off"}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value === "on";
+              setToolNode(val);
+              ideStore.getState().updateSettings({ toolNodeEnabled: val });
+            }}
+            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="on">{t("settings.toggle.on", locale)}</option>
+            <option value="off">{t("settings.toggle.off", locale)}</option>
+          </select>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.tools.node.desc", locale)}
+        </div>
+      </div>
+
+      {/* BrowserPod API Key */}
+      <div style={{ marginBottom: "14px" }}>
+        <label htmlFor="settings-bp-key" style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+          {t("settings.browserPodApiKey", locale)}
+        </label>
+        <input
+          id="settings-bp-key"
+          type="password"
+          value={bpKey}
+          onInput={(e) => {
+            const val = (e.target as HTMLInputElement).value;
+            setBpKey(val);
+            ideStore.getState().updateSettings({ browserPodApiKey: val });
+          }}
+          placeholder={t("settings.browserPodApiKey.placeholder", locale)}
+          style={{
+            width: "100%",
+            padding: "8px 10px",
+            border: `1px solid ${colors.border}`,
+            background: colors.surface1,
+            color: colors.text,
+            fontSize: "11px",
+            fontFamily: fonts.mono,
+            boxSizing: "border-box",
+            outline: "none",
+          }}
+        />
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.browserPodApiKey.current", locale).replace("{key}", maskedBpKey)}
         </div>
       </div>
 

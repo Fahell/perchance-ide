@@ -66,6 +66,7 @@ pnpm test:watch
 - **Python execution** via Pyodide WebAssembly (v314.0.2) in a dedicated Web Worker — keeps main thread responsive during load and execution; automatic VFS↔MEMFS bidirectional sync via message passing with incremental change propagation (no full snapshot on repeated executions)
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
+- **Node.js execution** via BrowserPod (remote Node.js runtime) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
 
 ### Code Editor
@@ -110,7 +111,7 @@ pnpm test:watch
 
 ### Agent Loop Internals
 
-- **Dynamic system prompt** built from enabled tool categories (web, context, VFS, terminal — each toggleable in settings)
+- **Dynamic system prompt** built from enabled tool categories (web, context, VFS, terminal, node — each toggleable in settings)
 - **Tool call parsing** via flat XML tags with CDATA sections — `<tool_call name="..."><param><![CDATA[value]]></param></tool_call>` — using depth-aware tag matching and auto-closing-tag repair
 - **Repetition detection** — warns at 3 consecutive identical calls, interrupts at 5
 - **Token estimation** heuristic: UTF-8 byte length / 4 (or / 3 for code-heavy content)
@@ -150,9 +151,13 @@ src/
 │   ├── repetition-detector.ts # Fingerprint-based loop prevention
 │   └── timeout-helpers.ts    # AbortSignal composition, withTimeout, aiCallWithSignal
 │
+├── browserpod/
+│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run()
+│
 ├── tools/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
 │   ├── context-tools.ts      # search_history (BM25-lite, trilingual stopwords) + get_messages
+│   ├── node-tools.ts         # Node.js tools (npm install, node script, npm command) via BrowserPod
 │   ├── vfs-tools.ts          # read/write/edit/list/search/delete/rename — diff-cache integration
 │   ├── terminal-tools.ts     # run_python, execute_script, install_package
 │   └── web-search.ts         # Jina AI search + scrape with TTL cache
@@ -258,6 +263,14 @@ The agent has access to the following tools, exposed through a generic `ToolDefi
 | `run_python`      | Execute Python via Pyodide (VFS auto-synced) | `{ code: string }`    |
 | `execute_script`  | Run a `.py` file from VFS                    | `{ path: string }`    |
 | `install_package` | Install via micropip (numpy, pandas, etc.)   | `{ pkgName: string }` |
+
+### Node.js Tools (BrowserPod)
+
+| Tool                  | Description                                          | Parameters                        |
+| --------------------- | ---------------------------------------------------- | --------------------------------- |
+| `run_npm_install`     | Install npm packages (or from package.json)          | `{ packages?: string }`           |
+| `run_node_script`     | Execute a Node.js script file in the BrowserPod env  | `{ path: string, args?: string }` |
+| `execute_npm_command` | Run an arbitrary npm command (test, build, start...) | `{ command: string }`             |
 
 ## Context Management Architecture
 
@@ -370,17 +383,18 @@ Vanilla Zustand store (`src/store.ts`) created with `createStore` and `subscribe
 
 ### State Slices
 
-| Slice        | Key Fields                      | Description                                                                        |
-| ------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
-| **Files**    | `activeFile`, `files[]`         | Open file tabs and active selection                                                |
-| **Editor**   | `editorView`, `settingsVersion` | Active EditorView ref, triggers recreation on settings change                      |
-| **Layout**   | `panelMode`, `sidebarVisible`   | 3-column layout configuration                                                      |
-| **Settings** | `settings`                      | Locale, fontSize, wordWrap, tabSize, autoSave, tool toggles (4)                    |
-| **Status**   | `isProcessing`, `statusMessage` | Processing indicator state                                                         |
-| **Pyodide**  | `pyodideStatus`, `pyodideError` | Python runtime loading state                                                       |
-| **VFS**      | `vfsVersion`                    | Incremented on file writes for preview reactivity                                  |
-| **Output**   | `outputs[]`                     | Python execution history (last 20 entries)                                         |
-| **Messages** | `messages[]`, `agentStatus`     | Panel chat messages and agent status (idle/thinking/searching/scraping/responding) |
+| Slice          | Key Fields                            | Description                                                                        |
+| -------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Files**      | `activeFile`, `files[]`               | Open file tabs and active selection                                                |
+| **Editor**     | `editorView`, `settingsVersion`       | Active EditorView ref, triggers recreation on settings change                      |
+| **Layout**     | `panelMode`, `sidebarVisible`         | 3-column layout configuration                                                      |
+| **Settings**   | `settings`                            | Locale, fontSize, wordWrap, tabSize, autoSave, tool toggles (5)                    |
+| **Status**     | `isProcessing`, `statusMessage`       | Processing indicator state                                                         |
+| **BrowserPod** | `browserPodStatus`, `browserPodError` | Node.js runtime (BrowserPod) loading state (idle/loading/ready/error)              |
+| **Pyodide**    | `pyodideStatus`, `pyodideError`       | Python runtime loading state                                                       |
+| **VFS**        | `vfsVersion`                          | Incremented on file writes for preview reactivity                                  |
+| **Output**     | `outputs[]`                           | Python execution history (last 20 entries)                                         |
+| **Messages**   | `messages[]`, `agentStatus`           | Panel chat messages and agent status (idle/thinking/searching/scraping/responding) |
 
 ### Key Actions
 
@@ -467,15 +481,17 @@ On first load without an API key, the **Setup Screen** wizard appears:
 
 Accessible via gear icon in header or `Ctrl+,`:
 
-| Setting           | Description                                                |
-| ----------------- | ---------------------------------------------------------- |
-| **Jina API Key**  | Web search and page scraping API key (validated on save)   |
-| **Language**      | UI locale selection (en, pt-BR, es, ja, zh)                |
-| **Auto Save**     | Auto-save files on change in editor                        |
-| **Web Tools**     | Enable/disable web_search and scrape_url tools             |
-| **Context Tools** | Enable/disable search_history and get_messages tools       |
-| **File Tools**    | Enable/disable all VFS tools (read, write, edit, etc.)     |
-| **Python Tools**  | Enable/disable run_python, execute_script, install_package |
+| Setting                | Description                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| **Jina API Key**       | Web search and page scraping API key (validated on save)       |
+| **Language**           | UI locale selection (en, pt-BR, es, ja, zh)                    |
+| **Auto Save**          | Auto-save files on change in editor (default: off)             |
+| **Web Tools**          | Enable/disable web_search and scrape_url tools                 |
+| **Context Tools**      | Enable/disable search_history and get_messages tools           |
+| **File Tools**         | Enable/disable all VFS tools (read, write, edit, etc.)         |
+| **Python Tools**       | Enable/disable run_python, execute_script, install_package     |
+| **Node.js Tools**      | Enable/disable npm/node tools via BrowserPod                   |
+| **BrowserPod API Key** | API key for BrowserPod Node.js runtime (console.browserpod.io) |
 
 ### Keyboard Shortcuts
 

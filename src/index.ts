@@ -12,7 +12,7 @@ import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
 import { loadSettings } from "./store.js";
-import { initContextTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
+import { initContextTools, initNodeTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
@@ -148,7 +148,7 @@ async function handleSendMessage(text: string, signal?: AbortSignal): Promise<vo
 }
 
 // ─── Start Agent ─────────────────────────────────────────────
-function startAgent() {
+async function startAgent() {
   // Initialize message store (load persisted messages)
   // Fire-and-forget: startup must not block rendering
   initMessageStore().catch((e) => console.error("[Agent] initMessageStore failed:", e));
@@ -236,6 +236,24 @@ function startAgent() {
 
   // Register terminal tools (run_python, execute_script, install_package)
   initTerminalTools();
+
+  // Register Node.js tools (BrowserPod) — conditional on settings
+  const { ideStore } = await import("./store.js");
+  if (ideStore.getState().settings.toolNodeEnabled) {
+    initNodeTools();
+    const bpKey = ideStore.getState().settings.browserPodApiKey;
+    if (bpKey) {
+      import("./browserpod/manager.js").then(({ browserPodManager }) => {
+        browserPodManager.boot({ apiKey: bpKey }).then((ok) => {
+          if (ok) {
+            ideStore.getState().setBrowserPodStatus("ready");
+          } else {
+            ideStore.getState().setBrowserPodStatus("error", browserPodManager.getError() ?? undefined);
+          }
+        });
+      });
+    }
+  }
 
   console.log("✅ [Agent] Ready!");
   console.log("💡 [Agent] Type in the sidebar panel to start.");
