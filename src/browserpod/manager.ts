@@ -9,6 +9,31 @@
  * Uses createCustomTerminal with onOutput callback for headless execution.
  */
 
+// ─── ANSI Strip & Error Detection ──────────────────────────
+// Same regex used by strip-ansi / ansi-regex (industry standard).
+// Implemented inline to avoid ESM/CJS bundling issues with esbuild single-file output.
+const ANSI_REGEX = /[\u001B\u009B][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g;
+
+function stripAnsi(input: string): string {
+  return input.replace(ANSI_REGEX, "");
+}
+
+/** Known Node.js fatal error patterns that indicate real failure despite exitCode 0 */
+const NODE_FATAL_PATTERNS = [
+  "ERR_INVALID_PACKAGE_CONFIG",
+  "EJSONPARSE",
+  "MODULE_NOT_FOUND",
+  "ERR_MODULE_NOT_FOUND",
+  "SyntaxError",
+  "Cannot find module",
+  "Invalid package config",
+  "Failed to parse root package.json",
+];
+
+function containsFatalError(output: string): boolean {
+  return NODE_FATAL_PATTERNS.some((pattern) => output.includes(pattern));
+}
+
 // ─── Types ──────────────────────────────────────────────────
 export type BrowserPodStatus = "idle" | "loading" | "ready" | "error";
 
@@ -236,12 +261,22 @@ class BrowserPodManager {
         const result = await this.pod.run(command, args, options);
 
         // Collect all captured output from onOutput callback
-        const stdout = this.outputBuffer.join("");
+        const rawStdout = this.outputBuffer.join("");
+
+        // Strip ANSI escape codes and terminal artifacts (e.g., "null:0 null")
+        const stdout = stripAnsi(rawStdout).replace(/^(?:null:\d+\s*null\s*)+/m, "").trimStart();
 
         // Safely extract exitCode if available (duck-typing)
-        const exitCode = (result != null && typeof result === "object" && "exitCode" in result)
+        let exitCode = (result != null && typeof result === "object" && "exitCode" in result)
           ? (result as { exitCode: number }).exitCode
           : 0;
+
+        // BrowserPod may return exitCode 0 even when Node.js fails fatally.
+        // Detect known fatal error patterns and correct the exit code.
+        if (exitCode === 0 && containsFatalError(stdout)) {
+          console.warn("[BrowserPod] Detected fatal error in output despite exitCode 0, correcting to 1");
+          exitCode = 1;
+        }
 
         return { stdout, stderr: "", exitCode };
       } catch (err) {
@@ -363,6 +398,16 @@ class BrowserPodManager {
 
     let synced = 0;
     for (const file of files) {
+      // Validate package.json before syncing to prevent corrupting the Pod environment
+      if (file.path.endsWith("package.json")) {
+        try {
+          JSON.parse(file.content);
+        } catch {
+          console.warn(`[BrowserPod] Skipping invalid package.json at ${file.path} — content is not valid JSON`);
+          continue;
+        }
+      }
+
       const ok = await this.writeFile(file.path, file.content);
       if (ok) synced++;
     }
