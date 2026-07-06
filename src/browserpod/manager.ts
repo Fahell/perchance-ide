@@ -142,7 +142,15 @@ class BrowserPodManager {
    * Execute a command inside the pod (e.g., "node", "npm").
    * Captures output via the custom terminal's onOutput callback.
    */
-  async run(command: string, args: string[] = [], cwd?: string): Promise<RunResult> {
+  /**
+   * Execute a command inside the pod (e.g., "node", "npm").
+   * Captures output via the custom terminal's onOutput callback.
+   *
+   * API signature: pod.run(command, args[], { terminal })
+   * Note: cwd is NOT supported natively by BrowserPod run().
+   * Files must be written to the pod's FS at the expected paths before execution.
+   */
+  async run(command: string, args: string[] = []): Promise<RunResult> {
     if (!this.pod) {
       return { stdout: "", stderr: "BrowserPod not initialized", exitCode: 1 };
     }
@@ -152,11 +160,10 @@ class BrowserPodManager {
       this.outputBuffer = [];
 
       const options: Record<string, unknown> = {};
-      if (cwd) options.cwd = cwd;
       if (this.terminal) options.terminal = this.terminal;
 
       // pod.run() resolves when the process exits — no .wait() needed.
-      // The resolved value is opaque; exitCode may or may not be present.
+      // Signature: pod.run(command, args[], { terminal })
       const result = await this.pod.run(command, args, options);
 
       // Collect all captured output from onOutput callback

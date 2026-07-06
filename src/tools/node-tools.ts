@@ -4,11 +4,37 @@
  * Provides npm install, node script execution, and arbitrary npm commands.
  * All tools delegate to browserPodManager singleton.
  *
+ * IMPORTANT: BrowserPod has an isolated filesystem. VFS files must be
+ * synced to the pod before execution via syncVfsToPod().
+ *
  * Tools are only registered when BrowserPod is enabled and booted.
  */
 
 import { browserPodManager } from "../browserpod/manager.js";
+import { vfsGetAll } from "../vfs.js";
 import type { Tool } from "./index.js";
+
+// ─── VFS Sync Helper ────────────────────────────────────────
+/**
+ * Sync all VFS files to the BrowserPod's isolated filesystem.
+ * Must be called before every command execution since the pod
+ * cannot see files created via VFS tools (write_file, edit_file, etc.).
+ */
+async function syncVfsToPod(): Promise<void> {
+  const entries = vfsGetAll();
+  if (entries.length === 0) return;
+
+  const vfsEntries = entries
+    .filter((e) => e.type === "file")
+    .map((e) => ({
+      path: e.path.startsWith("/") ? e.path : `/app/${e.path}`,
+      content: e.content ?? "",
+    }));
+
+  if (vfsEntries.length > 0) {
+    await browserPodManager.syncFiles(vfsEntries);
+  }
+}
 
 // ─── Tool: run_npm_install ──────────────────────────────────
 function createNpmInstallTool(): Tool {
@@ -28,11 +54,14 @@ function createNpmInstallTool(): Tool {
         return "Error: BrowserPod not initialized. Enable Node.js tools in settings and provide a valid API key.";
       }
 
+      // Sync VFS → Pod so package.json is visible
+      await syncVfsToPod();
+
       const packages = (args.packages as string | undefined)?.trim() ?? "";
       const cmdArgs = packages ? ["install", ...packages.split(/\s+/)] : ["install"];
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("npm", cmdArgs, "/app");
+      const result = await browserPodManager.run("npm", cmdArgs);
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
@@ -68,13 +97,16 @@ function createRunNodeScriptTool(): Tool {
         return "Error: BrowserPod not initialized.";
       }
 
+      // Sync VFS → Pod so the script file is visible
+      await syncVfsToPod();
+
       const scriptPath = toolArgs.path as string;
       const extraArgs = (toolArgs.args as string | undefined)?.trim();
       const cmdArgs = [scriptPath];
       if (extraArgs) cmdArgs.push(...extraArgs.split(/\s+/));
 
       console.log(`[NodeTools] node ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("node", cmdArgs, "/app");
+      const result = await browserPodManager.run("node", cmdArgs);
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
@@ -105,11 +137,14 @@ function createExecuteNpmCommandTool(): Tool {
         return "Error: BrowserPod not initialized.";
       }
 
+      // Sync VFS → Pod so project files are visible
+      await syncVfsToPod();
+
       const command = (args.command as string).trim();
       const cmdArgs = command.split(/\s+/);
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("npm", cmdArgs, "/app");
+      const result = await browserPodManager.run("npm", cmdArgs);
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",

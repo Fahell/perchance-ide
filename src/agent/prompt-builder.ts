@@ -74,7 +74,19 @@ export function buildToolPrompt(
 
   // Conditional: Node.js tools (BrowserPod)
   if (enabledCats.has("node")) {
-    sections.push(`NODE.JS (in-browser via BrowserPod, VFS auto-synced):\n- run_npm_install: Install dependencies from package.json.\n- run_node_script: Execute a .js/.mjs file from VFS.\n- execute_npm_command: Run arbitrary npm/npx commands (e.g. "npm test", "npx tsc").\n- stdout, stderr, and exit code captured.\n- Use Python tools for .py files; use Node.js tools for .js/.ts/npm workflows.`);
+    const nodeExample1 = [
+      `${tcOpen}`,
+      `  <name>run_node_script</name>`,
+      `  <path><![CDATA[hello.js]]></path>`,
+      `${tcClose}`,
+    ].join("\n");
+    const nodeExample2 = [
+      `${tcOpen}`,
+      `  <name>run_npm_install</name>`,
+      `  <packages><![CDATA[express lodash]]></packages>`,
+      `${tcClose}`,
+    ].join("\n");
+    sections.push(`NODE.JS (in-browser via BrowserPod, VFS auto-synced):\n- run_npm_install: Install dependencies from package.json or specific packages.\n- run_node_script: Execute a .js/.mjs file from VFS. Only parameters: path (required), args (optional).\n- execute_npm_command: Run arbitrary npm/npx commands (e.g. "test", "build", "run dev").\n- stdout, stderr, and exit code captured.\n- Use Python tools for .py files; use Node.js tools for .js/.ts/npm workflows.\n\nEXAMPLES:\n${nodeExample1}\n${nodeExample2}`);
   }
 
   // Tool call format instruction — uses flat XML tags with CDATA
