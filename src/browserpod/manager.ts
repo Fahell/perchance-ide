@@ -34,12 +34,11 @@ interface BrowserPodTerminal {
   // Opaque terminal handle — created via createDefaultTerminal or createCustomTerminal
 }
 
-interface BrowserPodProcess {
-  wait(): Promise<{ exitCode: number }>;
-}
+// Process is an opaque handle — pod.run() resolves when the process exits.
+// There is no .wait() method; the Promise itself resolves at completion.
 
 interface BrowserPodInstance {
-  run(command: string, args?: string[], options?: Record<string, unknown>): Promise<BrowserPodProcess>;
+  run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
   createFile(path: string, encoding?: string): Promise<BrowserPodFile>;
   openFile(path: string, encoding?: string): Promise<BrowserPodFile>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
@@ -156,13 +155,19 @@ class BrowserPodManager {
       if (cwd) options.cwd = cwd;
       if (this.terminal) options.terminal = this.terminal;
 
-      const process = await this.pod.run(command, args, options);
-      const result = await process.wait();
+      // pod.run() resolves when the process exits — no .wait() needed.
+      // The resolved value is opaque; exitCode may or may not be present.
+      const result = await this.pod.run(command, args, options);
 
-      // Collect all captured output
+      // Collect all captured output from onOutput callback
       const stdout = this.outputBuffer.join("");
 
-      return { stdout, stderr: "", exitCode: result.exitCode };
+      // Safely extract exitCode if available (duck-typing)
+      const exitCode = (result != null && typeof result === "object" && "exitCode" in result)
+        ? (result as { exitCode: number }).exitCode
+        : 0;
+
+      return { stdout, stderr: "", exitCode };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[BrowserPod] run(${command}) failed:`, message);
