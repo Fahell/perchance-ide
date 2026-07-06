@@ -39,11 +39,11 @@ interface BrowserPodTerminal {
 
 interface BrowserPodInstance {
   run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
-  createFile(path: string, type?: "text" | "binary"): Promise<BrowserPodFile>;
-  openFile(path: string, type?: "text" | "binary"): Promise<BrowserPodFile>;
+  createFile(path: string, encoding?: "utf-8" | "binary"): Promise<BrowserPodFile>;
+  openFile(path: string, encoding?: "utf-8" | "binary"): Promise<BrowserPodFile>;
   createDirectory(path: string): Promise<void>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
-  createCustomTerminal(config: { onOutput: (data: string) => void }): Promise<BrowserPodTerminal>;
+  createCustomTerminal(config: { onOutput: (data: string | Uint8Array | number[]) => void }): Promise<BrowserPodTerminal>;
   dispose(): Promise<void>;
 }
 
@@ -180,10 +180,12 @@ class BrowserPodManager {
       });
 
       // Create custom headless terminal with onOutput callback
-      // This is the correct headless approach per BrowserPod docs
+      // BrowserPod 2.0 delivers raw bytes (Uint8Array) — decode to UTF-8 string
+      const decoder = new TextDecoder("utf-8");
       this.terminal = await this.pod.createCustomTerminal({
-        onOutput: (data: string) => {
-          this.outputBuffer.push(data);
+        onOutput: (data: string | Uint8Array | number[]) => {
+          const text = typeof data === "string" ? data : decoder.decode(data instanceof Uint8Array ? data : new Uint8Array(data));
+          this.outputBuffer.push(text);
         },
       });
 
@@ -292,8 +294,8 @@ class BrowserPodManager {
         // Ensure parent directories exist first
         await this.ensureDirectory(path);
 
-        // createFile(path, "text") per BrowserPod 2.0 documentation.
-        const file = await this.pod.createFile(path, "text");
+        // createFile(path, "utf-8") per BrowserPod 2.0 debugging docs.
+        const file = await this.pod.createFile(path, "utf-8");
         await file.write(content);
         await file.close();
         return true;
@@ -323,7 +325,7 @@ class BrowserPodManager {
 
     for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
       try {
-        const file = await this.pod.openFile(path, "text");
+        const file = await this.pod.openFile(path, "utf-8");
         const content = await file.read();
         await file.close();
         return content;
