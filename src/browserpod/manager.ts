@@ -184,7 +184,14 @@ class BrowserPodManager {
       const decoder = new TextDecoder("utf-8");
       this.terminal = await this.pod.createCustomTerminal({
         onOutput: (data: string | Uint8Array | number[]) => {
-          const text = typeof data === "string" ? data : decoder.decode(data instanceof Uint8Array ? data : new Uint8Array(data));
+          let text: string;
+          if (typeof data === "string") {
+            text = data;
+          } else {
+            // Copy to non-shared buffer — TextDecoder rejects SharedArrayBuffer views
+            const bytes = new Uint8Array(data instanceof Uint8Array ? data.slice() : [...data]);
+            text = decoder.decode(bytes);
+          }
           this.outputBuffer.push(text);
         },
       });
