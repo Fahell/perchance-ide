@@ -29,6 +29,10 @@ interface BrowserPodFile {
   close(): Promise<void>;
 }
 
+interface BrowserPodTerminal {
+  // Opaque terminal handle returned by createDefaultTerminal
+}
+
 interface BrowserPodProcess {
   wait(): Promise<{ exitCode: number }>;
   stdout: ReadableStream<Uint8Array> | null;
@@ -39,6 +43,7 @@ interface BrowserPodInstance {
   run(command: string, args?: string[], options?: Record<string, unknown>): Promise<BrowserPodProcess>;
   createFile(path: string, encoding?: string): Promise<BrowserPodFile>;
   openFile(path: string, encoding?: string): Promise<BrowserPodFile>;
+  createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
   dispose(): Promise<void>;
 }
 
@@ -73,6 +78,7 @@ async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<st
 // ─── Manager ────────────────────────────────────────────────
 class BrowserPodManager {
   private pod: BrowserPodInstance | null = null;
+  private terminal: BrowserPodTerminal | null = null;
   private status: BrowserPodStatus = "idle";
   private error: string | null = null;
   private config: BrowserPodConfig | null = null;
@@ -110,6 +116,7 @@ class BrowserPodManager {
   /**
    * Boot the BrowserPod runtime. Must be called from main thread.
    * Requires valid API key from console.browserpod.io.
+   * Creates a headless terminal (offscreen div) required by pod.run().
    */
   async boot(config: BrowserPodConfig): Promise<boolean> {
     if (this.pod) {
@@ -134,6 +141,13 @@ class BrowserPodManager {
         storageKey: config.storageKey ?? "agent-perchance",
       });
 
+      // Create headless terminal — required by pod.run()
+      // Uses offscreen div since we don't have a visible terminal UI yet
+      const termContainer = document.createElement("div");
+      termContainer.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;";
+      document.body.appendChild(termContainer);
+      this.terminal = await this.pod.createDefaultTerminal(termContainer);
+
       this.setStatus("ready");
       console.log("[BrowserPod] Ready");
       return true;
@@ -142,12 +156,14 @@ class BrowserPodManager {
       console.error("[BrowserPod] Boot failed:", message);
       this.setStatus("error", message);
       this.pod = null;
+      this.terminal = null;
       return false;
     }
   }
 
   /**
    * Execute a command inside the pod (e.g., "node", "npm").
+   * Automatically passes the headless terminal created during boot.
    */
   async run(command: string, args: string[] = [], cwd?: string): Promise<RunResult> {
     if (!this.pod) {
@@ -157,6 +173,7 @@ class BrowserPodManager {
     try {
       const options: Record<string, unknown> = {};
       if (cwd) options.cwd = cwd;
+      if (this.terminal) options.terminal = this.terminal;
 
       const process = await this.pod.run(command, args, options);
 
@@ -234,6 +251,7 @@ class BrowserPodManager {
         console.error("[BrowserPod] dispose failed:", err);
       }
       this.pod = null;
+      this.terminal = null;
     }
     this.setStatus("idle");
     this.config = null;
