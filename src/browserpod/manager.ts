@@ -2,7 +2,7 @@
  * BrowserPod Manager — Singleton interface for Node.js runtime in browser.
  *
  * Wraps @leaningtech/browserpod API with lifecycle management,
- * VFS synchronization, and error recovery.
+ * VFS synchronization, error recovery, and automatic WebSocket reconnection.
  *
  * Architecture: Main-thread boot (required by BrowserPod API),
  * async communication pattern similar to pyodide-manager.
@@ -39,8 +39,8 @@ interface BrowserPodTerminal {
 
 interface BrowserPodInstance {
   run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
-  createFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
-  openFile(path: string, type?: "utf-8" | "binary"): Promise<BrowserPodFile>;
+  createFile(path: string, type?: "text" | "binary"): Promise<BrowserPodFile>;
+  openFile(path: string, type?: "text" | "binary"): Promise<BrowserPodFile>;
   createDirectory(path: string): Promise<void>;
   createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
   createCustomTerminal(config: { onOutput: (data: string) => void }): Promise<BrowserPodTerminal>;
@@ -51,6 +51,10 @@ interface BrowserPodClass {
   boot(config: { apiKey: string; storageKey?: string }): Promise<BrowserPodInstance>;
 }
 
+// ─── Constants ──────────────────────────────────────────────
+const MAX_RECONNECT_ATTEMPTS = 2;
+const RECONNECT_DELAY_MS = 1000;
+
 // ─── Manager ────────────────────────────────────────────────
 class BrowserPodManager {
   private pod: BrowserPodInstance | null = null;
@@ -60,6 +64,9 @@ class BrowserPodManager {
   private error: string | null = null;
   private config: BrowserPodConfig | null = null;
   private statusListeners: Array<(status: BrowserPodStatus, error: string | null) => void> = [];
+
+  /** Cache of last synced files for automatic re-sync after reconnection */
+  private lastSyncedFiles: Array<{ path: string; content: string }> = [];
 
   getStatus(): BrowserPodStatus {
     return this.status;
@@ -88,6 +95,60 @@ class BrowserPodManager {
         // Listener error should not break manager
       }
     }
+  }
+
+  /**
+   * Check if an error indicates a closed/closing WebSocket connection.
+   */
+  private isWebSocketError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return (
+      message.includes("CLOSING") ||
+      message.includes("CLOSED") ||
+      message.includes("WebSocket") ||
+      message.includes("connection") ||
+      message.includes("disconnected")
+    );
+  }
+
+  /**
+   * Reconnect to BrowserPod: dispose current instance, re-boot, and re-sync cached files.
+   * Returns true if reconnection succeeded.
+   */
+  private async reconnect(): Promise<boolean> {
+    if (!this.config) {
+      console.error("[BrowserPod] Cannot reconnect: no config stored");
+      return false;
+    }
+
+    console.log("[BrowserPod] Reconnecting...");
+
+    // Dispose current pod silently
+    if (this.pod) {
+      try {
+        await this.pod.dispose();
+      } catch {
+        // Ignore dispose errors during reconnection
+      }
+      this.pod = null;
+      this.terminal = null;
+    }
+
+    // Re-boot with same config
+    const booted = await this.boot(this.config);
+    if (!booted) {
+      console.error("[BrowserPod] Reconnection failed: boot unsuccessful");
+      return false;
+    }
+
+    // Re-sync cached files to the new pod instance
+    if (this.lastSyncedFiles.length > 0) {
+      console.log(`[BrowserPod] Re-syncing ${this.lastSyncedFiles.length} cached files after reconnection`);
+      await this.syncFiles(this.lastSyncedFiles);
+    }
+
+    console.log("[BrowserPod] Reconnected successfully");
+    return true;
   }
 
   /**
@@ -142,10 +203,7 @@ class BrowserPodManager {
   /**
    * Execute a command inside the pod (e.g., "node", "npm").
    * Captures output via the custom terminal's onOutput callback.
-   */
-  /**
-   * Execute a command inside the pod (e.g., "node", "npm").
-   * Captures output via the custom terminal's onOutput callback.
+   * Automatically reconnects and retries on WebSocket failure.
    *
    * API signature: pod.run(command, args[], { terminal })
    * Note: cwd is NOT supported natively by BrowserPod run().
@@ -156,31 +214,47 @@ class BrowserPodManager {
       return { stdout: "", stderr: "BrowserPod not initialized", exitCode: 1 };
     }
 
-    try {
-      // Clear output buffer before each execution
-      this.outputBuffer = [];
+    for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+      try {
+        // Clear output buffer before each execution
+        this.outputBuffer = [];
 
-      const options: Record<string, unknown> = {};
-      if (this.terminal) options.terminal = this.terminal;
+        const options: Record<string, unknown> = {};
+        if (this.terminal) options.terminal = this.terminal;
 
-      // pod.run() resolves when the process exits — no .wait() needed.
-      // Signature: pod.run(command, args[], { terminal })
-      const result = await this.pod.run(command, args, options);
+        // pod.run() resolves when the process exits — no .wait() needed.
+        // Signature: pod.run(command, args[], { terminal })
+        const result = await this.pod.run(command, args, options);
 
-      // Collect all captured output from onOutput callback
-      const stdout = this.outputBuffer.join("");
+        // Collect all captured output from onOutput callback
+        const stdout = this.outputBuffer.join("");
 
-      // Safely extract exitCode if available (duck-typing)
-      const exitCode = (result != null && typeof result === "object" && "exitCode" in result)
-        ? (result as { exitCode: number }).exitCode
-        : 0;
+        // Safely extract exitCode if available (duck-typing)
+        const exitCode = (result != null && typeof result === "object" && "exitCode" in result)
+          ? (result as { exitCode: number }).exitCode
+          : 0;
 
-      return { stdout, stderr: "", exitCode };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[BrowserPod] run(${command}) failed:`, message);
-      return { stdout: "", stderr: message, exitCode: 1 };
+        return { stdout, stderr: "", exitCode };
+      } catch (err) {
+        if (attempt < MAX_RECONNECT_ATTEMPTS && this.isWebSocketError(err)) {
+          console.warn(`[BrowserPod] run(${command}) WebSocket error (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS + 1}), reconnecting...`);
+          const reconnected = await this.reconnect();
+          if (!reconnected) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { stdout: "", stderr: `Reconnection failed: ${message}`, exitCode: 1 };
+          }
+          // Wait briefly before retry
+          await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
+          continue;
+        }
+
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[BrowserPod] run(${command}) failed:`, message);
+        return { stdout: "", stderr: message, exitCode: 1 };
+      }
     }
+
+    return { stdout: "", stderr: "Max reconnection attempts exceeded", exitCode: 1 };
   }
 
   /**
@@ -208,47 +282,76 @@ class BrowserPodManager {
   /**
    * Write a file into the pod's virtual filesystem.
    * Creates parent directories recursively before writing.
+   * Automatically reconnects and retries on WebSocket failure.
    */
   async writeFile(path: string, content: string): Promise<boolean> {
     if (!this.pod) return false;
 
-    try {
-      // Ensure parent directories exist first
-      await this.ensureDirectory(path);
+    for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+      try {
+        // Ensure parent directories exist first
+        await this.ensureDirectory(path);
 
-      // createFile(path, "utf-8") per official error debugging docs.
-      // "text" causes "Unsupported mode argument"; "utf-8" is the correct value.
-      const file = await this.pod.createFile(path, "utf-8");
-      await file.write(content);
-      await file.close();
-      return true;
-    } catch (err) {
-      console.error(`[BrowserPod] writeFile(${path}) failed:`, err);
-      return false;
+        // createFile(path, "text") per BrowserPod 2.0 documentation.
+        const file = await this.pod.createFile(path, "text");
+        await file.write(content);
+        await file.close();
+        return true;
+      } catch (err) {
+        if (attempt < MAX_RECONNECT_ATTEMPTS && this.isWebSocketError(err)) {
+          console.warn(`[BrowserPod] writeFile(${path}) WebSocket error (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS + 1}), reconnecting...`);
+          const reconnected = await this.reconnect();
+          if (!reconnected) return false;
+          await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
+          continue;
+        }
+
+        console.error(`[BrowserPod] writeFile(${path}) failed:`, err);
+        return false;
+      }
     }
+
+    return false;
   }
 
   /**
    * Read a file from the pod's virtual filesystem.
+   * Automatically reconnects and retries on WebSocket failure.
    */
   async readFile(path: string): Promise<string | null> {
     if (!this.pod) return null;
 
-    try {
-      const file = await this.pod.openFile(path, "utf-8");
-      const content = await file.read();
-      await file.close();
-      return content;
-    } catch (err) {
-      console.error(`[BrowserPod] readFile(${path}) failed:`, err);
-      return null;
+    for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+      try {
+        const file = await this.pod.openFile(path, "text");
+        const content = await file.read();
+        await file.close();
+        return content;
+      } catch (err) {
+        if (attempt < MAX_RECONNECT_ATTEMPTS && this.isWebSocketError(err)) {
+          console.warn(`[BrowserPod] readFile(${path}) WebSocket error (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS + 1}), reconnecting...`);
+          const reconnected = await this.reconnect();
+          if (!reconnected) return null;
+          await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
+          continue;
+        }
+
+        console.error(`[BrowserPod] readFile(${path}) failed:`, err);
+        return null;
+      }
     }
+
+    return null;
   }
 
   /**
    * Sync multiple files from VFS to the pod.
+   * Caches files for automatic re-sync after WebSocket reconnection.
    */
   async syncFiles(files: Array<{ path: string; content: string }>): Promise<number> {
+    // Update cache for reconnection recovery
+    this.lastSyncedFiles = [...files];
+
     let synced = 0;
     for (const file of files) {
       const ok = await this.writeFile(file.path, file.content);
@@ -272,6 +375,7 @@ class BrowserPodManager {
       this.terminal = null;
     }
     this.outputBuffer = [];
+    this.lastSyncedFiles = [];
     this.setStatus("idle");
     this.config = null;
     console.log("[BrowserPod] Disposed");
