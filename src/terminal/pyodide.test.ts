@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { installPackage } from "./pyodide.js";
 
 describe("installPackage - security validation", () => {
@@ -74,7 +74,7 @@ describe("installPackage - security validation", () => {
         expect(err.message).not.toContain('Invalid package name');
       }
     }
-  });
+  }, 30_000); // Extended timeout: retry logic adds ~20s in jsdom (Worker unavailable)
 
   it("should reject names with spaces", async () => {
     const namesWithSpaces = [

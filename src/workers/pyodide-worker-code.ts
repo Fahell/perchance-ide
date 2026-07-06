@@ -73,7 +73,6 @@ async function initPyodide(requestId) {
   }
 
   loading = true;
-  sendMsg({ type: "log", message: "Loading Pyodide..." });
 
   try {
     const PYODIDE_MJS = "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.mjs";
@@ -83,7 +82,6 @@ async function initPyodide(requestId) {
     });
     loading = false;
     sendMsg({ type: "ready", requestId });
-    sendMsg({ type: "log", message: "Pyodide loaded successfully (v314.0.2)" });
   } catch (err) {
     loading = false;
     loadError = String(err.message || err);
@@ -227,5 +225,4 @@ self.onmessage = async (e) => {
   }
 };
 
-sendMsg({ type: "log", message: "Pyodide worker started" });
 `;

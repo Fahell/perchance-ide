@@ -42,8 +42,10 @@ export interface PythonWorkerResult {
 // ─── Constants ──────────────────────────────────────────────
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
-const INIT_TIMEOUT_MS = 60_000;     // 1 minute for Pyodide load
+const INIT_TIMEOUT_MS = 180_000;     // 3 minutes for Pyodide load
 const PACKAGE_TIMEOUT_MS = 120_000; // 2 minutes for package install
+const MAX_INIT_RETRIES = 2;
+const INIT_RETRY_DELAYS = [5_000, 15_000]; // backoff: 5s, 15s
 
 // ─── Manager ────────────────────────────────────────────────
 
@@ -79,46 +81,92 @@ export class PyodideWorkerManager {
     if (this._ready) return;
     if (this._readyPromise) return this._readyPromise;
 
-    this._readyPromise = this._doInit();
+    this._readyPromise = this._doInitWithRetry();
     return this._readyPromise;
   }
 
-  private async _doInit(): Promise<void> {
-    try {
-      // Create inline worker from embedded code
-      const blob = new Blob([PYODIDE_WORKER_CODE], { type: "application/javascript" });
-      this._blobUrl = URL.createObjectURL(blob);
-      this.worker = new Worker(this._blobUrl, { type: "module" });
+  private async _doInitWithRetry(): Promise<void> {
+    let lastError: Error | null = null;
 
-      // Set up message handler
-      this.worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
-        this._handleMessage(e.data);
-      };
+    for (let attempt = 0; attempt <= MAX_INIT_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delay = INIT_RETRY_DELAYS[attempt - 1] ?? INIT_RETRY_DELAYS[INIT_RETRY_DELAYS.length - 1];
+        console.log(`🐍 [Pyodide] Retry ${attempt}/${MAX_INIT_RETRIES} in ${delay / 1000}s...`);
+        await new Promise((r) => setTimeout(r, delay));
+        // Terminate failed worker before retrying
+        this._cleanupWorker();
+      }
 
-      this.worker.onerror = (e: ErrorEvent) => {
-        console.error("[PyodideWorker] Worker error:", e.message);
-        this._error = e.message || "Worker error";
-        // Reject all pending requests
-        for (const [id, pending] of this.pendingRequests) {
-          clearTimeout(pending.timer);
-          pending.reject(new Error(this._error!));
+      try {
+        await this._doInit();
+        return; // Success
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const isTimeout = lastError.name === "AbortError" || lastError.message.includes("timed out");
+        if (!isTimeout && attempt < MAX_INIT_RETRIES) {
+          // Non-timeout errors: still retry but log differently
+          console.warn(`🐍 [Pyodide] Init attempt ${attempt + 1} failed:`, lastError.message);
+        } else if (!isTimeout) {
+          // Non-timeout on last attempt: fail immediately
+          break;
         }
-        this.pendingRequests.clear();
-      };
-
-      // Send init command
-      const requestId = this._nextRequestId();
-      this.worker.postMessage({ type: "init", requestId });
-
-      // Wait for ready response with timeout
-      await this._waitForResponse(requestId, INIT_TIMEOUT_MS);
-      this._ready = true;
-      console.log("🐍 [PyodideWorker] Ready");
-    } catch (err) {
-      this._error = err instanceof Error ? err.message : String(err);
-      console.error("🐍 [PyodideWorker] Init failed:", this._error);
-      throw err;
+      }
     }
+
+    this._error = lastError?.message ?? "Unknown init error";
+    console.error("🐍 [Pyodide] All init attempts failed:", this._error);
+    throw lastError;
+  }
+
+  private _cleanupWorker(): void {
+    if (this.worker) {
+      this.worker.onmessage = null;
+      this.worker.onerror = null;
+      this.worker.terminate();
+      this.worker = null;
+    }
+    if (this._blobUrl) {
+      URL.revokeObjectURL(this._blobUrl);
+      this._blobUrl = null;
+    }
+    // Reject pending requests from previous attempt
+    for (const [, pending] of this.pendingRequests) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingRequests.clear();
+    this._ready = false;
+  }
+
+  private async _doInit(): Promise<void> {
+    // Create inline worker from embedded code
+    const blob = new Blob([PYODIDE_WORKER_CODE], { type: "application/javascript" });
+    this._blobUrl = URL.createObjectURL(blob);
+    this.worker = new Worker(this._blobUrl, { type: "module" });
+
+    // Set up message handler
+    this.worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+      this._handleMessage(e.data);
+    };
+
+    this.worker.onerror = (e: ErrorEvent) => {
+      console.error("🐍 [Pyodide] Worker error:", e.message);
+      this._error = e.message || "Worker error";
+      // Reject all pending requests
+      for (const [id, pending] of this.pendingRequests) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error(this._error!));
+      }
+      this.pendingRequests.clear();
+    };
+
+    // Send init command
+    const requestId = this._nextRequestId();
+    this.worker.postMessage({ type: "init", requestId });
+
+    // Wait for ready response with timeout
+    await this._waitForResponse(requestId, INIT_TIMEOUT_MS);
+    this._ready = true;
+    console.log("🐍 [Pyodide] Ready");
   }
 
   /**
@@ -196,9 +244,8 @@ export class PyodideWorkerManager {
   }
 
   private _handleMessage(msg: WorkerMessage): void {
-    // Handle log messages (no requestId)
+    // Handle log messages (no requestId) — forward to callback only, no console duplication
     if (msg.type === "log") {
-      console.log("🐍 [PyodideWorker]", msg.message);
       this.onLog?.(msg.message ?? "");
       return;
     }
