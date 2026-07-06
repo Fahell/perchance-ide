@@ -36,6 +36,7 @@ export function buildToolPrompt(
   if (settings.toolContextEnabled) enabledCats.add("context");
   if (settings.toolVfsEnabled) enabledCats.add("vfs");
   if (settings.toolTerminalEnabled) enabledCats.add("terminal");
+  if (settings.toolNodeEnabled) enabledCats.add("node");
 
   // Build conditional sections based on enabled categories
   const sections: string[] = [];
@@ -44,7 +45,8 @@ export function buildToolPrompt(
 
   sections.push(`KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.`);
 
-  sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}`);
+  const bpStatus = ideStore.getState().browserPodStatus;
+  sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}\n- Node.js: ${bpStatus === "ready" ? "● Ready (BrowserPod)" : bpStatus === "error" ? "✗ Error" : "○ Not available"}`);
 
   sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple responses`);
 
@@ -68,6 +70,11 @@ export function buildToolPrompt(
   // Conditional: Terminal tools
   if (enabledCats.has("terminal")) {
     sections.push(`PYTHON (in-browser via Pyodide, VFS auto-synced):\n- run_python: Quick snippets.\n- execute_script: Run a .py file from VFS.\n- install_package: Install packages (numpy, pandas, etc.).\n- stdout, stderr, and exit code captured.`);
+  }
+
+  // Conditional: Node.js tools (BrowserPod)
+  if (enabledCats.has("node")) {
+    sections.push(`NODE.JS (in-browser via BrowserPod, VFS auto-synced):\n- run_npm_install: Install dependencies from package.json.\n- run_node_script: Execute a .js/.mjs file from VFS.\n- execute_npm_command: Run arbitrary npm/npx commands (e.g. "npm test", "npx tsc").\n- stdout, stderr, and exit code captured.\n- Use Python tools for .py files; use Node.js tools for .js/.ts/npm workflows.`);
   }
 
   // Tool call format instruction — uses flat XML tags with CDATA
