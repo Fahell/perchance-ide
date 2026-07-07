@@ -8,6 +8,7 @@
     "build:watch": "node esbuild.config.mjs --watch",
     "dev": "node esbuild.config.mjs --watch",
     "deploy": "bash deploy.sh",
+    "deploy:branch": "bash deploy-branch.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
