@@ -31,8 +31,9 @@ git commit -m "deploy: v${VERSION} (${BRANCH})" || echo "Nothing to commit"
 echo "🚀 Pushing branch '${BRANCH}'..."
 git push --set-upstream origin "${BRANCH}"
 
-# Use @branch instead of @commit — jsDelivr auto-resolves to latest commit on branch
-IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${BRANCH}/dist/agent.js"
+# Use @commit-hash for cache-busting — each push generates a unique immutable URL
+COMMIT_HASH=$(git rev-parse HEAD)
+IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${COMMIT_HASH}/dist/agent.js"
 
 cat > IMPORT.md << EOF
 # Import URL (Branch: ${BRANCH})
@@ -47,8 +48,8 @@ Add an HTML panel to your generator with:
 
 Also add \`agentAi = {import:ai-text-plugin}\` to your list panel.
 
-> ⚠️ This URL points to the **latest commit** on branch \`${BRANCH}\`.
-> It auto-updates on every push. For production, use \`pnpm deploy\` on \`main\`.
+> 📌 This URL points to commit \`${COMMIT_HASH}\` on branch \`${BRANCH}\`.
+> Each push generates a new unique URL (cache-busting). For production, use \`pnpm deploy\` on \`main\`.
 EOF
 echo "📄 Generated IMPORT.md (branch: ${BRANCH})"
 
@@ -61,4 +62,5 @@ echo ""
 echo "✅ Deployed to branch!"
 echo "   Version: ${VERSION}"
 echo "   Branch:  ${BRANCH}"
+echo "   Commit:  ${COMMIT_HASH}"
 echo "   URL:     ${IMPORT_URL}"
