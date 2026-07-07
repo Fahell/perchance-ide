@@ -24,7 +24,12 @@ echo "🌿 Branch: ${BRANCH}"
 echo "🔨 Building..."
 COMMIT=$(git rev-parse --short HEAD) pnpm build
 
-echo "📦 Committing..."
+if [ ! -f "dist/agent.js" ]; then
+  echo "❌ Build failed: dist/agent.js not found. Aborting deploy."
+  exit 1
+fi
+
+echo "📦 Committing build output..."
 git add -A
 git commit -m "deploy: v${VERSION} (${BRANCH})" || echo "Nothing to commit"
 
@@ -53,8 +58,8 @@ Also add \`agentAi = {import:ai-text-plugin}\` to your list panel.
 EOF
 echo "📄 Generated IMPORT.md (branch: ${BRANCH})"
 
-# Amend commit to include IMPORT.md
-git add IMPORT.md
+# Amend commit to include IMPORT.md and dist/agent.js
+git add IMPORT.md dist/agent.js
 git commit --amend --no-edit || true
 git push --force-with-lease
 
