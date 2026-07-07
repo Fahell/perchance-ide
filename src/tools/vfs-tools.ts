@@ -14,8 +14,8 @@ import { truncateOutput } from "../utils/truncate.js";
 import { trackedDelete, trackedRename, trackedWrite } from "../vfs-events.js";
 import { scheduleVfsPersist } from "../vfs-persist.js";
 import {
-  vfsExists,
   PROJECT_ROOT,
+  vfsExists,
   vfsGetAll,
   vfsRead,
   vfsTree,
@@ -250,26 +250,23 @@ export function createVfsTools(): Record<string, Tool> {
         const events = trackedRename(oldPath, newPath);
         if (events.length === 0) return `Error: Could not rename ${oldPath} to ${newPath}.`;
 
-        // Update open tabs (close old path, open new path)
+        // Flush editor buffer for the file being renamed (if open)
+        document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
+          detail: { path: oldPath },
+        }));
+
+        // Update open tabs in-place (preserves dirty flag, cursor, undo history)
+        ideStore.getState().renameFile(oldPath, newPath);
+
+        // Handle descendant tabs (files inside renamed folder)
         const state = ideStore.getState();
         for (const f of [...state.files]) {
-          if (f.path === oldPath) {
-            state.closeFile(oldPath);
-            const ext = newPath.split(".").pop()?.toLowerCase() ?? "js";
-            state.openFile(
-              newPath,
-              newPath.split("/").filter(Boolean).pop() ?? newPath,
-              ext
-            );
-          } else if (f.path.startsWith(oldPath + "/")) {
+          if (f.path.startsWith(oldPath + "/")) {
             const newTabPath = newPath + f.path.slice(oldPath.length);
-            state.closeFile(f.path);
-            const ext = newTabPath.split(".").pop()?.toLowerCase() ?? "js";
-            state.openFile(
-              newTabPath,
-              newTabPath.split("/").filter(Boolean).pop() ?? newTabPath,
-              ext
-            );
+            document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
+              detail: { path: f.path },
+            }));
+            state.renameFile(f.path, newTabPath);
           }
         }
 

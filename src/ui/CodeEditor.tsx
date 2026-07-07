@@ -15,8 +15,8 @@ import { getEmmetExtensions } from "../editor/emmet.js";
 import { setCurrentView } from "../editor/view-store.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
-import { trackedWrite } from "../vfs-events.js";
-import { scheduleVfsPersist, flushVfsPersist, cancelScheduledPersist } from "../vfs-persist.js";
+import { getHash, onVfsChange, trackedWrite } from "../vfs-events.js";
+import { cancelScheduledPersist, flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import { vfsExists, vfsRead } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
@@ -43,6 +43,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const viewRef = useRef<import("codemirror").EditorView | null>(null);
   const debounceRef = useRef<number | null>(null);
   const [pendingCloseFile, setPendingCloseFile] = useState<string | null>(null);
+  const lastSavedHashRef = useRef<string | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -100,6 +101,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
 
     // Read content from VFS
     const content = vfsRead(path) ?? "";
+    lastSavedHashRef.current = getHash(path) ?? null;
 
     let cancelled = false;
     (async () => {
@@ -131,6 +133,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             // Skip auto-save if disabled in settings
             if (!ideStore.getState().settings.autoSave) return;
             trackedWrite(path, doc);
+            lastSavedHashRef.current = getHash(path) ?? null;
             ideStore.getState().setFileDirty(path, false);
             ideStore.getState().setFileSaveStatus(path, "saved");
             ideStore.getState().bumpVfsVersion();
@@ -159,6 +162,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       // Flush debounced write
       if (debounceRef.current) clearTimeout(debounceRef.current);
       trackedWrite(path, viewRef.current.state.doc.toString());
+      lastSavedHashRef.current = getHash(path) ?? null;
       ideStore.getState().setFileDirty(path, false);
       ideStore.getState().setFileSaveStatus(path, "saved");
       ideStore.getState().bumpVfsVersion();
@@ -172,6 +176,71 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     return () => document.removeEventListener("editor:flush-save", handleFlushSave);
   }, []);
 
+  // ── Listen for flush-before-rename event (from TabBar rename) ──
+  useEffect(() => {
+    function handleFlushBeforeRename(e: Event) {
+      const { path } = (e as CustomEvent).detail as { path: string };
+      if (!viewRef.current) return;
+      const currentPath = ideStore.getState().activeFile;
+      if (path !== currentPath) return;
+      // Cancel pending debounce and flush buffer to VFS immediately
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      trackedWrite(path, viewRef.current.state.doc.toString());
+      lastSavedHashRef.current = getHash(path) ?? null;
+      ideStore.getState().setFileDirty(path, false);
+      scheduleVfsPersist();
+    }
+    document.addEventListener("editor:flush-before-rename", handleFlushBeforeRename);
+    return () => document.removeEventListener("editor:flush-before-rename", handleFlushBeforeRename);
+  }, []);
+
+  // ── Subscribe to VFS changes (external writes, deletes, renames) ──
+  useEffect(() => {
+    const unsub = onVfsChange((event) => {
+      if (!mountedRef.current) return;
+      const currentPath = ideStore.getState().activeFile;
+      if (!currentPath || !viewRef.current) return;
+
+      if (event.type === "deleted") {
+        // Close tab if the deleted path matches any open tab
+        const deletedPath = event.path;
+        const state = ideStore.getState();
+        for (const f of [...state.files]) {
+          if (f.path === deletedPath || f.path.startsWith(deletedPath + "/")) {
+            state.closeFile(f.path);
+          }
+        }
+        return;
+      }
+
+      if (event.type === "modified" || event.type === "created") {
+        // Only sync if this is the active file and hash differs from our last save
+        if (event.path !== currentPath) return;
+        if (event.currentHash && event.currentHash === lastSavedHashRef.current) return;
+        // External change detected — reload buffer from VFS
+        const newContent = vfsRead(currentPath);
+        if (newContent === null) return;
+        const view = viewRef.current;
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: newContent },
+        });
+        lastSavedHashRef.current = event.currentHash ?? getHash(currentPath) ?? null;
+        ideStore.getState().setFileDirty(currentPath, false);
+      }
+
+      if (event.type === "renamed") {
+        // If the renamed file is currently active, update refs
+        if (event.fromPath === currentPath) {
+          prevActiveRef.current = event.toPath ?? null;
+          lastSavedHashRef.current = event.currentHash ?? null;
+        }
+      }
+    });
+    return unsub;
+  }, []);
   // ── Listen for close-tab requests (from Ctrl+W) ────────
   useEffect(() => {
     function handleCloseTabRequest(e: Event) {
@@ -228,7 +297,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   }
 
   function doCloseFile(path: string) {
-    if (viewRef.current && path === activeFile) {
+    if (viewRef.current && path === activeFile && vfsExists(path)) {
       trackedWrite(path, viewRef.current.state.doc.toString());
       scheduleVfsPersist();
     }
@@ -406,6 +475,10 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
     parts.pop();
     const newPath = "/" + [...parts, renameValue.trim()].join("/");
     if (newPath !== renamingPath) {
+      // Flush editor buffer before rename to prevent stale content
+      document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
+        detail: { path: renamingPath },
+      }));
       ideStore.getState().renameFile(renamingPath, newPath);
     }
     setRenamingPath(null);

@@ -75,7 +75,9 @@ pnpm test:watch
 
 - **CodeMirror 6-based** tabbed editor with syntax highlighting for JS/TS/JSX/TSX, HTML, CSS, JSON, Markdown, Python
 - **Undo/redo stacks** per file with state persistence
-- **Auto-save** to VFS (debounced 500ms)
+- **Auto-save** to VFS (debounced 500ms) with `lastSavedHash` tracking to detect external changes
+- **Live VFS sync** — editor subscribes to `onVfsChange` events: reloads content on external edits (hash-diff guarded), closes tabs on deletes, updates refs on renames
+- **Flush-before-rename** — editor buffer is saved via `editor:flush-before-rename` custom event before file rename operations, preventing stale content
 - **Emmet** support for HTML/CSS expansion
 - **Settings**: font size, tab size, word wrap — all persisted to localStorage
 
@@ -212,7 +214,7 @@ src/
     ├── SettingsModal.tsx     # API key, language, auto-save, tool toggles
     ├── ContextViewer.tsx     # Token budget, summary, tier visualization, memories
     ├── FaqModal.tsx          # FAQ with project links
-    ├── CodeEditor.tsx        # CM6 tabbed editor — auto-save, dirty tracking
+    ├── CodeEditor.tsx        # CM6 tabbed editor — auto-save, dirty tracking, VFS change subscription for external edits, flush-before-rename event handling
     ├── DiffView.tsx          # Unified diff with collapsible unchanged regions
     ├── FileSearchModal.tsx   # Ctrl+P fuzzy file search
     ├── PreviewPanel.tsx      # Live HTML preview via sandboxed iframe

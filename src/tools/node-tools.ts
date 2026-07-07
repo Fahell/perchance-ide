@@ -13,6 +13,7 @@
 import { browserPodManager } from "../browserpod/manager.js";
 import { vfsGetAll, vfsWrite } from "../vfs.js";
 import type { Tool } from "./index.js";
+import { pullProjectFilesFromPod } from "./shell-tools.js";
 
 // ─── VFS Sync Helper ────────────────────────────────────────
 /**
@@ -83,7 +84,7 @@ function createNpmInstallTool(): Tool {
 
       // Pull metadata back to VFS so agent can see package.json changes
       if (result.exitCode === 0) {
-        await pullMetadataFromPod();
+        await pullProjectFilesFromPod();
       }
 
       const output = [
@@ -130,6 +131,9 @@ function createRunNodeScriptTool(): Tool {
 
       console.log(`[NodeTools] node ${cmdArgs.join(" ")}`);
       const result = await browserPodManager.run("node", cmdArgs);
+
+      // Pull any file changes made by the script back to VFS
+      await pullProjectFilesFromPod();
 
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
