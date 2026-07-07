@@ -329,8 +329,12 @@ class BrowserPodManager {
     try {
       // BrowserPod supports { recursive: true } for creating intermediate directories
       await this.pod.createDirectory(parentDir, { recursive: true });
-    } catch {
-      // Directory may already exist — ignore errors
+    } catch (err) {
+      // EEXIST is benign — directory already exists. Other errors should be logged.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("exists") && !msg.includes("EEXIST")) {
+        console.warn(`[BrowserPod] ensureDirectory(${parentDir}) unexpected error:`, msg);
+      }
     }
   }
 
@@ -351,6 +355,15 @@ class BrowserPodManager {
         const file = await this.pod.createFile(path, "utf-8");
         await file.write(content);
         await file.close();
+
+        // Track for reconnection recovery (used by subscribeToVfsChanges writes too)
+        const existingIdx = this.lastSyncedFiles.findIndex((f) => f.path === path);
+        if (existingIdx >= 0) {
+          this.lastSyncedFiles[existingIdx] = { path, content };
+        } else {
+          this.lastSyncedFiles.push({ path, content });
+        }
+
         return true;
       } catch (err) {
         if (attempt < MAX_RECONNECT_ATTEMPTS && this.isWebSocketError(err)) {
@@ -377,14 +390,17 @@ class BrowserPodManager {
     if (!this.pod) return null;
 
     for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+      let file: any = null;
       try {
-        const file = await this.pod.openFile(path, "utf-8");
+        file = await this.pod.openFile(path, "utf-8");
         const content = await file.read();
         await file.close();
+        file = null; // prevent double-close in finally
         return content;
       } catch (err) {
         if (attempt < MAX_RECONNECT_ATTEMPTS && this.isWebSocketError(err)) {
           console.warn(`[BrowserPod] readFile(${path}) WebSocket error (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS + 1}), reconnecting...`);
+          if (file) try { await file.close(); } catch { /* ignore close errors during reconnect */ }
           const reconnected = await this.reconnect();
           if (!reconnected) return null;
           await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
@@ -393,6 +409,9 @@ class BrowserPodManager {
 
         console.error(`[BrowserPod] readFile(${path}) failed:`, err);
         return null;
+      } finally {
+        // Ensure file handle is closed even if read() throws
+        if (file) try { await file.close(); } catch { /* best-effort close */ }
       }
     }
 
@@ -473,7 +492,14 @@ class BrowserPodManager {
   async listFiles(dir: string): Promise<string[]> {
     if (!this.pod) return [];
 
-    const result = await this.run("find", [dir, "-type", "f"]);
+    // Exclude common non-project directories to avoid traversing heavy trees (node_modules, .git, etc.)
+    const result = await this.run("find", [
+      dir, "-type", "f",
+      "-not", "-path", "*/node_modules/*",
+      "-not", "-path", "*/.git/*",
+      "-not", "-path", "*/.npm/*",
+      "-not", "-path", "*/__pycache__/*",
+    ]);
     if (result.exitCode !== 0) {
       console.warn(`[BrowserPod] listFiles(${dir}) find exited with code ${result.exitCode}`);
       return [];

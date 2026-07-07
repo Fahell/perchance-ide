@@ -12,35 +12,9 @@
 
 import { browserPodManager } from "../browserpod/manager.js";
 import { ideStore } from "../store.js";
-import { PROJECT_ROOT, vfsDeleteTree, vfsGetAll, vfsWrite } from "../vfs.js";
+import { PROJECT_ROOT, vfsDeleteTree } from "../vfs.js";
 import type { Tool } from "./index.js";
-
-// ─── VFS Sync Helper (bidirectional reconciliation) ─────────
-async function syncVfsToPod(): Promise<void> {
-  const entries = vfsGetAll();
-
-  // Push: write all VFS files to Pod
-  const vfsFiles = entries
-    .filter((e) => e.type === "file")
-    .map((e) => ({ path: e.path, content: e.content ?? "" }));
-
-  if (vfsFiles.length > 0) {
-    await browserPodManager.syncFiles(vfsFiles);
-  }
-
-  // Reconcile VFS → Pod: delete files in Pod that were previously synced
-  // but no longer exist in the VFS. Only targets files under PROJECT_ROOT
-  // that are tracked by lastSyncedFiles cache (avoids deleting npm artifacts).
-  const vfsFilePaths = new Set(vfsFiles.map((f) => f.path));
-  const cachedPaths = browserPodManager.getLastSyncedPaths();
-
-  for (const cachedPath of cachedPaths) {
-    if (!vfsFilePaths.has(cachedPath) && cachedPath.startsWith(PROJECT_ROOT + "/")) {
-      const ok = await browserPodManager.deleteFile(cachedPath);
-      if (ok) console.log(`[ShellTools] Deleted stale file on Pod: ${cachedPath}`);
-    }
-  }
-}
+import { syncVfsToPod, writeToVfs } from "./sync-utils.js";
 
 // ─── Pod → VFS Pull (bidirectional sync) ────────────────────
 
@@ -205,7 +179,8 @@ export async function pullProjectFilesFromPod(): Promise<void> {
           continue;
         }
 
-        vfsWrite(podPath, content);
+        // Use tracked write with persist scheduling instead of raw vfsWrite
+        writeToVfs(podPath, content);
         pulledPaths.add(podPath);
         pulled++;
       } catch {
@@ -214,17 +189,15 @@ export async function pullProjectFilesFromPod(): Promise<void> {
       }
     }
 
-    // Reconcile Pod → VFS: remove orphaned files from VFS that no longer
-    // exist in the Pod. Only removes files under PROJECT_ROOT that match
-    // the source file filter (avoids deleting system dirs or non-source entries).
+    // Reconcile Pod → VFS: remove files from VFS that were previously synced
+    // to the Pod but no longer exist there. Uses lastSyncedPaths as the source
+    // of truth to avoid deleting VFS files that were never sent to the Pod
+    // (e.g., files created while the Pod was offline).
     let orphaned = 0;
-    const vfsEntries = vfsGetAll();
-    for (const entry of vfsEntries) {
-      if (entry.type !== "file") continue;
-      if (!entry.path.startsWith(PROJECT_ROOT + "/")) continue;
-      if (!isProjectSourceFile(entry.path)) continue;
-      if (!pulledPaths.has(entry.path)) {
-        vfsDeleteTree(entry.path);
+    const syncedPaths = new Set(browserPodManager.getLastSyncedPaths());
+    for (const cachedPath of syncedPaths) {
+      if (!pulledPaths.has(cachedPath) && cachedPath.startsWith(PROJECT_ROOT + "/") && isProjectSourceFile(cachedPath)) {
+        vfsDeleteTree(cachedPath);
         orphaned++;
       }
     }

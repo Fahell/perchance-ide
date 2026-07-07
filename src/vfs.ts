@@ -117,8 +117,9 @@ export function vfsWrite(path: string, content: string): void {
   const npath = normalize(path);
   const now = Date.now();
 
-  // Strip UTF-8 BOM and invisible whitespace to prevent downstream parse failures
-  const sanitized = typeof content === "string" ? content.replace(/^\uFEFF/, "").trimStart() : content;
+  // Strip UTF-8 BOM and zero-width characters that LLMs may inject,
+  // but preserve intentional leading whitespace (indentation).
+  const sanitized = typeof content === "string" ? content.replace(/^[\uFEFF\u200B\u200C\u200D\u2060]+/, "") : content;
 
   // Ensure parent directory chain exists
   ensureDir(parentDir(npath), now);

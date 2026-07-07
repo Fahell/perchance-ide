@@ -10,28 +10,8 @@
  * Tools are only registered when BrowserPod is enabled and booted.
  */
 import { browserPodManager } from "../browserpod/manager.js";
-import { vfsGetAll, vfsWrite } from "../vfs.js";
 import { pullProjectFilesFromPod } from "./shell-tools.js";
-// ─── VFS Sync Helper ────────────────────────────────────────
-/**
- * Sync all VFS files to the BrowserPod's isolated filesystem.
- * Must be called before every command execution since the pod
- * cannot see files created via VFS tools (write_file, edit_file, etc.).
- */
-async function syncVfsToPod() {
-    const entries = vfsGetAll();
-    if (entries.length === 0)
-        return;
-    const vfsEntries = entries
-        .filter((e) => e.type === "file")
-        .map((e) => ({
-        path: e.path,
-        content: e.content ?? "",
-    }));
-    if (vfsEntries.length > 0) {
-        await browserPodManager.syncFiles(vfsEntries);
-    }
-}
+import { syncVfsToPod, writeToVfs } from "./sync-utils.js";
 // ─── Post-execution Pull Helper ──────────────────────────────
 /**
  * Pull specific files from BrowserPod back to VFS after npm commands.
@@ -43,7 +23,7 @@ async function pullMetadataFromPod() {
     for (const filePath of metadataFiles) {
         const content = await browserPodManager.readFile(filePath);
         if (content !== null) {
-            vfsWrite(filePath, content);
+            writeToVfs(filePath, content);
             console.log(`[NodeTools] Pulled ${filePath} → VFS`);
         }
     }

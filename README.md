@@ -164,6 +164,7 @@ src/
 │   ├── context-tools.ts      # search_history (BM25-lite, trilingual stopwords) + get_messages
 │   ├── node-tools.ts         # Node.js tools (npm install, node script, npm command) via BrowserPod
 │   ├── shell-tools.ts        # Shell tools (run_shell_command, run_git_command, start_http_server) + Pod→VFS bidirectional sync with source file filtering
+│   ├── sync-utils.ts         # Shared VFS↔BrowserPod sync utilities — VFS→Pod push (with optional deletion reconciliation), Pod→VFS write with hash tracking and persist
 │   ├── vfs-tools.ts          # read/write/edit/list/search/delete/rename — diff-cache integration
 │   ├── terminal-tools.ts     # run_python, execute_script, install_package
 │   └── web-search.ts         # Jina AI search + scrape with TTL cache
@@ -393,6 +394,34 @@ VFS mutations emit events through two complementary systems:
 - **Subscriber pattern**: `onVfsChange(listener)` returns unsubscribe function
 - **Hash persistence** to IndexedDB for cross-session change detection
 - Used by the **Mapper Agent** to trigger documentation updates
+
+### VFS↔BrowserPod Synchronization Architecture
+
+The VFS and BrowserPod runtime maintain bidirectional sync through multiple mechanisms:
+
+**VFS → Pod (Push):**
+
+| Path                      | When                                                 | Mechanism                                                                               |
+| ------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `syncVfsToPod()`          | Before each shell/git/node command (`sync-utils.ts`) | Bulk write ALL VFS files to Pod; optionally reconcile deletions (shell tools only)      |
+| `subscribeToVfsChanges()` | After Pod boot (`manager.ts`)                        | Real-time: single file write/delete/rename on each VFS mutation via `onVfsChange` event |
+| `reconnect()`             | On WebSocket disconnection (`manager.ts`)            | Bulk re-sync cached files from `lastSyncedFiles`                                        |
+
+**Pod → VFS (Pull):**
+
+| Path                        | When                                            | Mechanism                                                                                         |
+| --------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pullProjectFilesFromPod()` | After each shell/git command (`shell-tools.ts`) | Allowlist-filtered bulk pull via `find`; orphan reconciliation (only for previously-synced files) |
+| `pullMetadataFromPod()`     | After `execute_npm_command` (`node-tools.ts`)   | Pulls only `package.json` and `package-lock.json` using tracked writes with persist               |
+
+**Key design decisions:**
+
+- Real-time sync via `subscribeToVfsChanges()` propagates editor changes immediately through `writeFile()`/`deleteFile()`/`renameFile()`
+- Bulk sync before commands ensures the Pod has the latest VFS state
+- Pod→VFS pull uses `trackedWrite()` (hash tracking) + `scheduleVfsPersist()` so pulled files survive page reloads
+- Orphan deletion in pull only targets files previously synced to Pod (not all VFS files), preventing accidental deletion of files created while Pod was offline
+- `listFiles()` excludes `node_modules`, `.git`, `.npm`, and `__pycache__` from traversal to avoid performance issues
+- On Pod boot, an initial `syncVfsToPod(false)` pushes all existing VFS files so the Pod starts with the project intact
 
 ### VFS Path Convention: `PROJECT_ROOT`
 

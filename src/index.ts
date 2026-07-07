@@ -13,6 +13,7 @@ import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
 import { loadSettings } from "./store.js";
 import { initContextTools, initNodeTools, initShellTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
+import { syncVfsToPod } from "./tools/sync-utils.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
@@ -250,6 +251,12 @@ async function startAgent() {
             ideStore.getState().setBrowserPodStatus("ready");
             // Enable real-time VFS → Pod sync for editor changes
             browserPodManager.subscribeToVfsChanges();
+            // Initial bulk sync: push all existing VFS files to the Pod
+            // so the Pod isn't empty on first boot. Use reconcileDeletions=false
+            // to avoid deleting Pod system files.
+            syncVfsToPod(false).catch((err) =>
+              console.warn("[Agent] Initial VFS→Pod sync failed:", err)
+            );
           } else {
             ideStore.getState().setBrowserPodStatus("error", browserPodManager.getError() ?? undefined);
           }
