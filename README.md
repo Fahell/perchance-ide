@@ -68,7 +68,7 @@ pnpm test:watch
 - **Rate limiting** per tool via sliding window algorithm
 - **Node.js execution** via BrowserPod (remote Node.js runtime) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings
 - **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active; bidirectional VFS↔Pod sync with reconciliation (stale files deleted, orphaned VFS files removed)
-- **Interactive Terminal** — xterm.js-based terminal panel connected to BrowserPod for live shell sessions; toggleable via `[term]` button in the footer; auto-syncs files back to VFS when panel is hidden
+- **Interactive Terminal** — xterm.js-based terminal panel (managed internally by BrowserPod, no separate instance) for live shell sessions; toggleable via `[term]` button in the editor column footer; resizable (drag handle, 100-600px) with close button; auto-syncs files back to VFS when panel is hidden
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
 
 ### Code Editor
@@ -81,7 +81,7 @@ pnpm test:watch
 
 ### Panels & UI
 
-- **3-column layout**: chat sidebar | code editor | right panel (file explorer / outline / HTML preview / Python output)
+- **3-column layout**: chat sidebar | code editor + terminal panel | right panel (file explorer / outline / HTML preview / Python output)
 - **Preview Panel** — live HTML rendering via sandboxed iframe (`srcdoc` + `allow-scripts`)
 - **Output Panel** — persistent history of Python executions (last 20) with expandable cards and copy-to-clipboard
 - **File Search** — Ctrl+P fuzzy search across all VFS files with real-time scoring
@@ -207,7 +207,7 @@ src/
     ├── ThinkingIndicator.tsx # Animated dots
     ├── ScrollFAB.tsx         # Floating scroll-to-bottom button
     ├── Header.tsx            # Version, commit, FAQ trigger
-    ├── Footer.tsx            # Input bar, settings/context buttons
+    ├── Footer.tsx            # Input bar, settings/context buttons (terminal toggle moved to EditorFooter)
     ├── Modal.tsx             # Accessible modal — focus trap, Escape close
     ├── SettingsModal.tsx     # API key, language, auto-save, tool toggles
     ├── ContextViewer.tsx     # Token budget, summary, tier visualization, memories
@@ -218,6 +218,8 @@ src/
     ├── PreviewPanel.tsx      # Live HTML preview via sandboxed iframe
     ├── OutputPanel.tsx       # Python execution history with copy
     ├── RightPanel.tsx        # Tab container (files/outline/preview/output)
+    ├── TerminalPanel.tsx     # Interactive terminal via BrowserPod (no own xterm instance); resizable, close button, Pod→VFS sync on hide
+    ├── EditorFooter.tsx      # Editor column footer with terminal toggle button and file info
     ├── SetupScreen.tsx       # First-run API key wizard
     ├── ErrorBoundary.tsx     # Preact error boundary with retry
     ├── theme.ts              # Design tokens — colors, fonts

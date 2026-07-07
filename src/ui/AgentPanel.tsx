@@ -7,6 +7,7 @@ import { ideStore } from "../store.js";
 import { ChatMessages } from "./ChatMessages.js";
 import { CodeEditor } from "./CodeEditor.js";
 import { ContextViewer } from "./ContextViewer.js";
+import { EditorFooter } from "./EditorFooter.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FaqModal } from "./FaqModal.js";
 import { FileSearchModal } from "./FileSearchModal.js";
@@ -156,14 +157,7 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
           {/* Status line */}
           <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
 
-          {/* Terminal Panel (above footer when open) */}
-          {store.terminalOpen && (
-            <ErrorBoundary name="TerminalPanel">
-              <TerminalPanel visible={store.terminalOpen} />
-            </ErrorBoundary>
-          )}
-
-          {/* Footer */}
+          {/* Footer (chat) — terminal toggle moved to EditorFooter */}
           <Footer
             onSettings={() => setSettingsOpen(true)}
             onContext={() => setContextOpen(true)}
@@ -173,18 +167,29 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
             disabled={agentStatus !== "idle"}
             onCancel={onCancel}
             locale={locale}
-            terminalOpen={store.terminalOpen}
-            onToggleTerminal={() => ideStore.getState().setTerminalOpen(!store.terminalOpen)}
           />
         </div>
 
-        {/* ── Middle: Code Editor ─────────────────────────── */}
-        <div style={{ flex: "1", minWidth: "0" }}>
+        {/* ── Middle: Code Editor + Terminal ──────────────── */}
+        <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column" }}>
           <ErrorBoundary name="CodeEditor">
             <CodeEditor
               locale={locale}
             />
           </ErrorBoundary>
+
+          {/* Terminal Panel (in editor column, above EditorFooter) */}
+          {store.terminalOpen && (
+            <ErrorBoundary name="TerminalPanel">
+              <TerminalPanel visible={store.terminalOpen} />
+            </ErrorBoundary>
+          )}
+
+          {/* Editor Footer with terminal toggle */}
+          <EditorFooter
+            terminalOpen={store.terminalOpen}
+            onToggleTerminal={() => ideStore.getState().setTerminalOpen(!store.terminalOpen)}
+          />
         </div>
 
         {/* ── Right: Placeholder panel ───────────────────── */}

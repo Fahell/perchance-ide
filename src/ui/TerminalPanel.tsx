@@ -1,85 +1,60 @@
 /**
- * TerminalPanel — Interactive terminal UI component using xterm.js.
+ * TerminalPanel — Interactive terminal UI component using BrowserPod's
+ * built-in xterm.js via createDefaultTerminal(element).
  *
- * Connects to BrowserPod via createDefaultTerminal(element) for
- * interactive Node.js/Bash sessions. The agent's headless terminal
- * (createCustomTerminal) remains separate and unaffected.
+ * IMPORTANT: We do NOT create our own xterm.Terminal instance.
+ * BrowserPod.createDefaultTerminal(element) creates and manages its own
+ * xterm instance internally. Creating a separate one causes conflicts
+ * (cursor blinks but no shell connected).
  *
- * Lifecycle:
- * - Mount: creates xterm.Terminal, attaches FitAddon, calls manager.createInteractiveTerminal()
- * - Unmount: disposes terminal instance, cleans up DOM
- * - Resize: FitAddon.fit() on container resize via ResizeObserver
+ * Features:
+ * - Resize handle on top edge for vertical resizing
+ * - Close button in header
+ * - Pod→VFS sync when panel is hidden
  */
 
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState, useCallback } from "preact/hooks";
 import { browserPodManager } from "../browserpod/manager.js";
 import { pullProjectFilesFromPod } from "../tools/shell-tools.js";
+import { ideStore } from "../store.js";
 import { colors, fonts } from "./theme.js";
 
 interface TerminalPanelProps {
   visible: boolean;
 }
 
+const MIN_HEIGHT = 100;
+const MAX_HEIGHT = 600;
+const DEFAULT_HEIGHT = 250;
+
 export function TerminalPanel({ visible }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
-  const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const podTermRef = useRef<unknown>(null);
   const wasVisibleRef = useRef(false);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const draggingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
 
-  // Initialize xterm when panel becomes visible
+  // Initialize BrowserPod interactive terminal when panel becomes visible
   useEffect(() => {
     if (!visible || !containerRef.current) return;
 
     let disposed = false;
 
     async function init() {
-      // Dynamic imports — keeps xterm out of initial bundle
-      const { Terminal } = await import("@xterm/xterm");
-      const { FitAddon } = await import("@xterm/addon-fit");
-
-      if (disposed || !containerRef.current) return;
-
-      // Import xterm CSS dynamically
+      // Import xterm CSS dynamically (BrowserPod's createDefaultTerminal needs it)
       const link = document.createElement("link");
       link.rel = "stylesheet";
       link.href = "https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css";
-      document.head.appendChild(link);
+      if (!document.querySelector('link[href*="xterm"]')) {
+        document.head.appendChild(link);
+      }
 
-      const fitAddon = new FitAddon();
-      const terminal = new Terminal({
-        theme: {
-          background: colors.bg,
-          foreground: colors.text,
-          cursor: colors.text,
-          selectionBackground: "rgba(255, 255, 255, 0.15)",
-        },
-        fontFamily: fonts.mono,
-        fontSize: 12,
-        cursorBlink: true,
-        cursorStyle: "block",
-        allowProposedApi: true,
-      });
-
-      terminal.loadAddon(fitAddon);
-      terminal.open(containerRef.current!);
-
-      // Fit after open to calculate correct dimensions
-      requestAnimationFrame(() => {
-        if (!disposed) {
-          try {
-            fitAddon.fit();
-          } catch {
-            // Fit may fail if container has zero dimensions — safe to ignore
-          }
-        }
-      });
-
-      termRef.current = terminal;
-      fitRef.current = fitAddon;
+      if (disposed || !containerRef.current) return;
 
       // Connect to BrowserPod interactive terminal
-      // createDefaultTerminal(element) is the official API for interactive terminals
+      // createDefaultTerminal(element) creates its OWN xterm instance internally
       if (browserPodManager.isReady()) {
         try {
           const podTerminal = await browserPodManager.createInteractiveTerminal(containerRef.current!);
@@ -89,54 +64,31 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
           }
         } catch (err) {
           console.error("[TerminalPanel] Failed to connect interactive terminal:", err);
-          terminal.writeln(`\r\n\x1b[31mFailed to connect terminal: ${err instanceof Error ? err.message : String(err)}\x1b[0m`);
+          if (!disposed && containerRef.current) {
+            containerRef.current.innerHTML = `<div style="color:#e74c3c;padding:8px;font-family:monospace;font-size:12px;">Failed to connect: ${err instanceof Error ? err.message : String(err)}</div>`;
+          }
         }
       } else {
-        terminal.writeln("\r\n\x1b[33mBrowserPod not ready. Enable Node.js tools in Settings.\x1b[0m");
+        if (!disposed && containerRef.current) {
+          containerRef.current.innerHTML = `<div style="color:#f39c12;padding:8px;font-family:monospace;font-size:12px;">BrowserPod not ready. Enable Node.js tools in Settings.</div>`;
+        }
       }
     }
 
     init();
 
-    // ResizeObserver for responsive fit
-    let observer: ResizeObserver | null = null;
-    if (containerRef.current) {
-      observer = new ResizeObserver(() => {
-        if (fitRef.current && !disposed) {
-          try {
-            fitRef.current.fit();
-          } catch {
-            // Safe to ignore during transitions
-          }
-        }
-      });
-      observer.observe(containerRef.current);
-    }
-
     return () => {
       disposed = true;
-      observer?.disconnect();
-      termRef.current?.dispose();
-      termRef.current = null;
-      fitRef.current = null;
       podTermRef.current = null;
+      // Clear container so next mount gets a fresh element for createDefaultTerminal
+      if (containerRef.current) {
+        containerRef.current.innerHTML = "";
+      }
     };
   }, [visible]);
 
-  // Re-fit when visibility toggles back on + trigger Pod→VFS sync on hide
+  // Trigger Pod→VFS sync when panel is hidden
   useEffect(() => {
-    if (visible && fitRef.current) {
-      requestAnimationFrame(() => {
-        try {
-          fitRef.current?.fit();
-        } catch {
-          // Safe to ignore
-        }
-      });
-    }
-
-    // When terminal panel is hidden after being visible, reconcile Pod → VFS.
-    // This captures any file changes made via interactive terminal (by user or agent).
     if (wasVisibleRef.current && !visible) {
       pullProjectFilesFromPod().catch((err: unknown) => {
         console.warn("[TerminalPanel] Pod→VFS sync on hide failed:", err);
@@ -145,25 +97,89 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
     wasVisibleRef.current = visible;
   }, [visible]);
 
+  // Resize drag handlers
+  const onMouseDown = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    startYRef.current = e.clientY;
+    startHeightRef.current = height;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+  }, [height]);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!draggingRef.current) return;
+      const delta = startYRef.current - e.clientY;
+      const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeightRef.current + delta));
+      setHeight(newHeight);
+    }
+    function onMouseUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  function handleClose() {
+    ideStore.getState().setTerminalOpen(false);
+  }
+
   if (!visible) return null;
 
   return (
     <div style={{
       borderTop: `1px solid ${colors.border}`,
-      height: "250px",
-      minHeight: "120px",
-      flexShrink: "0",
+      height: `${height}px`,
+      minHeight: `${MIN_HEIGHT}px`,
+      maxHeight: `${MAX_HEIGHT}px`,
+      flexShrink: 0,
       background: colors.bg,
       position: "relative",
+      display: "flex",
+      flexDirection: "column",
     }}>
+      {/* Resize handle */}
+      <div
+        onMouseDown={onMouseDown}
+        style={{
+          height: "4px",
+          cursor: "ns-resize",
+          background: "transparent",
+          flexShrink: 0,
+          position: "relative",
+          zIndex: 10,
+        }}
+        title="Drag to resize"
+      >
+        <div style={{
+          position: "absolute",
+          left: "50%",
+          top: "1px",
+          transform: "translateX(-50%)",
+          width: "30px",
+          height: "2px",
+          background: colors.border,
+          borderRadius: "1px",
+        }} />
+      </div>
+
       {/* Header bar */}
       <div style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "4px 8px",
+        padding: "3px 8px",
         borderBottom: `1px solid ${colors.border}`,
         background: colors.surface1,
+        flexShrink: 0,
       }}>
         <span style={{
           fontSize: "10px",
@@ -172,23 +188,42 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         }}>
           TERMINAL (Node.js / Bash)
         </span>
-        <span style={{
-          fontSize: "9px",
-          fontFamily: fonts.mono,
-          color: colors.textMuted,
-        }}>
-          {browserPodManager.isReady() ? "● connected" : "○ disconnected"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{
+            fontSize: "9px",
+            fontFamily: fonts.mono,
+            color: colors.textMuted,
+          }}>
+            {browserPodManager.isReady() ? "● connected" : "○ disconnected"}
+          </span>
+          <button
+            onClick={handleClose}
+            title="Close terminal"
+            style={{
+              background: "none",
+              border: "none",
+              color: colors.textMuted,
+              fontSize: "14px",
+              cursor: "pointer",
+              padding: "0 2px",
+              lineHeight: 1,
+              fontFamily: fonts.mono,
+            }}
+          >
+            ×
+          </button>
+        </div>
       </div>
 
-      {/* xterm container */}
+      {/* xterm container — BrowserPod's createDefaultTerminal mounts here */}
       <div
         ref={containerRef}
         style={{
+          flex: 1,
           width: "100%",
-          height: "calc(100% - 25px)",
           padding: "4px",
           boxSizing: "border-box",
+          overflow: "hidden",
         }}
       />
     </div>

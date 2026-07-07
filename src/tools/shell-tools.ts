@@ -172,10 +172,31 @@ export async function pullProjectFilesFromPod(): Promise<void> {
       }
 
       try {
-        const content = await browserPodManager.readFile(podPath);
-        if (content === null) {
+        const raw = await browserPodManager.readFile(podPath);
+        if (raw === null) {
           skipped++;
           continue;
+        }
+
+        // Defensive decoding: BrowserPod may return binary data for _map/ files
+        let content: string;
+        if (typeof raw === "string") {
+          content = raw;
+        } else {
+          const unknownRaw = raw as unknown;
+          if (unknownRaw instanceof Uint8Array || Array.isArray(unknownRaw)) {
+            const bytes = unknownRaw instanceof Uint8Array ? unknownRaw : new Uint8Array(unknownRaw as number[]);
+            content = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+          } else if (
+            unknownRaw instanceof ArrayBuffer ||
+            (typeof SharedArrayBuffer !== "undefined" && unknownRaw instanceof SharedArrayBuffer)
+          ) {
+            const copy =
+              unknownRaw instanceof SharedArrayBuffer ? new Uint8Array(unknownRaw).slice() : new Uint8Array(unknownRaw);
+            content = new TextDecoder("utf-8", { fatal: false }).decode(copy);
+          } else {
+            content = String(unknownRaw);
+          }
         }
 
         // Enforce per-file size limit
