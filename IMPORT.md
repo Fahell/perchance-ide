@@ -4,11 +4,11 @@ Add an HTML panel to your generator with:
 
 ```html
 <script>
-  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@217a47d37273534dff9cc7c7df5cc13587d9bbdd/dist/agent.js");
+  import("https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@2651d3c2bcb3f965cbd8a56e2845300a4f1c79a6/dist/agent.js");
 </script>
 ```
 
 Also add `agentAi = {import:ai-text-plugin}` to your list panel.
 
-> 📌 This URL points to commit `217a47d37273534dff9cc7c7df5cc13587d9bbdd` on branch `feat/terminal-and-shell-tools`.
+> 📌 This URL points to commit `2651d3c2bcb3f965cbd8a56e2845300a4f1c79a6` on branch `feat/terminal-and-shell-tools`.
 > Each push generates a new unique URL (cache-busting). For production, use `pnpm deploy` on `main`.
