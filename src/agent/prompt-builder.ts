@@ -36,6 +36,7 @@ export function buildToolPrompt(
   if (settings.toolContextEnabled) enabledCats.add("context");
   if (settings.toolVfsEnabled) enabledCats.add("vfs");
   if (settings.toolTerminalEnabled) enabledCats.add("terminal");
+  if (settings.toolNodeEnabled) enabledCats.add("node");
 
   // Build conditional sections based on enabled categories
   const sections: string[] = [];
@@ -44,7 +45,8 @@ export function buildToolPrompt(
 
   sections.push(`KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.`);
 
-  sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}`);
+  const bpStatus = ideStore.getState().browserPodStatus;
+  sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}\n- Node.js: ${bpStatus === "ready" ? "● Ready (BrowserPod)" : bpStatus === "error" ? "✗ Error" : "○ Not available"}`);
 
   sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple responses`);
 
@@ -62,7 +64,7 @@ export function buildToolPrompt(
 
   // Conditional: VFS tools
   if (enabledCats.has("vfs")) {
-    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /src/index.ts):\n- read: read_file, search_files, list_files\n- write: write_file (read target first, summarize changes after)\n- delete: delete_file (only when asked)\n- rename: rename_file`);
+    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /home/user/src/index.ts):\n- read: read_file, search_files, list_files\n- write: write_file (read target first, summarize changes after)\n- delete: delete_file (only when asked)\n- rename: rename_file`);
   }
 
   // Conditional: Terminal tools
@@ -70,11 +72,28 @@ export function buildToolPrompt(
     sections.push(`PYTHON (in-browser via Pyodide, VFS auto-synced):\n- run_python: Quick snippets.\n- execute_script: Run a .py file from VFS.\n- install_package: Install packages (numpy, pandas, etc.).\n- stdout, stderr, and exit code captured.`);
   }
 
+  // Conditional: Node.js tools (BrowserPod)
+  if (enabledCats.has("node")) {
+    const nodeExample1 = [
+      `${tcOpen}`,
+      `  <name>run_node_script</name>`,
+      `  <path><![CDATA[/home/user/hello.js]]></path>`,
+      `${tcClose}`,
+    ].join("\n");
+    const nodeExample2 = [
+      `${tcOpen}`,
+      `  <name>run_npm_install</name>`,
+      `  <packages><![CDATA[express lodash]]></packages>`,
+      `${tcClose}`,
+    ].join("\n");
+    sections.push(`NODE.JS (in-browser via BrowserPod, VFS auto-synced):\n- run_npm_install: Install dependencies from package.json or specific packages.\n- run_node_script: Execute a .js/.mjs file from VFS. Only parameters: path (required), args (optional).\n- execute_npm_command: Run arbitrary npm/npx commands (e.g. "test", "build", "run dev").\n- stdout, stderr, and exit code captured.\n- Use Python tools for .py files; use Node.js tools for .js/.ts/npm workflows.\n⚠️ NEVER pass internal keywords (like "terminal", "node", "npm") as parameter values. The "args" parameter is ONLY for actual script arguments (e.g. "--verbose", "input.txt"). If no extra args are needed, omit the <args> tag entirely.\n\nEXAMPLES:\n${nodeExample1}\n${nodeExample2}`);
+  }
+
   // Tool call format instruction — uses flat XML tags with CDATA
   const formatExample = [
     `${tcOpen}`,
     `  <name>read_file</name>`,
-    `  <path><![CDATA[/src/example.ts]]></path>`,
+    `  <path><![CDATA[/home/user/src/example.ts]]></path>`,
     `${tcClose}`,
   ].join("\n");
 

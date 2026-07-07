@@ -17,7 +17,7 @@ import { findToolCallBlocks, parseParams } from "./agent/tool-call-parser.js";
 import { getAi } from "./types.js";
 import type { VfsChangeEvent } from "./vfs-events.js";
 import { scheduleVfsPersist } from "./vfs-persist.js";
-import { vfsExists, vfsGetAll, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
+import { PROJECT_ROOT, vfsExists, vfsGetAll, vfsRead, vfsRename, vfsWrite } from "./vfs.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
 const tcOpen: string = "<tool_call>";
@@ -38,11 +38,17 @@ const MAX_INJECT_CHARS = 12000;
 
 /**
  * Extract project root from an absolute VFS path.
- * Returns the first path segment (e.g., "/gacha-game/index.html" → "gacha-game").
- * Returns null for root-level files (e.g., "/readme.md").
+ * Strips PROJECT_ROOT prefix, then returns the first path segment.
+ * E.g., "/home/user/gacha-game/index.html" → "gacha-game".
+ * Returns null for root-level files (e.g., "/home/user/readme.md").
  */
 function getProjectRoot(path: string): string | null {
-  const normalized = path.startsWith("/") ? path.slice(1) : path;
+  // Strip PROJECT_ROOT prefix to get relative path within user workspace
+  let relative = path;
+  if (path.startsWith(PROJECT_ROOT)) {
+    relative = path.slice(PROJECT_ROOT.length);
+  }
+  const normalized = relative.startsWith("/") ? relative.slice(1) : relative;
   const slashIdx = normalized.indexOf("/");
   if (slashIdx === -1) return null; // root-level file
   const first = normalized.slice(0, slashIdx);
@@ -52,7 +58,7 @@ function getProjectRoot(path: string): string | null {
 
 /** Get the _map directory path for a project. */
 function getMapDir(projectRoot: string): string {
-  return `/${projectRoot}/${MAP_DIR_NAME}`;
+  return `${PROJECT_ROOT}/${projectRoot}/${MAP_DIR_NAME}`;
 }
 
 /** Check if a path is inside any _map/ directory. */

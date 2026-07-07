@@ -33,6 +33,8 @@ export interface IdeSettings {
   toolContextEnabled: boolean;
   toolVfsEnabled: boolean;
   toolTerminalEnabled: boolean;
+  toolNodeEnabled: boolean;
+  browserPodApiKey: string;
 }
 
 export interface OutputEntry {
@@ -74,6 +76,10 @@ export interface IdeState {
   pyodideStatus: "idle" | "loading" | "loaded" | "error";
   pyodideError: string | null;
 
+  // BrowserPod runtime
+  browserPodStatus: "idle" | "loading" | "ready" | "error";
+  browserPodError: string | null;
+
   // Panel / agent state
   messages: PanelMessage[];
   agentStatus: AgentStatus;
@@ -103,6 +109,7 @@ export interface IdeState {
   openFile: (path: string, name: string, language: string) => void;
   closeFile: (path: string) => void;
   setPyodideStatus: (status: "idle" | "loading" | "loaded" | "error", error?: string) => void;
+  setBrowserPodStatus: (status: "idle" | "loading" | "ready" | "error", error?: string) => void;
 
   // Layout
   setPanelMode: (mode: PanelMode) => void;
@@ -145,11 +152,13 @@ const DEFAULT_SETTINGS: IdeSettings = {
   fontSize: 14,
   wordWrap: true,
   tabSize: 2,
-  autoSave: true,
+  autoSave: false,
   toolWebEnabled: true,
   toolContextEnabled: true,
   toolVfsEnabled: true,
   toolTerminalEnabled: true,
+  toolNodeEnabled: false,
+  browserPodApiKey: "",
 };
 
 // ─── Store ───────────────────────────────────────────────────
@@ -165,6 +174,8 @@ export const ideStore = createStore<IdeState>()(
     statusMessage: null,
     pyodideStatus: "idle" as "idle" | "loading" | "loaded" | "error",
     pyodideError: null,
+    browserPodStatus: "idle" as "idle" | "loading" | "ready" | "error",
+    browserPodError: null,
     messages: [],
     agentStatus: "idle" as AgentStatus,
     rightPanelTab: "files" as "files" | "outline" | "preview" | "output",
@@ -343,6 +354,8 @@ export const ideStore = createStore<IdeState>()(
 
     setPyodideStatus: (status, error) =>
       set({ pyodideStatus: status, pyodideError: error ?? null }),
+    setBrowserPodStatus: (status, error) =>
+      set({ browserPodStatus: status, browserPodError: error ?? null }),
 
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 

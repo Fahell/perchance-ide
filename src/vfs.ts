@@ -4,8 +4,14 @@
  * All paths are absolute (root = "/"). Directories are implicit — created
  * automatically when a file is written inside them.
  *
- * Future: snapshot() API for Pyodide MEMFS sync (Phase 6).
+ * PROJECT_ROOT ("/home/user") mirrors the POSIX home directory used by
+ * BrowserPod and standard Linux environments. All project files should
+ * live under this path for runtime compatibility.
  */
+
+// ─── Constants ──────────────────────────────────────────────
+/** Project working directory — mirrors BrowserPod's default cwd. */
+export const PROJECT_ROOT = "/home/user";
 
 // ─── Types ──────────────────────────────────────────────────
 export interface VfsEntry {
@@ -26,14 +32,17 @@ export interface VfsTreeNode {
 // ─── State ──────────────────────────────────────────────────
 const _entries = new Map<string, VfsEntry>();
 
-// Ensure the root directory exists
-_entries.set("/", {
-  path: "/",
-  content: "",
-  type: "dir",
-  createdAt: Date.now(),
-  modifiedAt: Date.now(),
-});
+// Ensure root and project directories exist
+const _initNow = Date.now();
+for (const dir of ["/", "/home", PROJECT_ROOT]) {
+  _entries.set(dir, {
+    path: dir,
+    content: "",
+    type: "dir",
+    createdAt: _initNow,
+    modifiedAt: _initNow,
+  });
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 function normalize(path: string): string {
@@ -138,7 +147,7 @@ export function vfsMkdir(path: string): void {
 /** Recursively delete a path (file or directory tree). */
 export function vfsDeleteTree(path: string): boolean {
   const npath = normalize(path);
-  if (npath === "/") return false;
+  if (npath === "/" || npath === PROJECT_ROOT) return false;
   if (!_entries.has(npath)) return false;
 
   for (const p of _entries.keys()) {
@@ -150,7 +159,7 @@ export function vfsDeleteTree(path: string): boolean {
 }
 
 /** Build a nested tree structure for the file explorer. */
-export function vfsTree(dir = "/"): VfsTreeNode[] {
+export function vfsTree(dir: string = PROJECT_ROOT): VfsTreeNode[] {
   const ndir = normalize(dir) === "/" ? "/" : normalize(dir) + "/";
   const nodes: VfsTreeNode[] = [];
 
@@ -184,7 +193,7 @@ export function vfsTree(dir = "/"): VfsTreeNode[] {
 export function vfsRename(oldPath: string, newPath: string): boolean {
   const nold = normalize(oldPath);
   const nnew = normalize(newPath);
-  if (nold === "/" || !_entries.has(nold)) return false;
+  if (nold === "/" || nold === PROJECT_ROOT || !_entries.has(nold)) return false;
   if (_entries.has(nnew)) return false; // target exists
   // Destination parent directory must exist
   if (!_entries.has(parentDir(nnew))) return false;
@@ -225,15 +234,18 @@ export function vfsLoadAll(entries: VfsEntry[]): void {
   for (const e of entries) {
     _entries.set(e.path, e);
   }
-  // Ensure root exists
-  if (!_entries.has("/")) {
-    _entries.set("/", {
-      path: "/",
-      content: "",
-      type: "dir",
-      createdAt: Date.now(),
-      modifiedAt: Date.now(),
-    });
+  // Ensure root and project directories exist
+  const now = Date.now();
+  for (const dir of ["/", "/home", PROJECT_ROOT]) {
+    if (!_entries.has(dir)) {
+      _entries.set(dir, {
+        path: dir,
+        content: "",
+        type: "dir",
+        createdAt: now,
+        modifiedAt: now,
+      });
+    }
   }
 }
 
@@ -248,7 +260,9 @@ export function vfsSnapshot(): Record<string, string> {
   return snap;
 }
 
-/** Check if the VFS is empty (only root). */
+/** Check if the VFS is empty (only system directories, no project files). */
 export function vfsIsEmpty(): boolean {
-  return _entries.size <= 1 && _entries.has("/");
+  // Empty means only /, /home, /home/user exist (3 system dirs)
+  if (_entries.size > 3) return false;
+  return _entries.has("/") && _entries.has("/home") && _entries.has(PROJECT_ROOT);
 }

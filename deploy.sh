@@ -15,7 +15,7 @@ git add -A
 git commit -m "deploy: v${VERSION}" || echo "Nothing to commit"
 
 echo "🚀 Pushing..."
-git push
+git push --set-upstream origin HEAD
 
 # Get commit hash AFTER push — this is the exact hash on GitHub
 COMMIT=$(git rev-parse --short HEAD)
