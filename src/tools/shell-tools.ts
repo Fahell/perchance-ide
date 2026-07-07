@@ -12,7 +12,7 @@
 
 import { browserPodManager } from "../browserpod/manager.js";
 import { ideStore } from "../store.js";
-import { vfsGetAll } from "../vfs.js";
+import { PROJECT_ROOT, vfsGetAll, vfsWrite } from "../vfs.js";
 import type { Tool } from "./index.js";
 
 // ─── VFS Sync Helper (reused pattern from node-tools) ──────
@@ -29,6 +29,179 @@ async function syncVfsToPod(): Promise<void> {
 
   if (vfsEntries.length > 0) {
     await browserPodManager.syncFiles(vfsEntries);
+  }
+}
+
+// ─── Pod → VFS Pull (bidirectional sync) ────────────────────
+
+/** Maximum number of files to pull per sync cycle */
+const MAX_PULL_FILES = 500;
+/** Maximum file size in bytes to pull (512 KB) */
+const MAX_PULL_FILE_SIZE = 512 * 1024;
+
+/**
+ * Directories to ALWAYS exclude when pulling files from Pod back to VFS.
+ * These are runtime artifacts, dependency caches, or build outputs
+ * that should NOT be reflected in the VFS (they belong only to the Pod).
+ */
+const PULL_EXCLUDE_DIRS = new Set([
+  "node_modules", ".git", "__pycache__", ".next", "dist",
+  "build", "coverage", ".npm", ".cache", ".pnpm-store",
+  ".yarn", ".turbo", ".vercel", ".netlify", ".idea", ".vscode",
+  ".sass-cache", ".parcel-cache", ".svelte-kit", ".output",
+]);
+
+/**
+ * Extensions considered as project source/documentation files.
+ * Files with extensions NOT in this set are skipped during pull.
+ */
+const ALLOWED_SOURCE_EXTENSIONS = new Set([
+  // Languages
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+  ".py", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".hpp", ".cc", ".hh",
+  ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".lua",
+  ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
+  // Web / Markup
+  ".html", ".htm", ".css", ".scss", ".sass", ".less", ".styl",
+  ".svg", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg",
+  // Documentation
+  ".md", ".mdx", ".txt", ".rst", ".adoc", ".org", ".tex",
+  // Config / Meta
+  ".json", ".jsonc", ".json5", ".env", ".properties",
+  ".graphql", ".gql", ".proto", ".sql", ".csv", ".tsv",
+  // Framework SFCs
+  ".vue", ".svelte", ".astro",
+]);
+
+/**
+ * Filenames (no extension match needed) that are always considered project source files.
+ */
+const ALLOWED_SOURCE_NAMES = new Set([
+  "README", "LICENSE", "CHANGELOG", "CONTRIBUTING", "CODE_OF_CONDUCT",
+  "SECURITY", "AUTHORS", "NOTICE", "PATENTS",
+  "Dockerfile", "Makefile", "Procfile", "Vagrantfile", "Gemfile",
+  "Rakefile", "Guardfile", "Caddyfile", "Justfile", "Taskfile",
+  ".gitignore", ".npmrc", ".nvmrc", ".editorconfig",
+  ".prettierrc", ".eslintrc", ".stylelintrc", ".babelrc",
+  ".dockerignore", ".eslintignore", ".prettierignore",
+  "Cargo.toml", "Cargo.lock", "pyproject.toml", "setup.py", "setup.cfg",
+  "requirements.txt", "Pipfile", "Pipfile.lock", "poetry.lock",
+  "tsconfig.json", "jsconfig.json", "package.json", "package-lock.json",
+  "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
+  "webpack.config.js", "vite.config.js", "vite.config.ts",
+  "rollup.config.js", "esbuild.config.mjs", "tailwind.config.js",
+  "postcss.config.js", "jest.config.js", "vitest.config.ts",
+  ".env.example", ".env.local", ".env.development", ".env.production",
+]);
+
+/**
+ * Determine if a file path represents a project source file worth pulling into VFS.
+ * Uses an allowlist-first strategy: only files matching known source extensions
+ * or well-known filenames are pulled. Blacklisted directories are excluded first.
+ */
+function isProjectSourceFile(podPath: string): boolean {
+  const segments = podPath.split("/");
+
+  // Reject any path containing an excluded directory segment
+  for (const seg of segments) {
+    if (PULL_EXCLUDE_DIRS.has(seg)) return false;
+  }
+
+  const fileName = segments[segments.length - 1] ?? "";
+
+  // Check well-known filenames (no extension needed)
+  if (ALLOWED_SOURCE_NAMES.has(fileName)) return true;
+
+  // Check extension against allowlist
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex === -1) return false; // No extension and not a known name → skip
+  const ext = fileName.slice(dotIndex).toLowerCase();
+  return ALLOWED_SOURCE_EXTENSIONS.has(ext);
+}
+
+/**
+ * Pull project files created inside the BrowserPod back into the VFS.
+ *
+ * This solves the unidirectional sync gap: files/directories created
+ * via shell commands (mkdir, git clone, etc.) exist in the Pod's POSIX
+ * filesystem but were never reflected in the VFS.
+ *
+ * Strategy (allowlist-first with defense-in-depth):
+ * 1. Run `find` inside the Pod to list all regular files under PROJECT_ROOT.
+ * 2. Filter using isProjectSourceFile() — allows only known source extensions
+ *    and well-known filenames, rejects blacklisted directories.
+ * 3. Enforce limits: max MAX_PULL_FILES files, max MAX_PULL_FILE_SIZE per file.
+ * 4. Read each qualifying file from the Pod and write it into the VFS.
+ *
+ * Tolerant to individual failures — one unreadable file does not abort the pull.
+ */
+async function pullProjectFilesFromPod(): Promise<void> {
+  if (!browserPodManager.isReady()) return;
+
+  try {
+    // List all regular files under PROJECT_ROOT
+    const findResult = await browserPodManager.run("find", [
+      PROJECT_ROOT, "-type", "f",
+    ]);
+
+    if (findResult.exitCode !== 0 || !findResult.stdout.trim()) {
+      return; // No files found or find failed — nothing to pull
+    }
+
+    const filePaths = findResult.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (filePaths.length === 0) return;
+
+    let pulled = 0;
+    let skipped = 0;
+    let sizeSkipped = 0;
+
+    for (const podPath of filePaths) {
+      // Enforce file count limit
+      if (pulled >= MAX_PULL_FILES) {
+        console.warn(`[ShellTools] Pull capped at ${MAX_PULL_FILES} files`);
+        break;
+      }
+
+      // Allowlist check: only pull recognized source/config/doc files
+      if (!isProjectSourceFile(podPath)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const content = await browserPodManager.readFile(podPath);
+        if (content === null) {
+          skipped++;
+          continue;
+        }
+
+        // Enforce per-file size limit
+        if (content.length > MAX_PULL_FILE_SIZE) {
+          sizeSkipped++;
+          continue;
+        }
+
+        vfsWrite(podPath, content);
+        pulled++;
+      } catch {
+        // Individual file read failure — skip and continue
+        skipped++;
+      }
+    }
+
+    if (pulled > 0 || sizeSkipped > 0) {
+      console.log(
+        `[ShellTools] Pulled ${pulled} files from Pod → VFS (${skipped} filtered, ${sizeSkipped} oversized)`
+      );
+    }
+  } catch (err) {
+    // Pull is best-effort — never block shell/git execution
+    console.warn("[ShellTools] pullProjectFilesFromPod failed:", err);
   }
 }
 
@@ -146,6 +319,8 @@ function createRunShellCommandTool(): Tool {
       console.log(`[ShellTools] bash -c "${command}"`);
       const result = await browserPodManager.run("bash", ["-c", command]);
 
+      // Pull any new files created by the command back into VFS
+      await pullProjectFilesFromPod();
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
         result.stderr ? `stderr:\n${result.stderr}` : "",
@@ -199,6 +374,8 @@ function createRunGitCommandTool(): Tool {
       console.log(`[ShellTools] git ${gitArgs.join(" ")}`);
       const result = await browserPodManager.run("git", gitArgs);
 
+      // Pull any new files created by git (clone, checkout, etc.) back into VFS
+      await pullProjectFilesFromPod();
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
         result.stderr ? `stderr:\n${result.stderr}` : "",

@@ -67,7 +67,7 @@ pnpm test:watch
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
 - **Node.js execution** via BrowserPod (remote Node.js runtime) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings
-- **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active
+- **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active; files created on the Pod are auto-pulled into VFS via bidirectional sync
 - **Interactive Terminal** — xterm.js-based terminal panel connected to BrowserPod for live shell sessions; toggleable via `[term]` button in the footer
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
 
@@ -160,7 +160,7 @@ src/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
 │   ├── context-tools.ts      # search_history (BM25-lite, trilingual stopwords) + get_messages
 │   ├── node-tools.ts         # Node.js tools (npm install, node script, npm command) via BrowserPod
-│   ├── shell-tools.ts        # Shell tools (run_shell_command, run_git_command, start_http_server) via BrowserPod
+│   ├── shell-tools.ts        # Shell tools (run_shell_command, run_git_command, start_http_server) + Pod→VFS bidirectional sync with source file filtering
 │   ├── vfs-tools.ts          # read/write/edit/list/search/delete/rename — diff-cache integration
 │   ├── terminal-tools.ts     # run_python, execute_script, install_package
 │   └── web-search.ts         # Jina AI search + scrape with TTL cache
@@ -532,6 +532,8 @@ Accessible via gear icon in header or `Ctrl+,`:
 - **Cancellation**: User can cancel an in-progress agent response via AbortController. The LLM call is stopped via `aiResult.stop()`, and any running tool executions are aborted.
 - **"Continue" mechanism**: When agent response is truncated (>~1000 tokens), the panel shows a "Continue" button that re-calls the LLM with `startWith: truncatedText` to pick up where it left off.
 - **Mapper Agent**: After the main agent finishes, per-project VFS changes are coalesced and dispatched to a lightweight subagent that auto-maintains documentation in `/<project>/_map/`. This subagent runs with clean context (no history) and has its own internal tool loop (read_file, write_file, edit_file, rename_file, delete_file). Uses the same CDATA-based flat XML tool call format as the main agent.
+- **Shell bidirectional sync**: After `run_shell_command` or `run_git_command` executes, files created on the BrowserPod (e.g., via `git clone`, `mkdir`, `curl`) are auto-pulled back into the VFS. The pull uses an allowlist filter: only recognized source extensions (`.ts`, `.js`, `.py`, `.md`, `.json`, etc.) and well-known config filenames are synced; runtime artifacts (`node_modules`, `.git`, `dist`, etc.) are excluded. Per-file size limit: 512 KB. Max files: 500 per sync cycle. Best-effort — individual failures don't block execution.
+- **Project structure rule**: The agent's system prompt instructs it to place source code under dedicated directories (`src/`, `app/`, `lib/`), declare source boundaries via `"files": ["src/"]` in `package.json`, and never mix runtime artifacts with source files. Only recognized source extensions and well-known config names are synced back to the IDE VFS.
 - **Retry policy**: All external API calls (Jina AI) use exponential backoff with full jitter (AWS-recommended). Retryable errors: network errors (TypeError), HTTP 429, 5xx. Non-retryable: 4xx (except 429), AbortError.
 
 ## Build & Deployment

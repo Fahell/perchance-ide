@@ -117,6 +117,12 @@ export function buildToolPrompt(
 - start_http_server: Start an HTTP server and get a public portal URL. The server runs inside the BrowserPod sandbox.
 ⚠️ NEVER pass internal keywords (like "terminal", "bash", "shell") as parameter values.
 
+PROJECT STRUCTURE RULE — When creating new projects or scaffolding code:
+- Place ALL source code under a dedicated directory (e.g., src/, app/, lib/).
+- In package.json, declare "files": ["src/"] (or equivalent) to mark source boundaries.
+- Runtime artifacts (node_modules, dist, build, .cache, logs) must NEVER be placed alongside source files.
+- Only files matching recognized source extensions (.ts, .js, .json, .md, .html, .css, etc.) and well-known config names (package.json, tsconfig.json, Dockerfile, Makefile, .gitignore, etc.) are synced back to the IDE filesystem. Binary files, logs, and unknown extensions are intentionally excluded.
+
 EXAMPLES:
 ${shellExample1}
 ${shellExample2}
