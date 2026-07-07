@@ -17,7 +17,6 @@ consolelog.txt
 .env
 .env.local
 
-dist/
 ai-text-plugin/
 .vscode/
 .github/*
