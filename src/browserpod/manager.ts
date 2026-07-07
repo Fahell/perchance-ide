@@ -48,33 +48,8 @@ export interface BrowserPodConfig {
   storageKey?: string;
 }
 
-// ─── Dynamic import types ───────────────────────────────────
-interface BrowserPodFile {
-  write(content: string): Promise<void>;
-  read(): Promise<string>;
-  close(): Promise<void>;
-}
-
-interface BrowserPodTerminal {
-  // Opaque terminal handle — created via createDefaultTerminal or createCustomTerminal
-}
-
-// Process is an opaque handle — pod.run() resolves when the process exits.
-// There is no .wait() method; the Promise itself resolves at completion.
-
-interface BrowserPodInstance {
-  run(command: string, args?: string[], options?: Record<string, unknown>): Promise<unknown>;
-  createFile(path: string, encoding?: "utf-8" | "binary"): Promise<BrowserPodFile>;
-  openFile(path: string, encoding?: "utf-8" | "binary"): Promise<BrowserPodFile>;
-  createDirectory(path: string): Promise<void>;
-  createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
-  createCustomTerminal(config: { onOutput: (data: string | Uint8Array | number[]) => void }): Promise<BrowserPodTerminal>;
-  dispose(): Promise<void>;
-}
-
-interface BrowserPodClass {
-  boot(config: { apiKey: string; storageKey?: string }): Promise<BrowserPodInstance>;
-}
+// Dynamic import types — declared in browserpod.d.ts
+import type { BrowserPodInstance, BrowserPodTerminal } from "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@latest/+esm";
 
 // ─── Constants ──────────────────────────────────────────────
 const MAX_RECONNECT_ATTEMPTS = 2;
@@ -192,14 +167,14 @@ class BrowserPodManager {
     console.log("[BrowserPod] Booting...");
 
     try {
-      // Dynamic import — loaded from CDN at runtime
-      const module = await import("https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@latest/+esm") as { BrowserPod: BrowserPodClass };
+      // Dynamic import — loaded from CDN at runtime (types in browserpod.d.ts)
+      const { BrowserPod } = await import("https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@latest/+esm");
 
-      if (!module.BrowserPod || typeof module.BrowserPod.boot !== "function") {
+      if (typeof BrowserPod.boot !== "function") {
         throw new Error("BrowserPod.boot not found in module");
       }
 
-      this.pod = await module.BrowserPod.boot({
+      this.pod = await BrowserPod.boot({
         apiKey: config.apiKey,
         storageKey: config.storageKey ?? "agent-perchance",
       });
