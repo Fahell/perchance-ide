@@ -382,7 +382,9 @@ class BrowserPodManager {
       // Validate package.json before syncing to prevent corrupting the Pod environment
       if (file.path.endsWith("package.json")) {
         try {
-          JSON.parse(file.content);
+          // Defensive: strip UTF-8 BOM and invisible whitespace that LLMs may inject
+          const sanitizedContent = file.content.replace(/^\uFEFF/, "").trim();
+          JSON.parse(sanitizedContent);
         } catch {
           console.warn(`[BrowserPod] Skipping invalid package.json at ${file.path} — content is not valid JSON`);
           continue;
@@ -394,6 +396,60 @@ class BrowserPodManager {
     }
     console.log(`[BrowserPod] Synced ${synced}/${files.length} files`);
     return synced;
+  }
+
+  /**
+   * Get the list of file paths from the last sync operation.
+   * Used by shell-tools to reconcile deletions (VFS → Pod).
+   */
+  getLastSyncedPaths(): string[] {
+    return this.lastSyncedFiles.map((f) => f.path);
+  }
+
+  /**
+   * Delete a file or directory inside the Pod via shell command.
+   * Uses `rm -rf` for robustness (handles files and directories).
+   */
+  async deleteFile(path: string): Promise<boolean> {
+    if (!this.pod) return false;
+    // Safety: never delete root or project root
+    if (path === "/" || path === "/home" || path === "/home/user") return false;
+
+    const result = await this.run("bash", ["-c", `rm -rf "${path}"`]);
+    return result.exitCode === 0;
+  }
+
+  /**
+   * Rename/move a file or directory inside the Pod via shell command.
+   * Ensures destination parent directory exists before moving.
+   */
+  async renameFile(oldPath: string, newPath: string): Promise<boolean> {
+    if (!this.pod) return false;
+    // Safety: never move root or project root
+    if (oldPath === "/" || oldPath === "/home" || oldPath === "/home/user") return false;
+
+    // Ensure destination parent directory exists
+    await this.ensureDirectory(newPath);
+
+    const result = await this.run("bash", ["-c", `mv "${oldPath}" "${newPath}"`]);
+    return result.exitCode === 0;
+  }
+
+  /**
+   * List all regular files under a directory in the Pod.
+   * Returns an array of absolute file paths.
+   */
+  async listFiles(dir: string): Promise<string[]> {
+    if (!this.pod) return [];
+
+    const result = await this.run("find", [dir, "-type", "f"]);
+    if (result.exitCode !== 0 || !result.stdout.trim()) return [];
+
+    return result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 
   /**
@@ -449,6 +505,60 @@ class BrowserPodManager {
     this.status = status;
     this.error = error;
     this.notifyStatus();
+  }
+
+  /**
+   * Subscribe to VFS change events and propagate them to the Pod.
+   * Must be called once after boot to enable real-time VFS → Pod sync.
+   * - write: pushes file content to Pod via writeFile()
+   * - delete: removes file/directory in Pod via deleteFile()
+   * - rename: moves file/directory in Pod via renameFile()
+   *
+   * Returns an unsubscribe function.
+   */
+  subscribeToVfsChanges(): () => void {
+    // Dynamic import to avoid circular dependency at module level
+    // vfs.ts does not import from manager.ts, so this is safe at runtime
+    let unsub: (() => void) | null = null;
+
+    import("../vfs.js").then(({ onVfsChange, PROJECT_ROOT }) => {
+      unsub = onVfsChange(async (event) => {
+        if (!this.isReady()) return;
+
+        // Only propagate changes under PROJECT_ROOT — system dirs are Pod-internal
+        if (!event.path.startsWith(PROJECT_ROOT)) return;
+
+        try {
+          switch (event.type) {
+            case "write": {
+              // Read fresh content from VFS (may have changed since event fired)
+              const { vfsRead } = await import("../vfs.js");
+              const content = vfsRead(event.path);
+              if (content !== null) {
+                await this.writeFile(event.path, content);
+              }
+              break;
+            }
+            case "delete":
+              await this.deleteFile(event.path);
+              break;
+            case "rename":
+              if (event.newPath) {
+                await this.renameFile(event.path, event.newPath);
+              }
+              break;
+          }
+        } catch (err) {
+          console.warn(`[BrowserPod] VFS→Pod sync failed for ${event.type} ${event.path}:`, err);
+        }
+      });
+    }).catch((err) => {
+      console.error("[BrowserPod] Failed to subscribe to VFS changes:", err);
+    });
+
+    return () => {
+      unsub?.();
+    };
   }
 }
 

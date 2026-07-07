@@ -12,23 +12,33 @@
 
 import { browserPodManager } from "../browserpod/manager.js";
 import { ideStore } from "../store.js";
-import { PROJECT_ROOT, vfsGetAll, vfsWrite } from "../vfs.js";
+import { PROJECT_ROOT, vfsDeleteTree, vfsGetAll, vfsWrite } from "../vfs.js";
 import type { Tool } from "./index.js";
 
-// ─── VFS Sync Helper (reused pattern from node-tools) ──────
+// ─── VFS Sync Helper (bidirectional reconciliation) ─────────
 async function syncVfsToPod(): Promise<void> {
   const entries = vfsGetAll();
-  if (entries.length === 0) return;
 
-  const vfsEntries = entries
+  // Push: write all VFS files to Pod
+  const vfsFiles = entries
     .filter((e) => e.type === "file")
-    .map((e) => ({
-      path: e.path,
-      content: e.content ?? "",
-    }));
+    .map((e) => ({ path: e.path, content: e.content ?? "" }));
 
-  if (vfsEntries.length > 0) {
-    await browserPodManager.syncFiles(vfsEntries);
+  if (vfsFiles.length > 0) {
+    await browserPodManager.syncFiles(vfsFiles);
+  }
+
+  // Reconcile VFS → Pod: delete files in Pod that were previously synced
+  // but no longer exist in the VFS. Only targets files under PROJECT_ROOT
+  // that are tracked by lastSyncedFiles cache (avoids deleting npm artifacts).
+  const vfsFilePaths = new Set(vfsFiles.map((f) => f.path));
+  const cachedPaths = browserPodManager.getLastSyncedPaths();
+
+  for (const cachedPath of cachedPaths) {
+    if (!vfsFilePaths.has(cachedPath) && cachedPath.startsWith(PROJECT_ROOT + "/")) {
+      const ok = await browserPodManager.deleteFile(cachedPath);
+      if (ok) console.log(`[ShellTools] Deleted stale file on Pod: ${cachedPath}`);
+    }
   }
 }
 
@@ -135,32 +145,20 @@ function isProjectSourceFile(podPath: string): boolean {
  *
  * Tolerant to individual failures — one unreadable file does not abort the pull.
  */
-async function pullProjectFilesFromPod(): Promise<void> {
+export async function pullProjectFilesFromPod(): Promise<void> {
   if (!browserPodManager.isReady()) return;
 
   try {
     // List all regular files under PROJECT_ROOT
-    const findResult = await browserPodManager.run("find", [
-      PROJECT_ROOT, "-type", "f",
-    ]);
-
-    if (findResult.exitCode !== 0 || !findResult.stdout.trim()) {
-      return; // No files found or find failed — nothing to pull
-    }
-
-    const filePaths = findResult.stdout
-      .trim()
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (filePaths.length === 0) return;
+    const podFiles = await browserPodManager.listFiles(PROJECT_ROOT);
+    if (podFiles.length === 0) return;
 
     let pulled = 0;
     let skipped = 0;
     let sizeSkipped = 0;
+    const pulledPaths = new Set<string>();
 
-    for (const podPath of filePaths) {
+    for (const podPath of podFiles) {
       // Enforce file count limit
       if (pulled >= MAX_PULL_FILES) {
         console.warn(`[ShellTools] Pull capped at ${MAX_PULL_FILES} files`);
@@ -187,6 +185,7 @@ async function pullProjectFilesFromPod(): Promise<void> {
         }
 
         vfsWrite(podPath, content);
+        pulledPaths.add(podPath);
         pulled++;
       } catch {
         // Individual file read failure — skip and continue
@@ -194,9 +193,24 @@ async function pullProjectFilesFromPod(): Promise<void> {
       }
     }
 
-    if (pulled > 0 || sizeSkipped > 0) {
+    // Reconcile Pod → VFS: remove orphaned files from VFS that no longer
+    // exist in the Pod. Only removes files under PROJECT_ROOT that match
+    // the source file filter (avoids deleting system dirs or non-source entries).
+    let orphaned = 0;
+    const vfsEntries = vfsGetAll();
+    for (const entry of vfsEntries) {
+      if (entry.type !== "file") continue;
+      if (!entry.path.startsWith(PROJECT_ROOT + "/")) continue;
+      if (!isProjectSourceFile(entry.path)) continue;
+      if (!pulledPaths.has(entry.path)) {
+        vfsDeleteTree(entry.path);
+        orphaned++;
+      }
+    }
+
+    if (pulled > 0 || sizeSkipped > 0 || orphaned > 0) {
       console.log(
-        `[ShellTools] Pulled ${pulled} files from Pod → VFS (${skipped} filtered, ${sizeSkipped} oversized)`
+        `[ShellTools] Pulled ${pulled} files from Pod → VFS (${skipped} filtered, ${sizeSkipped} oversized, ${orphaned} orphans removed)`
       );
     }
   } catch (err) {

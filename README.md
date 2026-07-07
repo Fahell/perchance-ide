@@ -67,8 +67,8 @@ pnpm test:watch
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
 - **Node.js execution** via BrowserPod (remote Node.js runtime) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings
-- **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active; files created on the Pod are auto-pulled into VFS via bidirectional sync
-- **Interactive Terminal** — xterm.js-based terminal panel connected to BrowserPod for live shell sessions; toggleable via `[term]` button in the footer
+- **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active; bidirectional VFS↔Pod sync with reconciliation (stale files deleted, orphaned VFS files removed)
+- **Interactive Terminal** — xterm.js-based terminal panel connected to BrowserPod for live shell sessions; toggleable via `[term]` button in the footer; auto-syncs files back to VFS when panel is hidden
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
 
 ### Code Editor
@@ -143,7 +143,7 @@ src/
 ├── types.ts                  # Perchance ai-text-plugin types + getAi() resolver
 ├── mapper-agent.ts           # Subagent — auto-maintains /<project>/_map/ documentation
 ├── mapper-dispatcher.ts      # Listens to VFS events, coalesces, dispatches per-project mapper
-├── vfs.ts                    # Virtual File System — path operations, tree, snapshot
+├── vfs.ts                    # Virtual File System — path operations, tree, snapshot, inline change events (write/delete/rename) for real-time sync subscribers
 ├── vfs-events.ts             # Hash-based (FNV-1a) change tracking + event emitter
 ├── vfs-persist.ts            # Debounced IndexedDB persistence (2s) with flush
 │
@@ -154,7 +154,7 @@ src/
 │   └── timeout-helpers.ts    # AbortSignal composition, withTimeout, aiCallWithSignal
 │
 ├── browserpod/
-│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run()
+│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run(), Pod file management (delete/rename/list), VFS change subscription for real-time sync
 │
 ├── tools/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
@@ -371,13 +371,23 @@ Centralized debounced persistence via `src/vfs-persist.ts`:
 
 ### VFS Events & Change Tracking
 
-`src/vfs-events.ts` wraps all VFS mutations with hash-based change detection:
+VFS mutations emit events through two complementary systems:
+
+**1. Inline Change Events (`src/vfs.ts`)** — lightweight, no-hash emitter built directly into VFS operations:
+
+- **Event types**: `write`, `delete`, `rename`
+- **Subscriber pattern**: `onVfsChange(listener)` returns unsubscribe function
+- Fires synchronously on every `vfsWrite()`, `vfsDeleteTree()`, and `vfsRename()` call
+- Used by **BrowserPod** for real-time VFS→Pod sync (editor changes propagate immediately)
+- Content sanitization: `vfsWrite()` strips UTF-8 BOM and leading invisible whitespace to prevent downstream parse failures
+
+**2. Hash-Based Change Tracking (`src/vfs-events.ts`)** — wraps VFS mutations with FNV-1a fingerprinting:
 
 - **FNV-1a 32-bit hash** computed on every write (~5μs per 10KB)
 - **Event types**: `created`, `modified`, `deleted`, `renamed`
 - **Subscriber pattern**: `onVfsChange(listener)` returns unsubscribe function
 - **Hash persistence** to IndexedDB for cross-session change detection
-- Used by the Mapper Agent to trigger documentation updates
+- Used by the **Mapper Agent** to trigger documentation updates
 
 ### VFS Path Convention: `PROJECT_ROOT`
 
@@ -418,6 +428,9 @@ Vanilla Zustand store (`src/store.ts`) created with `createStore` and `subscribe
 | --------------------------------- | -------------------------------------------------- |
 | `openFile(path, name, language)`  | Open tab or switch active (dedup)                  |
 | `closeFile(path)`                 | Close tab, select next available                   |
+| `setTerminalOpen(open)`           | Show/hide interactive terminal panel               |
+| `addPortal(portal)`               | Register an active HTTP portal URL                 |
+| `clearPortals()`                  | Clear all tracked HTTP portals                     |
 | `renameFile(oldPath, newPath)`    | Rename + trackedRename events + VFS persist        |
 | `addUserMessage(content)`         | Append user message with timestamp                 |
 | `addToolCall(name, args)`         | Create tool call entry, return ID for updates      |
@@ -532,7 +545,7 @@ Accessible via gear icon in header or `Ctrl+,`:
 - **Cancellation**: User can cancel an in-progress agent response via AbortController. The LLM call is stopped via `aiResult.stop()`, and any running tool executions are aborted.
 - **"Continue" mechanism**: When agent response is truncated (>~1000 tokens), the panel shows a "Continue" button that re-calls the LLM with `startWith: truncatedText` to pick up where it left off.
 - **Mapper Agent**: After the main agent finishes, per-project VFS changes are coalesced and dispatched to a lightweight subagent that auto-maintains documentation in `/<project>/_map/`. This subagent runs with clean context (no history) and has its own internal tool loop (read_file, write_file, edit_file, rename_file, delete_file). Uses the same CDATA-based flat XML tool call format as the main agent.
-- **Shell bidirectional sync**: After `run_shell_command` or `run_git_command` executes, files created on the BrowserPod (e.g., via `git clone`, `mkdir`, `curl`) are auto-pulled back into the VFS. The pull uses an allowlist filter: only recognized source extensions (`.ts`, `.js`, `.py`, `.md`, `.json`, etc.) and well-known config filenames are synced; runtime artifacts (`node_modules`, `.git`, `dist`, etc.) are excluded. Per-file size limit: 512 KB. Max files: 500 per sync cycle. Best-effort — individual failures don't block execution.
+- **Shell bidirectional sync**: After `run_shell_command` or `run_git_command` executes, files created on the BrowserPod (e.g., via `git clone`, `mkdir`, `curl`) are auto-pulled back into the VFS. The sync is bidirectional: VFS→Pod pushes new/changed files and **deletes stale** files no longer in VFS; Pod→VFS pulls new/changed files and **removes orphaned** VFS entries that no longer exist on the Pod. The pull uses an allowlist filter: only recognized source extensions (`.ts`, `.js`, `.py`, `.md`, `.json`, etc.) and well-known config filenames are synced; runtime artifacts (`node_modules`, `.git`, `dist`, etc.) are excluded. Per-file size limit: 512 KB. Max files: 500 per sync cycle. Best-effort — individual failures don't block execution.
 - **Project structure rule**: The agent's system prompt instructs it to place source code under dedicated directories (`src/`, `app/`, `lib/`), declare source boundaries via `"files": ["src/"]` in `package.json`, and never mix runtime artifacts with source files. Only recognized source extensions and well-known config names are synced back to the IDE VFS.
 - **Retry policy**: All external API calls (Jina AI) use exponential backoff with full jitter (AWS-recommended). Retryable errors: network errors (TypeError), HTTP 429, 5xx. Non-retryable: 4xx (except 429), AbortError.
 

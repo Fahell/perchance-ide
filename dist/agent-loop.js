@@ -1,0 +1,257 @@
+/**
+ * Agent loop — orchestrates tool call detection and execution.
+ *
+ * Flow:
+ *   1. Send user message to LLM with tool instructions
+ *   2. LLM responds (possibly with tool_call XML)
+ *   3. Detect tool_call → execute tool → feed result back
+ *   4. Repeat until LLM gives a final answer (no tool_call)
+ *
+ * Extracted modules live in src/agent/:
+ *   - timeout-helpers: AbortSignal utilities, withTimeout, aiCallWithSignal
+ *   - prompt-builder: Dynamic system prompt based on enabled tools
+ *   - tool-call-parser: XML extraction, cleaning, closing-tag repair
+ *   - repetition-detector: Loop prevention via fingerprint tracking
+ */
+import { getPyodideStatus } from "./terminal/pyodide.js";
+import { checkToolRateLimit, getTool, validateToolArgs } from "./tools/index.js";
+import { truncateOutput } from "./utils/truncate.js";
+import { vfsGetAll } from "./vfs.js";
+// ─── Extracted Modules ──────────────────────────────────────
+import { buildToolPrompt } from "./agent/prompt-builder.js";
+import { RepetitionDetector } from "./agent/repetition-detector.js";
+import { LLM_TIMEOUT_MS, aiCallWithSignal, combineSignals, withTimeout, } from "./agent/timeout-helpers.js";
+import { cleanResponse, extractToolCalls, fixToolCallClosing, } from "./agent/tool-call-parser.js";
+// ─── Tag Constants (fill in manually) ───────────────────────
+const tcOpen = "<tool_call>";
+const tcClose = "</tool_call>";
+// ─── Local Constants ────────────────────────────────────────
+const MAX_TOOL_OUTPUT = 20_000; // Safety net for tool result truncation
+// ─── Manual Continue ────────────────────────────────────────
+/**
+ * Continue a truncated assistant response using startWith.
+ * The LLM picks up from where it left off in the same message.
+ * result.generatedText contains ONLY the new text (excludes startWith).
+ */
+export async function continueResponse(truncatedText) {
+    const result = await aiCallWithSignal({
+        instruction: "Continue from where you left off in your previous response. " +
+            "Do NOT repeat what was already written — just continue naturally. " +
+            "Keep it concise. Do not use tool calls unless absolutely necessary.",
+        startWith: truncatedText,
+        stopSequences: [tcClose],
+    });
+    return (result.generatedText || result.text || "").trim();
+}
+// ─── Agent Loop ─────────────────────────────────────────────
+export async function agentLoop(userMessage, context, onStatus, onToolResult, onToolStart, onToolError, signal) {
+    // Gather dynamic state for the system prompt
+    const pyodideStatus = getPyodideStatus();
+    const vfsFileCount = vfsGetAll().filter((e) => e.type === "file").length;
+    const toolPrompt = buildToolPrompt(vfsFileCount, pyodideStatus.loaded);
+    // Build the instruction for the LLM with structured context
+    const instructionParts = [];
+    instructionParts.push(toolPrompt);
+    // Add summary if available
+    if (context.summary) {
+        instructionParts.push(`[Earlier conversation summary]:\n${context.summary}`);
+    }
+    // Add recent messages
+    if (context.recentMessages.length > 0) {
+        let recentBlock = "[Recent messages]:\n";
+        for (const msg of context.recentMessages) {
+            const role = msg.role === "user" ? "User" : "Assistant";
+            recentBlock += `${role}: ${msg.content}\n`;
+        }
+        instructionParts.push(recentBlock);
+    }
+    // Add memories if available
+    if (context.memories) {
+        instructionParts.push(`[Key facts from conversation]:\n${context.memories}`);
+    }
+    instructionParts.push(`User message: ${userMessage}`);
+    // Initialize repetition detector
+    const detector = new RepetitionDetector();
+    // Continuation state for truncated responses
+    let continuationText = null;
+    let continuationCount = 0;
+    let iteration = 0;
+    while (true) {
+        iteration++;
+        onStatus?.(`Thinking... (step ${iteration})`);
+        // Check for cancellation
+        if (signal?.aborted) {
+            return "The operation was cancelled.";
+        }
+        // Call the LLM via ai-text-plugin with timeout + cancellation
+        const llmSignal = signal
+            ? combineSignals(signal, AbortSignal.timeout(LLM_TIMEOUT_MS))
+            : AbortSignal.timeout(LLM_TIMEOUT_MS);
+        let result;
+        try {
+            result = await aiCallWithSignal({
+                instruction: instructionParts.join("\n\n"),
+                stopSequences: [tcClose],
+                ...(continuationText ? { startWith: continuationText } : {}),
+            }, llmSignal);
+        }
+        catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") {
+                const reason = signal?.aborted
+                    ? "The operation was cancelled by the user."
+                    : `The operation timed out after ${LLM_TIMEOUT_MS / 1000} seconds.`;
+                onStatus?.(reason);
+                return reason;
+            }
+            throw err;
+        }
+        const fullText = result.text || result.generatedText || result.toString();
+        // Fix tool_call closing syntax before extraction
+        const fullTextFixed = fixToolCallClosing(fullText);
+        if (fullTextFixed !== fullText) {
+            console.warn("[Agent] Fixed tool_call closing syntax");
+        }
+        // Check for tool calls in the full accumulated text
+        const toolCalls = extractToolCalls(fullTextFixed);
+        // Detect dangling tool calls (truncated mid-XML)
+        const hasDanglingToolCall = tcOpen
+            ? countOccurrences(fullText, tcOpen) > countOccurrences(fullText, tcClose)
+            : false;
+        // Save the FULL accumulated text for continuation
+        if (hasDanglingToolCall) {
+            continuationText = fullText;
+            continuationCount++;
+        }
+        else {
+            continuationText = null;
+            continuationCount = 0;
+        }
+        if (toolCalls.length === 0 && !hasDanglingToolCall) {
+            // No tool calls, not dangling — this is the final answer
+            const finalAnswer = cleanResponse(fullText);
+            if (finalAnswer.length > 0)
+                return finalAnswer;
+            // Empty response — retry with explicit instruction (once)
+            if (!signal?.aborted) {
+                onStatus?.("Retrying — empty response...");
+                instructionParts.push("Your previous response was empty. Write a clear, concise answer to the user's question using the information above. Do NOT output tool_call XML — just write your answer directly.");
+                continue;
+            }
+        }
+        // Execute all tool calls in parallel
+        const outcomes = await Promise.all(toolCalls.map(async (call) => {
+            try {
+                const tool = getTool(call.name);
+                if (!tool)
+                    return {
+                        call,
+                        status: "fulfilled",
+                        result: undefined,
+                        error: undefined,
+                    };
+                onStatus?.(`Using ${call.name}...`);
+                onToolStart?.(call.name, call.args);
+                // Rate limit check
+                const rateCheck = checkToolRateLimit(call.name);
+                if (!rateCheck.allowed) {
+                    const waitSec = Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000);
+                    const rateMsg = `Rate limit exceeded for ${call.name}. Please wait ${waitSec}s before calling this tool again.`;
+                    onToolError?.(call.name, call.args, rateMsg);
+                    return {
+                        call,
+                        status: "rejected",
+                        result: undefined,
+                        error: rateMsg,
+                    };
+                }
+                const validationError = validateToolArgs(tool, call.args);
+                if (validationError) {
+                    onToolError?.(call.name, call.args, validationError);
+                    return {
+                        call,
+                        status: "rejected",
+                        result: undefined,
+                        error: validationError,
+                    };
+                }
+                const timeoutMs = tool.timeoutMs ?? 30_000;
+                let execResult = await withTimeout(tool.execute(call.args), timeoutMs, call.name, signal);
+                // Safety net truncation
+                if (execResult.length > MAX_TOOL_OUTPUT) {
+                    execResult = truncateOutput(execResult, MAX_TOOL_OUTPUT);
+                }
+                onToolResult?.(call.name, call.args, execResult);
+                return { call, status: "fulfilled", result: execResult, error: undefined };
+            }
+            catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                console.error(`[Agent] Tool ${call.name} failed:`, errorMsg);
+                onToolError?.(call.name, call.args, errorMsg);
+                return {
+                    call,
+                    status: "rejected",
+                    result: undefined,
+                    error: errorMsg,
+                };
+            }
+        }));
+        // Process in ORIGINAL order for instructionParts + repetition detection
+        for (const outcome of outcomes) {
+            const { call } = outcome;
+            if (outcome.status === "fulfilled" && outcome.result !== undefined) {
+                // Dynamic next-step guidance
+                let nextStep = "";
+                if (call.name === "web_search") {
+                    nextStep =
+                        "Analyze these search results. Pick the 1-2 most relevant URLs and use scrape_url to read their full content. If the results don't look relevant, try a different search query instead.";
+                }
+                else if (call.name === "scrape_url") {
+                    nextStep =
+                        "Use the page content above to answer the user's question. If the scraped content doesn't contain the answer, try scraping a different URL from the earlier search results, or run a new web_search with a different query.";
+                }
+                else {
+                    nextStep = "Now respond to the user based on this information.";
+                }
+                instructionParts.push(`[Tool Result - ${call.name}]:\n${outcome.result}\n\n${nextStep}`);
+                // Repetition detection
+                const repStatus = detector.check(call.name, call.args);
+                if (repStatus === "warn") {
+                    instructionParts.push(`[System]: You have called ${call.name} with the same arguments multiple times in a row. This appears to be repetitive. Try a different approach or synthesize the answer from information you already have.`);
+                }
+                else if (repStatus === "interrupt") {
+                    return `The agent was interrupted because it appeared to be stuck in a loop (called ${call.name} with identical arguments too many times). Here's what was accomplished so far. Please try rephrasing your request.`;
+                }
+            }
+            else {
+                // Tool failed or returned no result
+                if (outcome.error) {
+                    instructionParts.push(`[Tool Error - ${call.name}]: ${outcome.error}\n\nThe tool failed. Respond to the user explaining the issue.`);
+                }
+            }
+        }
+        // Add continuation marker when dangling detected
+        if (hasDanglingToolCall) {
+            onStatus?.("Response was truncated — continuing...");
+            instructionParts.push("[CONTINUE]: Your previous response was cut off. " +
+                "The incomplete tool_call was NOT executed. Results from complete tool calls are above. " +
+                "Continue your response from where you left off, and explicitly close the call with " +
+                tcClose +
+                " to exit the tool after finishing the content.");
+        }
+    }
+    return "I apologize, but I wasn't able to complete that task.";
+}
+/**
+ * Count non-overlapping occurrences of a substring.
+ */
+function countOccurrences(text, substr) {
+    if (!substr)
+        return 0;
+    let count = 0;
+    let pos = 0;
+    while ((pos = text.indexOf(substr, pos)) !== -1) {
+        count++;
+        pos += substr.length;
+    }
+    return count;
+}

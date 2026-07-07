@@ -117,16 +117,21 @@ export function vfsWrite(path: string, content: string): void {
   const npath = normalize(path);
   const now = Date.now();
 
+  // Strip UTF-8 BOM and invisible whitespace to prevent downstream parse failures
+  const sanitized = typeof content === "string" ? content.replace(/^\uFEFF/, "").trimStart() : content;
+
   // Ensure parent directory chain exists
   ensureDir(parentDir(npath), now);
 
   _entries.set(npath, {
     path: npath,
-    content,
+    content: sanitized,
     type: "file",
     createdAt: _entries.get(npath)?.createdAt ?? now,
     modifiedAt: now,
   });
+
+  notifyVfsChange({ type: "write", path: npath });
 }
 
 /** Create a directory (no-op if already exists). */
@@ -155,6 +160,8 @@ export function vfsDeleteTree(path: string): boolean {
       _entries.delete(p);
     }
   }
+
+  notifyVfsChange({ type: "delete", path: npath });
   return true;
 }
 
@@ -220,6 +227,7 @@ export function vfsRename(oldPath: string, newPath: string): boolean {
     _entries.set(nnew, { ...entry, path: nnew, modifiedAt: now });
     _entries.delete(nold);
   }
+  notifyVfsChange({ type: "rename", path: nold, newPath: nnew });
   return true;
 }
 
@@ -265,4 +273,38 @@ export function vfsIsEmpty(): boolean {
   // Empty means only /, /home, /home/user exist (3 system dirs)
   if (_entries.size > 3) return false;
   return _entries.has("/") && _entries.has("/home") && _entries.has(PROJECT_ROOT);
+}
+
+// ─── VFS Change Events ─────────────────────────────────────
+/** Types of VFS mutations that external systems can subscribe to. */
+export type VfsChangeType = "write" | "delete" | "rename";
+
+export interface VfsChangeEvent {
+  type: VfsChangeType;
+  path: string;
+  /** Only present for rename events — the new path after rename. */
+  newPath?: string;
+}
+
+type VfsChangeListener = (event: VfsChangeEvent) => void;
+
+const _vfsChangeListeners: VfsChangeListener[] = [];
+
+/** Subscribe to VFS mutation events. Returns an unsubscribe function. */
+export function onVfsChange(listener: VfsChangeListener): () => void {
+  _vfsChangeListeners.push(listener);
+  return () => {
+    const idx = _vfsChangeListeners.indexOf(listener);
+    if (idx >= 0) _vfsChangeListeners.splice(idx, 1);
+  };
+}
+
+function notifyVfsChange(event: VfsChangeEvent): void {
+  for (const listener of _vfsChangeListeners) {
+    try {
+      listener(event);
+    } catch {
+      // Listener error must not break VFS operations
+    }
+  }
 }

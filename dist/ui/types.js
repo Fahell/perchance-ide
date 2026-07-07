@@ -1,0 +1,4 @@
+/**
+ * Panel-specific types
+ */
+export {};

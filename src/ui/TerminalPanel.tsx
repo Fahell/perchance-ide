@@ -12,8 +12,9 @@
  */
 
 import { useEffect, useRef } from "preact/hooks";
-import { colors, fonts } from "./theme.js";
 import { browserPodManager } from "../browserpod/manager.js";
+import { pullProjectFilesFromPod } from "../tools/shell-tools.js";
+import { colors, fonts } from "./theme.js";
 
 interface TerminalPanelProps {
   visible: boolean;
@@ -24,6 +25,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const podTermRef = useRef<unknown>(null);
+  const wasVisibleRef = useRef(false);
 
   // Initialize xterm when panel becomes visible
   useEffect(() => {
@@ -121,7 +123,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
     };
   }, [visible]);
 
-  // Re-fit when visibility toggles back on
+  // Re-fit when visibility toggles back on + trigger Pod→VFS sync on hide
   useEffect(() => {
     if (visible && fitRef.current) {
       requestAnimationFrame(() => {
@@ -132,6 +134,15 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         }
       });
     }
+
+    // When terminal panel is hidden after being visible, reconcile Pod → VFS.
+    // This captures any file changes made via interactive terminal (by user or agent).
+    if (wasVisibleRef.current && !visible) {
+      pullProjectFilesFromPod().catch((err: unknown) => {
+        console.warn("[TerminalPanel] Pod→VFS sync on hide failed:", err);
+      });
+    }
+    wasVisibleRef.current = visible;
   }, [visible]);
 
   if (!visible) return null;

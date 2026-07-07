@@ -35,6 +35,8 @@ export function buildToolPrompt(vfsFileCount, pyodideLoaded) {
         enabledCats.add("terminal");
     if (settings.toolNodeEnabled)
         enabledCats.add("node");
+    if (settings.toolNodeEnabled)
+        enabledCats.add("shell");
     // Build conditional sections based on enabled categories
     const sections = [];
     sections.push(`You are an autonomous IDE agent operating inside a web-based development environment. You can read, write, and manage project files, execute Python code, search the web, and maintain conversation context when them are active. Use your tools to accomplish tasks independently and accurately.`);
@@ -74,6 +76,44 @@ export function buildToolPrompt(vfsFileCount, pyodideLoaded) {
             `${tcClose}`,
         ].join("\n");
         sections.push(`NODE.JS (in-browser via BrowserPod, VFS auto-synced):\n- run_npm_install: Install dependencies from package.json or specific packages.\n- run_node_script: Execute a .js/.mjs file from VFS. Only parameters: path (required), args (optional).\n- execute_npm_command: Run arbitrary npm/npx commands (e.g. "test", "build", "run dev").\n- stdout, stderr, and exit code captured.\n- Use Python tools for .py files; use Node.js tools for .js/.ts/npm workflows.\n⚠️ NEVER pass internal keywords (like "terminal", "node", "npm") as parameter values. The "args" parameter is ONLY for actual script arguments (e.g. "--verbose", "input.txt"). If no extra args are needed, omit the <args> tag entirely.\n\nEXAMPLES:\n${nodeExample1}\n${nodeExample2}`);
+    }
+    // Conditional: Shell tools (BrowserPod — Bash, Git, HTTP portals)
+    if (enabledCats.has("shell")) {
+        const shellExample1 = [
+            `${tcOpen}`,
+            `  <name>run_shell_command</name>`,
+            `  <command><![CDATA[ls -la /home/user/src]]></command>`,
+            `${tcClose}`,
+        ].join("\n");
+        const shellExample2 = [
+            `${tcOpen}`,
+            `  <name>run_git_command</name>`,
+            `  <args><![CDATA[status]]></args>`,
+            `${tcClose}`,
+        ].join("\n");
+        const shellExample3 = [
+            `${tcOpen}`,
+            `  <name>start_http_server</name>`,
+            `  <command><![CDATA[node server.js]]></command>`,
+            `  <port><![CDATA[3000]]></port>`,
+            `${tcClose}`,
+        ].join("\n");
+        sections.push(`SHELL & SERVICES (in-browser via BrowserPod):
+- run_shell_command: Execute safe Bash commands (ls, cat, grep, find, curl, mkdir, cp, mv, rm, node, npm, git, ps, kill, etc.). Whitelist-enforced.
+- run_git_command: Native Git operations (status, log, diff, add, commit, branch, checkout). Destructive ops (push, fetch, remote, config) are blocked.
+- start_http_server: Start an HTTP server and get a public portal URL. The server runs inside the BrowserPod sandbox.
+⚠️ NEVER pass internal keywords (like "terminal", "bash", "shell") as parameter values.
+
+PROJECT STRUCTURE RULE — When creating new projects or scaffolding code:
+- Place ALL source code under a dedicated directory (e.g., src/, app/, lib/).
+- In package.json, declare "files": ["src/"] (or equivalent) to mark source boundaries.
+- Runtime artifacts (node_modules, dist, build, .cache, logs) must NEVER be placed alongside source files.
+- Only files matching recognized source extensions (.ts, .js, .json, .md, .html, .css, etc.) and well-known config names (package.json, tsconfig.json, Dockerfile, Makefile, .gitignore, etc.) are synced back to the IDE filesystem. Binary files, logs, and unknown extensions are intentionally excluded.
+
+EXAMPLES:
+${shellExample1}
+${shellExample2}
+${shellExample3}`);
     }
     // Tool call format instruction — uses flat XML tags with CDATA
     const formatExample = [
