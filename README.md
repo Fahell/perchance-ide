@@ -368,6 +368,10 @@ Centralized debounced persistence via `src/vfs-persist.ts`:
 - **Hash persistence** to IndexedDB for cross-session change detection
 - Used by the Mapper Agent to trigger documentation updates
 
+### VFS Path Convention: `PROJECT_ROOT`
+
+Since v0.1.0, the VFS uses `PROJECT_ROOT = "/home/user"` instead of bare `/` for POSIX compatibility with the BrowserPod Node.js runtime. All project files live under `/home/user/...` — paths like `/src/index.ts` are no longer valid. The root `/` and `/home` are protected from deletion. Tool descriptions in the system prompt dynamically reference `PROJECT_ROOT` (e.g., `/home/user/src/index.ts`).
+
 ### Virtual File System I/O (Export/Import)
 
 `src/utils/vfs-io.ts` provides project serialization:
