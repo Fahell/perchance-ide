@@ -140,7 +140,7 @@ class BrowserPodManager {
         console.log("[BrowserPod] Booting...");
         try {
             // Dynamic import — loaded from CDN at runtime (types in browserpod.d.ts)
-            const { BrowserPod } = await import("https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@latest/+esm");
+            const { BrowserPod } = await import("https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@2.12.1/+esm");
             if (typeof BrowserPod.boot !== "function") {
                 throw new Error("BrowserPod.boot not found in module");
             }
@@ -150,19 +150,14 @@ class BrowserPodManager {
                 nodeVersion: config.nodeVersion ?? "22",
             });
             // Create custom headless terminal with onOutput callback
-            // BrowserPod 2.0 delivers raw bytes (Uint8Array) — decode to UTF-8 string
+            // BrowserPod delivers raw terminal data as ArrayBuffer — decode to UTF-8 string
             const decoder = new TextDecoder("utf-8");
             this.terminal = await this.pod.createCustomTerminal({
-                onOutput: (data) => {
-                    let text;
-                    if (typeof data === "string") {
-                        text = data;
-                    }
-                    else {
-                        // Copy to non-shared buffer — TextDecoder rejects SharedArrayBuffer views
-                        const bytes = new Uint8Array(data instanceof Uint8Array ? data.slice() : [...data]);
-                        text = decoder.decode(bytes);
-                    }
+                onOutput: (buffer, _vt) => {
+                    // Copy via slice() to handle both ArrayBuffer and SharedArrayBuffer
+                    // TextDecoder may reject SharedArrayBuffer-backed views
+                    const bytes = new Uint8Array(buffer.slice(0));
+                    const text = decoder.decode(bytes);
                     this.outputBuffer.push(text);
                 },
             });
@@ -357,7 +352,8 @@ class BrowserPodManager {
                     JSON.parse(sanitizedContent);
                 }
                 catch {
-                    console.warn(`[BrowserPod] Skipping invalid package.json at ${file.path} — content is not valid JSON`);
+                    const preview = file.content.slice(0, 200).replace(/\n/g, "\\n");
+                    console.warn(`[BrowserPod] Skipping invalid package.json at ${file.path} — content is not valid JSON. Preview: ${preview}`);
                     continue;
                 }
             }
@@ -411,7 +407,11 @@ class BrowserPodManager {
         if (!this.pod)
             return [];
         const result = await this.run("find", [dir, "-type", "f"]);
-        if (result.exitCode !== 0 || !result.stdout.trim())
+        if (result.exitCode !== 0) {
+            console.warn(`[BrowserPod] listFiles(${dir}) find exited with code ${result.exitCode}`);
+            return [];
+        }
+        if (!result.stdout.trim())
             return [];
         return result.stdout
             .trim()
@@ -485,9 +485,9 @@ class BrowserPodManager {
     subscribeToVfsChanges() {
         // Dynamic import to avoid circular dependency at module level
         // vfs.ts does not import from manager.ts, so this is safe at runtime
-        let unsub = null;
+        const ref = { current: null };
         import("../vfs.js").then(({ onVfsChange, PROJECT_ROOT }) => {
-            unsub = onVfsChange(async (event) => {
+            const unsubscribe = onVfsChange(async (event) => {
                 if (!this.isReady())
                     return;
                 // Only propagate changes under PROJECT_ROOT — system dirs are Pod-internal
@@ -518,11 +518,12 @@ class BrowserPodManager {
                     console.warn(`[BrowserPod] VFS→Pod sync failed for ${event.type} ${event.path}:`, err);
                 }
             });
+            ref.current = unsubscribe;
         }).catch((err) => {
             console.error("[BrowserPod] Failed to subscribe to VFS changes:", err);
         });
         return () => {
-            unsub?.();
+            ref.current?.();
         };
     }
 }

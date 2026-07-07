@@ -414,14 +414,12 @@ function createStartHttpServerTool() {
             // Sync VFS → Pod so server files are available
             await syncVfsToPod();
             // Register portal callback to capture the URL when the server starts listening
-            // registerPortalCallback() returns an unsubscribe function for cleanup
             let portalUrl = null;
-            let portalUnsub = null;
             const portalPromise = new Promise((resolve) => {
                 const timeout = setTimeout(() => {
                     resolve("");
                 }, 15_000);
-                portalUnsub = browserPodManager.registerPortalCallback((event) => {
+                browserPodManager.registerPortalCallback((event) => {
                     if (event.port === port) {
                         clearTimeout(timeout);
                         portalUrl = event.url;
@@ -442,8 +440,6 @@ function createStartHttpServerTool() {
             const serverPromise = browserPodManager.run("bash", ["-c", command], { cwd: "/home/user" });
             // Wait for either the portal URL or a timeout
             const url = await portalPromise;
-            // Cleanup: unregister the portal callback since we got our URL (or timed out)
-            portalUnsub?.();
             if (url) {
                 return `HTTP server started successfully.\nPublic URL: ${url}\nPort: ${port}\nCommand: ${command}\n\nNote: The server runs in the background. Use run_shell_command to check its status or kill it.`;
             }

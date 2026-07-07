@@ -66,7 +66,7 @@ pnpm test:watch
 - **Python execution** via Pyodide WebAssembly (v314.0.2) in a dedicated Web Worker — keeps main thread responsive during load and execution; automatic VFS↔MEMFS bidirectional sync via message passing with incremental change propagation (no full snapshot on repeated executions)
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
-- **Node.js execution** via BrowserPod — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings; all operations run in the project root (`/home/user`) via `RunOptions.cwd`
+- **Node.js execution** via BrowserPod v2.12.1 (loaded from CDN, pinned to version tag) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings; all operations run in the project root (`/home/user`) via `RunOptions.cwd`; **persistent disk**: `storageKey` defaults to `"agent-perchance"` so the same Pod disk is resumed across page reloads
 - **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active; bidirectional VFS↔Pod sync with reconciliation (stale files deleted, orphaned VFS files removed); all operations default to `cwd: "/home/user"`; `deleteFile`/`renameFile` use direct exec (no shell wrapping) for injection safety
 - **Interactive Terminal** — xterm.js-based terminal panel (managed internally by BrowserPod, no separate instance) for live shell sessions; toggleable via `[term]` button in the editor column footer; resizable (drag handle, 100-600px) with close button; auto-syncs files back to VFS when panel is hidden; supports multiple simultaneous HTTP portals via multi-callback `registerPortalCallback`
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
@@ -156,8 +156,8 @@ src/
 │   └── timeout-helpers.ts    # AbortSignal composition, withTimeout, aiCallWithSignal
 │
 ├── browserpod/
-│   ├── browserpod.d.ts       # Type declarations for @leaningtech/browserpod v2.12.1 — BootConfig, RunOptions, BinaryFile, overloaded createFile/openFile
-│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run(RunOptions with cwd/env/echo), Pod file management (delete/rename/list with recursive mkdir), multi-callback portal support, VFS change subscription for real-time sync
+│   ├── browserpod.d.ts       # Type declarations for @leaningtech/browserpod@2.12.1 (pinned CDN version) — BootConfig, RunOptions, Terminal, Process, BinaryFile, overloaded createFile/openFile, ArrayBuffer-based onOutput
+│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run(RunOptions with cwd/env/echo), Pod file management (delete/rename/list with recursive mkdir), multi-callback portal support, VFS change subscription for real-time sync; persistent storage by default (storageKey: "agent-perchance")
 │
 ├── tools/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
