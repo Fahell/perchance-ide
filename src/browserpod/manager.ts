@@ -64,6 +64,7 @@ class BrowserPodManager {
   private error: string | null = null;
   private config: BrowserPodConfig | null = null;
   private statusListeners: Array<(status: BrowserPodStatus, error: string | null) => void> = [];
+  private portalCallback: ((event: { url: string; port: number }) => void) | null = null;
 
   /** Cache of last synced files for automatic re-sync after reconnection */
   private lastSyncedFiles: Array<{ path: string; content: string }> = [];
@@ -195,6 +196,11 @@ class BrowserPodManager {
           this.outputBuffer.push(text);
         },
       });
+
+      // Register portal callback if one was set before boot
+      if (this.portalCallback) {
+        this.pod.onPortal(this.portalCallback);
+      }
 
       this.setStatus("ready");
       console.log("[BrowserPod] Ready");
@@ -391,6 +397,34 @@ class BrowserPodManager {
   }
 
   /**
+   * Create an interactive terminal attached to a DOM element.
+   * Uses createDefaultTerminal(element) — the official BrowserPod 2.0 API
+   * for interactive sessions with full stdin/stdout support via xterm.js.
+   *
+   * This is separate from the headless createCustomTerminal used by agent tools.
+   * Both can coexist within the same Pod instance.
+   */
+  async createInteractiveTerminal(element: HTMLElement): Promise<BrowserPodTerminal> {
+    if (!this.pod) {
+      throw new Error("BrowserPod not initialized");
+    }
+    return await this.pod.createDefaultTerminal(element);
+  }
+
+  /**
+   * Register a callback for HTTP portal events.
+   * Uses the official pod.onPortal() API from BrowserPod 2.0.
+   * The callback is invoked whenever a process inside the Pod calls listen() on a port.
+   * Can be called before or after boot — if called before, it is registered during boot().
+   */
+  registerPortalCallback(callback: (event: { url: string; port: number }) => void): void {
+    this.portalCallback = callback;
+    if (this.pod) {
+      this.pod.onPortal(callback);
+    }
+  }
+
+  /**
    * Terminate the pod and release resources.
    */
   async dispose(): Promise<void> {
@@ -405,6 +439,7 @@ class BrowserPodManager {
     }
     this.outputBuffer = [];
     this.lastSyncedFiles = [];
+    this.portalCallback = null;
     this.setStatus("idle");
     this.config = null;
     console.log("[BrowserPod] Disposed");

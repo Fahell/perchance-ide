@@ -96,6 +96,10 @@ export interface IdeState {
   // VFS version counter — incremented on file writes for preview reactivity (11.2)
   vfsVersion: number;
 
+  // Terminal panel state
+  terminalOpen: boolean;
+  activePortals: Array<{ url: string; port: number }>;
+
   // Output history for OutputPanel (11.3)
   outputs: OutputEntry[];
 
@@ -131,6 +135,11 @@ export interface IdeState {
 
   // VFS version bump (11.2)
   bumpVfsVersion: () => void;
+
+  // Terminal panel actions
+  setTerminalOpen: (open: boolean) => void;
+  addPortal: (portal: { url: string; port: number }) => void;
+  clearPortals: () => void;
 
   // Output panel (11.3)
   addOutput: (entry: Omit<OutputEntry, "id" | "timestamp">) => void;
@@ -182,6 +191,8 @@ export const ideStore = createStore<IdeState>()(
     editorView: null as EditorView | null,
     settingsVersion: 0,
     vfsVersion: 0,
+    terminalOpen: false,
+    activePortals: [] as Array<{ url: string; port: number }>,
     outputs: [] as OutputEntry[],
 
     // ── Actions ────────────────────────────────────────
@@ -336,6 +347,13 @@ export const ideStore = createStore<IdeState>()(
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),
 
     bumpVfsVersion: () => set((s) => ({ vfsVersion: s.vfsVersion + 1 })),
+
+    setTerminalOpen: (open) => set({ terminalOpen: open }),
+    addPortal: (portal) =>
+      set((s) => ({
+        activePortals: [...s.activePortals.filter((p) => p.port !== portal.port), portal],
+      })),
+    clearPortals: () => set({ activePortals: [] }),
 
     addOutput: (entry) =>
       set((s) => {

@@ -17,6 +17,7 @@ declare module "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@latest/+esm
     createDirectory(path: string): Promise<void>;
     createDefaultTerminal(element: HTMLElement): Promise<BrowserPodTerminal>;
     createCustomTerminal(config: { onOutput: (data: string | Uint8Array | number[]) => void }): Promise<BrowserPodTerminal>;
+    onPortal(callback: (event: { url: string; port: number }) => void): void;
     dispose(): Promise<void>;
   }
 

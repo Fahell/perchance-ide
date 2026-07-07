@@ -12,7 +12,7 @@ import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
 import { loadSettings } from "./store.js";
-import { initContextTools, initNodeTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
+import { initContextTools, initNodeTools, initShellTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
 import { isAiAvailable } from "./types.js";
 import { renderPanel, renderSetup, type AgentPanelRef } from "./ui/index.js";
@@ -241,6 +241,7 @@ async function startAgent() {
   const { ideStore } = await import("./store.js");
   if (ideStore.getState().settings.toolNodeEnabled) {
     initNodeTools();
+    initShellTools();
     const bpKey = ideStore.getState().settings.browserPodApiKey;
     if (bpKey) {
       import("./browserpod/manager.js").then(({ browserPodManager }) => {

@@ -67,6 +67,8 @@ pnpm test:watch
 - **Package installation** via micropip (numpy, pandas, requests, etc.)
 - **Rate limiting** per tool via sliding window algorithm
 - **Node.js execution** via BrowserPod (remote Node.js runtime) — `npm install`, `run_node_script`, `execute_npm_command`; requires a BrowserPod API key (console.browserpod.io); conditionally booted at startup when enabled in settings
+- **Shell Tools** via BrowserPod — `run_shell_command` (whitelisted Bash, Git, system utilities), `run_git_command` (safe Git operations), `start_http_server` (HTTP portal with public URL); auto-enabled when Node.js tools are active
+- **Interactive Terminal** — xterm.js-based terminal panel connected to BrowserPod for live shell sessions; toggleable via `[term]` button in the footer
 - **"Continue" mechanism** for truncated responses — picks up where the LLM left off via `startWith`
 
 ### Code Editor
@@ -158,6 +160,7 @@ src/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
 │   ├── context-tools.ts      # search_history (BM25-lite, trilingual stopwords) + get_messages
 │   ├── node-tools.ts         # Node.js tools (npm install, node script, npm command) via BrowserPod
+│   ├── shell-tools.ts        # Shell tools (run_shell_command, run_git_command, start_http_server) via BrowserPod
 │   ├── vfs-tools.ts          # read/write/edit/list/search/delete/rename — diff-cache integration
 │   ├── terminal-tools.ts     # run_python, execute_script, install_package
 │   └── web-search.ts         # Jina AI search + scrape with TTL cache
@@ -271,6 +274,14 @@ The agent has access to the following tools, exposed through a generic `ToolDefi
 | `run_npm_install`     | Install npm packages (or from package.json)          | `{ packages?: string }`           |
 | `run_node_script`     | Execute a Node.js script file in the BrowserPod env  | `{ path: string, args?: string }` |
 | `execute_npm_command` | Run an arbitrary npm command (test, build, start...) | `{ command: string }`             |
+
+### Shell Tools (BrowserPod)
+
+| Tool                | Description                                                                                                   | Parameters                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `run_shell_command` | Execute safe Bash commands (whitelist-enforced; ls, cat, grep, curl, mkdir, cp, mv, rm, node, npm, git, etc.) | `{ command: string }`                |
+| `run_git_command`   | Native Git operations (status, log, diff, add, commit, branch, checkout); push/fetch/remote/config blocked    | `{ args: string }`                   |
+| `start_http_server` | Start an HTTP server and get a public portal URL via BrowserPod sandbox                                       | `{ command: string, port?: number }` |
 
 ## Context Management Architecture
 
@@ -395,6 +406,7 @@ Vanilla Zustand store (`src/store.ts`) created with `createStore` and `subscribe
 | **Settings**   | `settings`                            | Locale, fontSize, wordWrap, tabSize, autoSave, tool toggles (5)                    |
 | **Status**     | `isProcessing`, `statusMessage`       | Processing indicator state                                                         |
 | **BrowserPod** | `browserPodStatus`, `browserPodError` | Node.js runtime (BrowserPod) loading state (idle/loading/ready/error)              |
+| **Terminal**   | `terminalOpen`, `activePortals[]`     | Interactive terminal panel visibility + active HTTP portal URLs                    |
 | **Pyodide**    | `pyodideStatus`, `pyodideError`       | Python runtime loading state                                                       |
 | **VFS**        | `vfsVersion`                          | Incremented on file writes for preview reactivity                                  |
 | **Output**     | `outputs[]`                           | Python execution history (last 20 entries)                                         |
@@ -485,27 +497,28 @@ On first load without an API key, the **Setup Screen** wizard appears:
 
 Accessible via gear icon in header or `Ctrl+,`:
 
-| Setting                | Description                                                    |
-| ---------------------- | -------------------------------------------------------------- |
-| **Jina API Key**       | Web search and page scraping API key (validated on save)       |
-| **Language**           | UI locale selection (en, pt-BR, es, ja, zh)                    |
-| **Auto Save**          | Auto-save files on change in editor (default: off)             |
-| **Web Tools**          | Enable/disable web_search and scrape_url tools                 |
-| **Context Tools**      | Enable/disable search_history and get_messages tools           |
-| **File Tools**         | Enable/disable all VFS tools (read, write, edit, etc.)         |
-| **Python Tools**       | Enable/disable run_python, execute_script, install_package     |
-| **Node.js Tools**      | Enable/disable npm/node tools via BrowserPod                   |
-| **BrowserPod API Key** | API key for BrowserPod Node.js runtime (console.browserpod.io) |
+| Setting                | Description                                                      |
+| ---------------------- | ---------------------------------------------------------------- |
+| **Jina API Key**       | Web search and page scraping API key (validated on save)         |
+| **Language**           | UI locale selection (en, pt-BR, es, ja, zh)                      |
+| **Auto Save**          | Auto-save files on change in editor (default: off)               |
+| **Web Tools**          | Enable/disable web_search and scrape_url tools                   |
+| **Context Tools**      | Enable/disable search_history and get_messages tools             |
+| **File Tools**         | Enable/disable all VFS tools (read, write, edit, etc.)           |
+| **Python Tools**       | Enable/disable run_python, execute_script, install_package       |
+| **Node.js Tools**      | Enable/disable npm/node tools **and shell tools** via BrowserPod |
+| **BrowserPod API Key** | API key for BrowserPod Node.js runtime (console.browserpod.io)   |
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action                     |
-| -------- | -------------------------- |
-| `Ctrl+,` | Open Settings              |
-| `Ctrl+I` | Open Context Viewer        |
-| `Ctrl+P` | File search                |
-| `Ctrl+L` | Focus chat input           |
-| `Escape` | Close modals / blur editor |
+| Shortcut     | Action                     |
+| ------------ | -------------------------- |
+| `Ctrl+,`     | Open Settings              |
+| `Ctrl+I`     | Open Context Viewer        |
+| `Ctrl+P`     | File search                |
+| `Ctrl+L`     | Focus chat input           |
+| `` Ctrl+` `` | Toggle terminal panel      |
+| `Escape`     | Close modals / blur editor |
 
 ## Critical Development Patterns
 

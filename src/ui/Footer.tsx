@@ -11,9 +11,11 @@ interface FooterProps {
   disabled: boolean;
   onCancel?: () => void;
   locale?: Locale;
+  terminalOpen?: boolean;
+  onToggleTerminal?: () => void;
 }
 
-export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
+export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale, terminalOpen, onToggleTerminal }: FooterProps) {
   const placeholder = t("footer.waiting", locale);
   const [text, setText] = useState("");
 
@@ -117,6 +119,23 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
         padding: "6px 12px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {onToggleTerminal && (
+            <button
+              onClick={onToggleTerminal}
+              style={{
+                color: terminalOpen ? colors.text : colors.textSecondary,
+                cursor: "pointer",
+                fontSize: "11px",
+                fontFamily: fonts.mono,
+                padding: "2px 4px",
+                background: "none",
+                border: "none",
+                display: "inline",
+              }}
+            >
+              [term]{terminalOpen ? "▼" : "▲"}
+            </button>
+          )}
           {onClear && (
             <button
               onClick={onClear}

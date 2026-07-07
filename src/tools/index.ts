@@ -5,6 +5,7 @@
 import { SlidingWindowRateLimiter, type RateLimitConfig, type RateLimitResult } from "../utils/rate-limiter.js";
 import { createContextTools } from "./context-tools.js";
 import { createNodeTools } from "./node-tools.js";
+import { createShellTools } from "./shell-tools.js";
 import { createTerminalTools } from "./terminal-tools.js";
 import { createVfsTools } from "./vfs-tools.js";
 import { createWebTools } from "./web-search.js";
@@ -160,4 +161,14 @@ export function initNodeTools(): void {
     toolCategories[name] = "node";
   }
   console.log("🟢 [Tools] Node.js tools registered:", Object.keys(nodeTools).join(", "));
+}
+
+// ─── Shell Tools (Bash, Git, HTTP Server) ──────────────────
+export function initShellTools(): void {
+  const shellTools = createShellTools();
+  Object.assign(tools, shellTools);
+  for (const name of Object.keys(shellTools)) {
+    toolCategories[name] = "shell";
+  }
+  console.log("🐚 [Tools] Shell tools registered:", Object.keys(shellTools).join(", "));
 }

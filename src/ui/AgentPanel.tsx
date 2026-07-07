@@ -17,6 +17,7 @@ import { MessageList } from "./MessageList.js";
 import { RightPanel } from "./RightPanel.js";
 import { ScrollFAB } from "./ScrollFAB.js";
 import { SettingsModal } from "./SettingsModal.js";
+import { TerminalPanel } from "./TerminalPanel.js";
 import { colors, fonts } from "./theme.js";
 import type { AgentStatus, ToolCallEntry } from "./types.js";
 
@@ -155,6 +156,13 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
           {/* Status line */}
           <div className={`status-line${agentStatus !== "idle" ? ` status-line--${agentStatus}` : ""}`} />
 
+          {/* Terminal Panel (above footer when open) */}
+          {store.terminalOpen && (
+            <ErrorBoundary name="TerminalPanel">
+              <TerminalPanel visible={store.terminalOpen} />
+            </ErrorBoundary>
+          )}
+
           {/* Footer */}
           <Footer
             onSettings={() => setSettingsOpen(true)}
@@ -165,6 +173,8 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
             disabled={agentStatus !== "idle"}
             onCancel={onCancel}
             locale={locale}
+            terminalOpen={store.terminalOpen}
+            onToggleTerminal={() => ideStore.getState().setTerminalOpen(!store.terminalOpen)}
           />
         </div>
 
