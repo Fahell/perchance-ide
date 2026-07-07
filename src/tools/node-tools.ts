@@ -80,7 +80,7 @@ function createNpmInstallTool(): Tool {
       const cmdArgs = packages ? ["install", ...packages.split(/\s+/)] : ["install"];
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("npm", cmdArgs);
+      const result = await browserPodManager.run("npm", cmdArgs, { cwd: "/home/user" });
 
       // Pull metadata back to VFS so agent can see package.json changes
       if (result.exitCode === 0) {
@@ -130,7 +130,7 @@ function createRunNodeScriptTool(): Tool {
       if (extraArgs) cmdArgs.push(...extraArgs.split(/\s+/));
 
       console.log(`[NodeTools] node ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("node", cmdArgs);
+      const result = await browserPodManager.run("node", cmdArgs, { cwd: "/home/user" });
 
       // Pull any file changes made by the script back to VFS
       await pullProjectFilesFromPod();
@@ -171,7 +171,7 @@ function createExecuteNpmCommandTool(): Tool {
       const cmdArgs = command.split(/\s+/);
 
       console.log(`[NodeTools] npm ${cmdArgs.join(" ")}`);
-      const result = await browserPodManager.run("npm", cmdArgs);
+      const result = await browserPodManager.run("npm", cmdArgs, { cwd: "/home/user" });
 
       // Pull metadata back to VFS if command may have modified package.json
       if (result.exitCode === 0) {

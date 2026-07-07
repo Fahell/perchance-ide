@@ -2,7 +2,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "preact/jsx-runtime";
 import { useState } from "preact/hooks";
 import { t } from "../i18n/index.js";
 import { colors, fonts } from "./theme.js";
-export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale, terminalOpen, onToggleTerminal }) {
+export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }) {
     const placeholder = t("footer.waiting", locale);
     const [text, setText] = useState("");
     function handleSend() {
@@ -65,16 +65,7 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
                     justifyContent: "space-between",
                     alignItems: "center",
                     padding: "6px 12px",
-                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [onToggleTerminal && (_jsxs("button", { onClick: onToggleTerminal, style: {
-                                    color: terminalOpen ? colors.text : colors.textSecondary,
-                                    cursor: "pointer",
-                                    fontSize: "11px",
-                                    fontFamily: fonts.mono,
-                                    padding: "2px 4px",
-                                    background: "none",
-                                    border: "none",
-                                    display: "inline",
-                                }, children: ["[term]", terminalOpen ? "▼" : "▲"] })), onClear && (_jsx("button", { onClick: onClear, style: { color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }, children: "[clear]" }))] }), _jsxs("div", { style: { display: "flex", alignItems: "center" }, children: [_jsx("button", { onClick: onSettings, style: {
+                }, children: [_jsx("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: onClear && (_jsx("button", { onClick: onClear, style: { color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }, children: "[clear]" })) }), _jsxs("div", { style: { display: "flex", alignItems: "center" }, children: [_jsx("button", { onClick: onSettings, style: {
                                     background: "none",
                                     border: "none",
                                     color: colors.textSecondary,

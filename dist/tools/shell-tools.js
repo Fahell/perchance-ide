@@ -155,10 +155,30 @@ export async function pullProjectFilesFromPod() {
                 continue;
             }
             try {
-                const content = await browserPodManager.readFile(podPath);
-                if (content === null) {
+                const raw = await browserPodManager.readFile(podPath);
+                if (raw === null) {
                     skipped++;
                     continue;
+                }
+                // Defensive decoding: BrowserPod may return binary data for _map/ files
+                let content;
+                if (typeof raw === "string") {
+                    content = raw;
+                }
+                else {
+                    const unknownRaw = raw;
+                    if (unknownRaw instanceof Uint8Array || Array.isArray(unknownRaw)) {
+                        const bytes = unknownRaw instanceof Uint8Array ? unknownRaw : new Uint8Array(unknownRaw);
+                        content = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+                    }
+                    else if (unknownRaw instanceof ArrayBuffer ||
+                        (typeof SharedArrayBuffer !== "undefined" && unknownRaw instanceof SharedArrayBuffer)) {
+                        const copy = unknownRaw instanceof SharedArrayBuffer ? new Uint8Array(unknownRaw).slice() : new Uint8Array(unknownRaw);
+                        content = new TextDecoder("utf-8", { fatal: false }).decode(copy);
+                    }
+                    else {
+                        content = String(unknownRaw);
+                    }
                 }
                 // Enforce per-file size limit
                 if (content.length > MAX_PULL_FILE_SIZE) {
@@ -302,7 +322,7 @@ function createRunShellCommandTool() {
             // Sync VFS → Pod so files are visible
             await syncVfsToPod();
             console.log(`[ShellTools] bash -c "${command}"`);
-            const result = await browserPodManager.run("bash", ["-c", command]);
+            const result = await browserPodManager.run("bash", ["-c", command], { cwd: "/home/user" });
             // Pull any new files created by the command back into VFS
             await pullProjectFilesFromPod();
             const output = [
@@ -348,7 +368,7 @@ function createRunGitCommandTool() {
             // Sync VFS → Pod so project files are visible
             await syncVfsToPod();
             console.log(`[ShellTools] git ${gitArgs.join(" ")}`);
-            const result = await browserPodManager.run("git", gitArgs);
+            const result = await browserPodManager.run("git", gitArgs, { cwd: "/home/user" });
             // Pull any new files created by git (clone, checkout, etc.) back into VFS
             await pullProjectFilesFromPod();
             const output = [
@@ -394,12 +414,14 @@ function createStartHttpServerTool() {
             // Sync VFS → Pod so server files are available
             await syncVfsToPod();
             // Register portal callback to capture the URL when the server starts listening
+            // registerPortalCallback() returns an unsubscribe function for cleanup
             let portalUrl = null;
+            let portalUnsub = null;
             const portalPromise = new Promise((resolve) => {
                 const timeout = setTimeout(() => {
                     resolve("");
                 }, 15_000);
-                browserPodManager.registerPortalCallback((event) => {
+                portalUnsub = browserPodManager.registerPortalCallback((event) => {
                     if (event.port === port) {
                         clearTimeout(timeout);
                         portalUrl = event.url;
@@ -417,9 +439,11 @@ function createStartHttpServerTool() {
             console.log(`[ShellTools] Starting HTTP server: ${command} (port ${port})`);
             // Start the server command in background (don't await completion)
             // We use bash -c to allow complex commands like "npx serve -l 3000"
-            const serverPromise = browserPodManager.run("bash", ["-c", command]);
+            const serverPromise = browserPodManager.run("bash", ["-c", command], { cwd: "/home/user" });
             // Wait for either the portal URL or a timeout
             const url = await portalPromise;
+            // Cleanup: unregister the portal callback since we got our URL (or timed out)
+            portalUnsub?.();
             if (url) {
                 return `HTTP server started successfully.\nPublic URL: ${url}\nPort: ${port}\nCommand: ${command}\n\nNote: The server runs in the background. Use run_shell_command to check its status or kill it.`;
             }

@@ -245,7 +245,7 @@ async function startAgent() {
     const bpKey = ideStore.getState().settings.browserPodApiKey;
     if (bpKey) {
       import("./browserpod/manager.js").then(({ browserPodManager }) => {
-        browserPodManager.boot({ apiKey: bpKey }).then((ok) => {
+        browserPodManager.boot({ apiKey: bpKey, nodeVersion: "22" }).then((ok) => {
           if (ok) {
             ideStore.getState().setBrowserPodStatus("ready");
             // Enable real-time VFS → Pod sync for editor changes

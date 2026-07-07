@@ -62,7 +62,7 @@ function isMapIndex(path) {
     return path.endsWith(`/${MAP_DIR_NAME}/index.md`);
 }
 // ─── System Prompt Builder ──────────────────────────────────
-function buildMapperSystemPrompt(timestamp, mapDir) {
+function buildMapperSystemPrompt(timestamp, mapDir, projectRootFull) {
     return `You are a Project Mapper. Your ONLY job is to maintain structured documentation of individual files in the virtual file system. You do NOT manage any index file — that is handled automatically by the system.
 
 CURRENT TIMESTAMP: ${timestamp}
@@ -73,7 +73,8 @@ RULES:
 - ONLY describe structure, interfaces, dependencies, and logic hotspots.
 - All summaries go in ${mapDir}/ directory.
 - Individual summaries MUST mirror the source path relative to the project root: ${mapDir}/<relative-path>.md
-  Example: If project root is /my-project and source is /my-project/src/index.html → ${mapDir}/src/index.html.md
+  To compute <relative-path>, strip the prefix "${projectRootFull}/" from the source file path.
+  Example: If source is ${projectRootFull}/src/index.html → ${mapDir}/src/index.html.md
   This prevents name collisions when different directories have files with the same name.
 
 EVENT TYPES YOU RECEIVE:
@@ -346,6 +347,7 @@ function filterMapperEvents(events) {
  */
 async function processSingleEvent(event, projectRoot) {
     const mapDir = getMapDir(projectRoot);
+    const projectRootFull = `${PROJECT_ROOT}/${projectRoot}`;
     const eventDescription = formatSingleEventForPrompt(event);
     // Try to inject file content for small files
     const injectedContent = tryInjectContent(event);
@@ -362,7 +364,7 @@ async function processSingleEvent(event, projectRoot) {
         if (iteration === WARN_ITERATIONS) {
             console.warn(`⚠️ [Mapper] Reached ${WARN_ITERATIONS} iterations for ${event.path} — still processing`);
         }
-        const instruction = `${buildMapperSystemPrompt(timestamp, mapDir)}\n\n---\n\n${conversationHistory}`;
+        const instruction = `${buildMapperSystemPrompt(timestamp, mapDir, projectRootFull)}\n\n---\n\n${conversationHistory}`;
         let resultText;
         try {
             const aiResult = await getAi()({ instruction });

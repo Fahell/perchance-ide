@@ -41,7 +41,8 @@ class BrowserPodManager {
     error = null;
     config = null;
     statusListeners = [];
-    portalCallback = null;
+    /** Multi-callback set for HTTP portal events — supports multiple simultaneous servers */
+    portalCallbacks = new Set();
     /** Cache of last synced files for automatic re-sync after reconnection */
     lastSyncedFiles = [];
     getStatus() {
@@ -125,6 +126,15 @@ class BrowserPodManager {
             console.log("[BrowserPod] Already booted, skipping");
             return true;
         }
+        // Diagnostic: BrowserPod requires cross-origin isolation for SharedArrayBuffer.
+        // Without COOP/COEP headers, boot will fail. Log a helpful warning early.
+        if (typeof crossOriginIsolated !== "undefined" && !crossOriginIsolated) {
+            console.warn("[BrowserPod] Page is not cross-origin isolated (crossOriginIsolated=false). " +
+                "BrowserPod requires SharedArrayBuffer, which needs these HTTP headers:\n" +
+                "  Cross-Origin-Opener-Policy: same-origin\n" +
+                "  Cross-Origin-Embedder-Policy: require-corp\n" +
+                "See https://browserpod.io/docs/overview#cross-origin-isolation");
+        }
         this.config = config;
         this.setStatus("loading");
         console.log("[BrowserPod] Booting...");
@@ -137,6 +147,7 @@ class BrowserPodManager {
             this.pod = await BrowserPod.boot({
                 apiKey: config.apiKey,
                 storageKey: config.storageKey ?? "agent-perchance",
+                nodeVersion: config.nodeVersion ?? "22",
             });
             // Create custom headless terminal with onOutput callback
             // BrowserPod 2.0 delivers raw bytes (Uint8Array) — decode to UTF-8 string
@@ -155,10 +166,16 @@ class BrowserPodManager {
                     this.outputBuffer.push(text);
                 },
             });
-            // Register portal callback if one was set before boot
-            if (this.portalCallback) {
-                this.pod.onPortal(this.portalCallback);
-            }
+            // Register a single pod-level portal callback that fans out to all registered callbacks.
+            // This enables multiple simultaneous HTTP servers (each with its own port).
+            this.pod.onPortal((event) => {
+                for (const cb of this.portalCallbacks) {
+                    try {
+                        cb(event);
+                    }
+                    catch { /* isolate individual callback failures */ }
+                }
+            });
             this.setStatus("ready");
             console.log("[BrowserPod] Ready");
             return true;
@@ -177,11 +194,10 @@ class BrowserPodManager {
      * Captures output via the custom terminal's onOutput callback.
      * Automatically reconnects and retries on WebSocket failure.
      *
-     * API signature: pod.run(command, args[], { terminal })
-     * Note: cwd is NOT supported natively by BrowserPod run().
+     * Accepts optional RunOptions for setting cwd, env, and echo.
      * Files must be written to the pod's FS at the expected paths before execution.
      */
-    async run(command, args = []) {
+    async run(command, args = [], options) {
         if (!this.pod) {
             return { stdout: "", stderr: "BrowserPod not initialized", exitCode: 1 };
         }
@@ -189,17 +205,29 @@ class BrowserPodManager {
             try {
                 // Clear output buffer before each execution
                 this.outputBuffer = [];
-                const options = {};
+                // Build run options — terminal is always required
+                const runOpts = {};
                 if (this.terminal)
-                    options.terminal = this.terminal;
+                    runOpts.terminal = this.terminal;
+                if (options?.cwd)
+                    runOpts.cwd = options.cwd;
+                if (options?.env)
+                    runOpts.env = options.env;
+                if (options?.echo)
+                    runOpts.echo = options.echo;
                 // pod.run() resolves when the process exits — no .wait() needed.
-                // Signature: pod.run(command, args[], { terminal })
-                const result = await this.pod.run(command, args, options);
+                // Signature: pod.run(executable, args[], { terminal, cwd?, env?, echo? })
+                const result = await this.pod.run(command, args, runOpts);
                 // Collect all captured output from onOutput callback
                 const rawStdout = this.outputBuffer.join("");
                 // Strip ANSI escape codes and terminal artifacts (e.g., "null:0 null")
                 const stdout = stripAnsi(rawStdout).replace(/^(?:null:\d+\s*null\s*)+/m, "").trimStart();
-                // Safely extract exitCode if available (duck-typing)
+                // Extract exitCode from the process result.
+                // NOTE: BrowserPod's Process handle is documented as opaque with no public
+                // exitCode property — output goes to the terminal callback only. The duck-typed
+                // extraction below works in practice but relies on an undocumented internal.
+                // If it breaks in a future version, fall back to wrapping commands with
+                // `; echo "BP_EXIT:$?"` and parsing from stdout.
                 let exitCode = (result != null && typeof result === "object" && "exitCode" in result)
                     ? result.exitCode
                     : 0;
@@ -237,18 +265,17 @@ class BrowserPodManager {
     async ensureDirectory(filePath) {
         if (!this.pod)
             return;
-        const parts = filePath.split("/").filter(Boolean);
-        // Remove the filename (last segment) — only create directories
-        parts.pop();
-        let currentPath = "";
-        for (const part of parts) {
-            currentPath += "/" + part;
-            try {
-                await this.pod.createDirectory(currentPath);
-            }
-            catch {
-                // Directory may already exist — ignore errors
-            }
+        // Extract parent directory from the file path
+        const lastSlash = filePath.lastIndexOf("/");
+        if (lastSlash <= 0)
+            return; // Root or no parent — nothing to create
+        const parentDir = filePath.slice(0, lastSlash);
+        try {
+            // BrowserPod supports { recursive: true } for creating intermediate directories
+            await this.pod.createDirectory(parentDir, { recursive: true });
+        }
+        catch {
+            // Directory may already exist — ignore errors
         }
     }
     /**
@@ -349,8 +376,8 @@ class BrowserPodManager {
         return this.lastSyncedFiles.map((f) => f.path);
     }
     /**
-     * Delete a file or directory inside the Pod via shell command.
-     * Uses `rm -rf` for robustness (handles files and directories).
+     * Delete a file or directory inside the Pod.
+     * Uses `rm -rf` directly (no shell wrapping) for safety and to avoid shell injection.
      */
     async deleteFile(path) {
         if (!this.pod)
@@ -358,12 +385,12 @@ class BrowserPodManager {
         // Safety: never delete root or project root
         if (path === "/" || path === "/home" || path === "/home/user")
             return false;
-        const result = await this.run("bash", ["-c", `rm -rf "${path}"`]);
+        const result = await this.run("rm", ["-rf", path]);
         return result.exitCode === 0;
     }
     /**
-     * Rename/move a file or directory inside the Pod via shell command.
-     * Ensures destination parent directory exists before moving.
+     * Rename/move a file or directory inside the Pod.
+     * Uses `mv` directly (no shell wrapping) for safety and to avoid shell injection.
      */
     async renameFile(oldPath, newPath) {
         if (!this.pod)
@@ -373,7 +400,7 @@ class BrowserPodManager {
             return false;
         // Ensure destination parent directory exists
         await this.ensureDirectory(newPath);
-        const result = await this.run("bash", ["-c", `mv "${oldPath}" "${newPath}"`]);
+        const result = await this.run("mv", [oldPath, newPath]);
         return result.exitCode === 0;
     }
     /**
@@ -410,13 +437,15 @@ class BrowserPodManager {
      * Register a callback for HTTP portal events.
      * Uses the official pod.onPortal() API from BrowserPod 2.0.
      * The callback is invoked whenever a process inside the Pod calls listen() on a port.
-     * Can be called before or after boot — if called before, it is registered during boot().
+     * Supports multiple simultaneous callbacks (e.g., multiple HTTP servers on different ports).
+     * Can be called before or after boot — callbacks are collected and registered during boot().
+     * Returns an unsubscribe function.
      */
     registerPortalCallback(callback) {
-        this.portalCallback = callback;
-        if (this.pod) {
-            this.pod.onPortal(callback);
-        }
+        this.portalCallbacks.add(callback);
+        return () => {
+            this.portalCallbacks.delete(callback);
+        };
     }
     /**
      * Terminate the pod and release resources.
@@ -434,7 +463,7 @@ class BrowserPodManager {
         }
         this.outputBuffer = [];
         this.lastSyncedFiles = [];
-        this.portalCallback = null;
+        this.portalCallbacks.clear();
         this.setStatus("idle");
         this.config = null;
         console.log("[BrowserPod] Disposed");

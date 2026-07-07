@@ -352,7 +352,7 @@ function createRunShellCommandTool(): Tool {
       await syncVfsToPod();
 
       console.log(`[ShellTools] bash -c "${command}"`);
-      const result = await browserPodManager.run("bash", ["-c", command]);
+      const result = await browserPodManager.run("bash", ["-c", command], { cwd: "/home/user" });
 
       // Pull any new files created by the command back into VFS
       await pullProjectFilesFromPod();
@@ -407,7 +407,7 @@ function createRunGitCommandTool(): Tool {
       await syncVfsToPod();
 
       console.log(`[ShellTools] git ${gitArgs.join(" ")}`);
-      const result = await browserPodManager.run("git", gitArgs);
+      const result = await browserPodManager.run("git", gitArgs, { cwd: "/home/user" });
 
       // Pull any new files created by git (clone, checkout, etc.) back into VFS
       await pullProjectFilesFromPod();
@@ -487,7 +487,7 @@ function createStartHttpServerTool(): Tool {
 
       // Start the server command in background (don't await completion)
       // We use bash -c to allow complex commands like "npx serve -l 3000"
-      const serverPromise = browserPodManager.run("bash", ["-c", command]);
+      const serverPromise = browserPodManager.run("bash", ["-c", command], { cwd: "/home/user" });
 
       // Wait for either the portal URL or a timeout
       const url = await portalPromise;
