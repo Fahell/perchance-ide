@@ -70,8 +70,18 @@ declare global {
   }
 }
 
+/** Perchance runtime may attach `root` to window or parent frame. */
+interface PerchanceWindow {
+  [key: string]: unknown;
+  root?: Record<string, unknown>;
+}
+
 /** Possible global names that the user might have imported the plugin as. */
 const AI_GLOBAL_NAMES = ["agentAi", "generateText", "text", "ai"];
+
+/** Narrow window to our Perchance-aware interface for global lookups. */
+const pw = window as unknown as PerchanceWindow;
+const parentPw = (window.parent as unknown) as PerchanceWindow | null;
 
 /**
  * Resolve the ai-text-plugin function across expected global names.
@@ -85,21 +95,23 @@ const AI_GLOBAL_NAMES = ["agentAi", "generateText", "text", "ai"];
  *   2. `window.root[name]`                    — works for all names including `ai`
  *   3. `window.parent?.root?.[name]`          — iframe fallback to parent's Perchance root
  */
-let _cachedAi: ((input: any, extraOpts?: any) => any) | null = null;
+let _cachedAi: ((input: unknown, extraOpts?: unknown) => unknown) | null = null;
 
-function findAi(): ((input: any, extraOpts?: any) => any) | null {
+function findAi(): ((input: unknown, extraOpts?: unknown) => unknown) | null {
   for (const name of AI_GLOBAL_NAMES) {
     // 1. Direct global (non-ai names like agentAi, generateText)
-    let fn = (window as any)[name];
-    if (typeof fn === "function") return fn;
+    const fn = pw[name];
+    if (typeof fn === "function") return fn as (...args: unknown[]) => unknown;
 
     // 2. Perchance root object (all names including "ai")
-    const root = (window as any).root;
-    if (root && typeof root[name] === "function") return root[name];
+    const root = pw.root;
+    const rootFn = root?.[name];
+    if (typeof rootFn === "function") return rootFn as (...args: unknown[]) => unknown;
 
     // 3. Parent frame's Perchance root (iframe in HTML panel)
-    const parentRoot = (window as any).parent?.root;
-    if (parentRoot && typeof parentRoot[name] === "function") return parentRoot[name];
+    const parentRoot = parentPw?.root;
+    const parentRootFn = parentRoot?.[name];
+    if (typeof parentRootFn === "function") return parentRootFn as (...args: unknown[]) => unknown;
   }
   return null;
 }

@@ -1,8 +1,11 @@
 /**
  * EditorFooter — Footer bar for the code editor column.
- * Contains the terminal toggle button and file info.
+ * Shows terminal toggle, dirty file count, and persist status.
  */
 
+import { useEffect, useState } from "preact/hooks";
+import { ideStore, type FileTab } from "../store.js";
+import { getDirtyCount } from "../vfs-persist.js";
 import { colors, fonts } from "./theme.js";
 
 interface EditorFooterProps {
@@ -11,6 +14,23 @@ interface EditorFooterProps {
 }
 
 export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterProps) {
+  const [dirtyFiles, setDirtyFiles] = useState<FileTab[]>([]);
+  const [persistStatus, setPersistStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  // Subscribe to store for dirty files and save status
+  useEffect(() => {
+    return ideStore.subscribe((s) => {
+      setDirtyFiles(s.files.filter((f) => f.dirty));
+      // Show persist status from any open file's saveStatus
+      const activeTab = s.files.find((f) => f.path === s.activeFile);
+      setPersistStatus(activeTab?.saveStatus ?? "idle");
+    });
+  }, []);
+
+  const dirtyCount = dirtyFiles.length;
+  const persistCount = getDirtyCount();
+  const hasPendingPersists = persistCount.dirty > 0 || persistCount.deleted > 0;
+
   return (
     <div style={{
       borderTop: `1px solid ${colors.border}`,
@@ -38,13 +58,40 @@ export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterPro
           [term]{terminalOpen ? "▼" : "▲"}
         </button>
       </div>
-      <span style={{
-        fontSize: "9px",
-        fontFamily: fonts.mono,
-        color: colors.textMuted,
-      }}>
-        editor
-      </span>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        {/* Dirty file count */}
+        {dirtyCount > 0 && (
+          <span style={{
+            fontSize: "9px",
+            fontFamily: fonts.mono,
+            color: "#e8a84c",
+          }}>
+            {dirtyCount} dirty
+          </span>
+        )}
+
+        {/* Persist status indicator */}
+        <span style={{
+          fontSize: "9px",
+          fontFamily: fonts.mono,
+          color: hasPendingPersists
+            ? "#e8a84c"
+            : persistStatus === "saving"
+              ? colors.textSecondary
+              : colors.textMuted,
+        }}>
+          {hasPendingPersists ? "⏳" : persistStatus === "saving" ? "⋯" : "✓"}
+        </span>
+
+        <span style={{
+          fontSize: "9px",
+          fontFamily: fonts.mono,
+          color: colors.textMuted,
+        }}>
+          editor
+        </span>
+      </div>
     </div>
   );
 }

@@ -296,5 +296,25 @@ function bootstrap() {
   }
 }
 
+// ─── beforeunload — Prevent data loss on accidental navigation ──
+function setupBeforeUnload(): void {
+  window.addEventListener("beforeunload", async (e) => {
+    const { ideStore } = await import("./store.js");
+    const state = ideStore.getState();
+    const hasDirty = state.files.some((f: { dirty: boolean }) => f.dirty);
+    if (hasDirty || state.isProcessing) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    // Best-effort flush on beforeunload
+    const { flushVfsPersist } = await import("./vfs-persist.js");
+    await Promise.race([
+      flushVfsPersist(),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  });
+}
+
 // ─── Run ────────────────────────────────────────────────────
 bootstrap();
+setupBeforeUnload();

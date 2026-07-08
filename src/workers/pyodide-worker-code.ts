@@ -17,6 +17,9 @@ export const PYODIDE_WORKER_CODE = `
 let pyodide = null;
 let loading = false;
 let loadError = null;
+let _loadResolve = null;
+let _loadReject = null;
+let _loadPromise = null;
 
 // ─── Helpers ────────────────────────────────────────────────
 function sendMsg(msg) {
@@ -65,14 +68,22 @@ async function initPyodide(requestId) {
     return;
   }
   if (loading) {
-    // Wait for existing load
-    while (loading) await new Promise(r => setTimeout(r, 100));
-    if (pyodide) sendMsg({ type: "ready", requestId });
-    else sendMsg({ type: "error", requestId, message: loadError || "Unknown load error" });
+    // Await existing load via deferred promise instead of polling
+    try {
+      await _loadPromise;
+      if (pyodide) sendMsg({ type: "ready", requestId });
+      else sendMsg({ type: "error", requestId, message: loadError || "Unknown load error" });
+    } catch {
+      sendMsg({ type: "error", requestId, message: loadError || "Unknown load error" });
+    }
     return;
   }
 
   loading = true;
+  _loadPromise = new Promise((resolve, reject) => {
+    _loadResolve = resolve;
+    _loadReject = reject;
+  });
 
   try {
     const PYODIDE_MJS = "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.mjs";
@@ -81,10 +92,12 @@ async function initPyodide(requestId) {
       indexURL: "https://cdn.jsdelivr.net/pyodide/v314.0.2/full/",
     });
     loading = false;
+    _loadResolve();
     sendMsg({ type: "ready", requestId });
   } catch (err) {
     loading = false;
     loadError = String(err.message || err);
+    _loadReject(new Error(loadError));
     sendMsg({ type: "error", requestId, message: loadError });
   }
 }

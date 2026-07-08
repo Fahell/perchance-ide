@@ -20,6 +20,13 @@ export interface RetryOptions {
   onRetry?: (error: Error, attempt: number) => void;
 }
 
+// ─── Types ──────────────────────────────────────────────────
+
+/** An error object that may have an HTTP response attached. */
+interface ErrorWithResponse {
+  response?: { status: number };
+}
+
 // ─── Helpers ────────────────────────────────────────────────
 
 /**
@@ -37,7 +44,7 @@ export interface RetryOptions {
 export function isRetryableError(error: unknown): boolean {
   if (error instanceof TypeError) return true; // network error in fetch
   if (error instanceof DOMException && error.name === "AbortError") return false;
-  const response = (error as any)?.response;
+  const response = (error as ErrorWithResponse)?.response;
   if (response && typeof response.status === "number") {
     return response.status === 429 || response.status >= 500;
   }

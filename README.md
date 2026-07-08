@@ -1,6 +1,6 @@
 # perchance-ide
 
-A standalone AI-powered Integrated Development Environment that runs entirely within [Perchance](https://perchance.org) generators. Combines an LLM-driven agent with a full-featured code editor (CodeMirror 6), virtual file system, Python execution environment (Pyodide WebAssembly), and a project documentation subagent — all bundled into a single JavaScript file (~350KB minified) served via jsDelivr CDN.
+A standalone AI-powered Integrated Development Environment that runs entirely within [Perchance](https://perchance.org) generators. Combines an LLM-driven agent with a full-featured code editor (CodeMirror 6), virtual file system, Python execution environment (Pyodide WebAssembly), and a project documentation subagent — all bundled into a single JavaScript file (~430KB minified) served via jsDelivr CDN.
 
 ## Quick Start
 
@@ -73,10 +73,19 @@ pnpm test:watch
 
 ### Code Editor
 
-- **CodeMirror 6-based** tabbed editor with syntax highlighting for JS/TS/JSX/TSX, HTML, CSS, JSON, Markdown, Python
-- **Undo/redo stacks** per file with state persistence
-- **Auto-save** to VFS (debounced 500ms) with `lastSavedHash` tracking to detect external changes
+- **CodeMirror 6-based** tabbed editor with syntax highlighting for JS/TS/JSX/TSX, HTML, CSS, JSON, Markdown, Python, XML, YAML
+- **Professional dark theme** — One Dark Pro-inspired color scheme with full syntax highlighting (keywords, strings, types, variables, tags, attributes), styled autocomplete popup, matching bracket highlighting, and fold placeholders
+- **Autocomplete** — language-aware completions for JavaScript, TypeScript, JSX, TSX, CSS, and HTML (via `@codemirror/autocomplete`)
+- **Linter integration** — real-time error/warning diagnostics for JS, TS, JSON, CSS, and HTML (via `@codemirror/lint`)
+- **Hover tooltips** — contextual information on hover over keywords, APIs, and tokens
+- **Indent guides** — vertical lines at each tab stop for visual alignment
+- **VS Code-inspired keymap** — common editor shortcuts (duplicate line, comment toggle, move lines, indent/outdent, etc.)
+- **Undo/redo stacks** per file with state persistence; external content reloads are excluded from undo history to avoid confusing Ctrl+Z behavior
+- **Auto-save** to VFS (debounced 200ms) with `lastSavedHash` tracking to detect external changes; auto-save is enabled by default
+- **Breadcrumbs bar** — shows cursor position in the syntax tree (function/class/module hierarchy) with clickable breadcrumbs
+- **Status bar** — shows line/column position, selection length, total lines, and file save status
 - **Live VFS sync** — editor subscribes to `onVfsChange` events: reloads content on external edits (hash-diff guarded), closes tabs on deletes, updates refs on renames
+- **Conflict resolution** — detects when an external edit (agent tool, Pod sync) modifies a file with unsaved changes; shows a banner with "Keep mine" / "Accept theirs" options
 - **Flush-before-rename** — editor buffer is saved via `editor:flush-before-rename` custom event before file rename operations, preventing stale content
 - **Emmet** support for HTML/CSS expansion
 - **Settings**: font size, tab size, word wrap — all persisted to localStorage
@@ -110,8 +119,53 @@ pnpm test:watch
 
 - **IndexedDB** (via `idb` v8.0.3) — 3 object stores: `messages` (auto-increment, timestamp index), `kv` (memories, summaries, chunks), `files` (VFS path-keyed)
 - **localStorage** — small config (API key, locale, editor settings) with legacy migration
-- **Debounced VFS persistence** (2s) with `flushVfsPersist()` for immediate saves
+- **Incremental persist** — after initial full save, only modified files are written to IndexedDB (see [Saving & Conflict Resolution](#saving--conflict-resolution))
 - **Project export/import** via JSON serialization (`src/utils/vfs-io.ts`) with sanitized paths
+
+### Saving & Conflict Resolution
+
+The IDE uses a **three-layer storage architecture** with bidirectional synchronization:
+
+```
+Editor (CodeMirror) ←→ VFS (in-memory) ←→ IndexedDB (persist)
+                          ↕
+                     BrowserPod (Pod FS)
+```
+
+**Six save triggers** feed into a centralized debounced persist:
+
+| Trigger                                  | Mechanism                                                      | Debounce                         |
+| ---------------------------------------- | -------------------------------------------------------------- | -------------------------------- |
+| Agent `write_file` / `edit_file` tool    | `trackedWrite()` → `scheduleVfsPersist()`                      | 2000ms (500ms when auto-save on) |
+| Agent `delete_file` / `rename_file` tool | `trackedDelete()` / `trackedRename()` → `scheduleVfsPersist()` | 2000ms                           |
+| Editor auto-save                         | `onChange` → `trackedWrite()` → `scheduleVfsPersist()`         | 200ms                            |
+| Tab switch                               | `flushVfsPersist()` (immediate)                                | Immediate                        |
+| Ctrl+S                                   | `flushVfsPersist()` (immediate)                                | Immediate                        |
+| Page unload / tab close                  | `beforeunload` handler → `flushVfsPersist()` (with 1s timeout) | Immediate                        |
+
+**Change detection** uses FNV-1a hashing (~5μs per 10KB) to determine whether file content actually changed before emitting events or persisting.
+
+**Conflict resolution** prevents data loss when the editor buffer diverges from the VFS:
+
+- If the editor buffer is **clean** (no unsaved changes) and VFS content changes externally (agent tool, Pod sync), the editor reloads the VFS content transparently. The reload is excluded from undo history to avoid confusing Ctrl+Z behavior.
+- If the editor buffer is **dirty** (unsaved changes) and VFS content changes externally, a **conflict banner** appears at the top of the editor:
+  - **"Keep mine"** — overwrites VFS with editor buffer content and persists
+  - **"Accept theirs"** — discards editor changes and reloads from VFS (excluded from undo history)
+
+**Data loss prevention:**
+
+- **Auto-save** is enabled by default (can be disabled in settings)
+- **`beforeunload` handler** blocks navigation when dirty files exist, with a 1-second race-timed flush attempt
+- **`_persisting` guard** prevents concurrent IndexedDB writes
+- **Incremental persist** only writes dirty files, reducing the window for data loss during crashes
+- **BrowserPod write pre-check** reads existing file content before `createFile()` — skips if already in sync (avoids destructive `createFile` which wipes existing content)
+- **BrowserPod sync merge** preserves files written by real-time subscriptions when bulk-syncing
+
+**Limitations:**
+
+- CM6 undo history is per-file and not persisted across page reloads
+- No VFS snapshot is associated with conversation checkpoints
+- localStorage quota errors (settings, API key) are silently caught — check browser dev tools if settings don't persist
 
 ### Agent Loop Internals
 
@@ -141,13 +195,13 @@ src/
 ├── memory.ts                 # Persistent memory extraction (1-3 facts per exchange)
 ├── message-store.ts          # In-memory message cache + async IndexedDB persistence
 ├── storage.ts                # localStorage wrapper with legacy migration
-├── store.ts                  # Zustand vanilla store — IDE-wide state (files, settings, messages, UI)
-├── types.ts                  # Perchance ai-text-plugin types + getAi() resolver
+├── store.ts                  # Zustand vanilla store — IDE-wide state (files, settings, messages, UI, conflictedFiles, persist debounce adjustment)
+├── types.ts                  # Perchance ai-text-plugin types + getAi() resolver (checks window[name], window.root[name], window.parent?.root?.[name])
 ├── mapper-agent.ts           # Subagent — auto-maintains /<project>/_map/ documentation
 ├── mapper-dispatcher.ts      # Listens to VFS events, coalesces, dispatches per-project mapper
 ├── vfs.ts                    # Virtual File System — path operations, tree, snapshot, inline change events (write/delete/rename) for real-time sync subscribers
 ├── vfs-events.ts             # Hash-based (FNV-1a) change tracking + event emitter
-├── vfs-persist.ts            # Debounced IndexedDB persistence (2s) with flush
+├── vfs-persist.ts            # Debounced IndexedDB persistence (dynamic debounce: 500ms auto-save / 2000ms tools) with incremental dirty-path tracking, _persisting concurrency guard, and flush API
 │
 ├── agent/
 │   ├── prompt-builder.ts     # Dynamic system prompt from enabled tools + project state
@@ -157,7 +211,7 @@ src/
 │
 ├── browserpod/
 │   ├── browserpod.d.ts       # Type declarations for @leaningtech/browserpod@2.12.1 (pinned CDN version) — BootConfig, RunOptions, Terminal, Process, BinaryFile, overloaded createFile/openFile, ArrayBuffer-based onOutput
-│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync, run(RunOptions with cwd/env/echo), Pod file management (delete/rename/list with recursive mkdir), multi-callback portal support, VFS change subscription for real-time sync; persistent storage by default (storageKey: "agent-perchance")
+│   └── manager.ts            # BrowserPod singleton — Node.js runtime lifecycle, VFS sync (merge-based cache, write pre-check to avoid destructive createFile), run(RunOptions with cwd/env/echo), Pod file management (delete/rename/list with recursive mkdir), multi-callback portal support, VFS change subscription for real-time sync; persistent storage by default (storageKey: "agent-perchance")
 │
 ├── tools/
 │   ├── index.ts              # Registry — ToolDefinition<TArgs>, categories, rate limiters
@@ -187,10 +241,16 @@ src/
 │   └── pyodide-worker-code.ts # Inline worker code as string (Blob URL) — init, runPython, installPackage, syncFiles, incremental sync
 │
 ├── editor/
-│   ├── index.ts              # CM6 factory — basicSetup, theme, keymap, change listener
-│   ├── theme.ts              # Monochrome dark theme matching UI color tokens
-│   ├── langs.ts              # Ext→LanguageSupport map (JS/TS/JSX/TSX/HTML/CSS/JSON/MD/Python)
+│   ├── index.ts              # CM6 factory — basicSetup, theme, keymap, change listener, linter selector, autocomplete selector, cursor tracker
+│   ├── theme.ts              # Professional One Dark Pro-inspired dark theme with full syntax highlighting (keywords, strings, types, tags, etc.), autocomplete/fold/tooltip styling
+│   ├── langs.ts              # Ext→LanguageSupport map (JS/TS/JSX/TSX/HTML/CSS/JSON/MD/Python/XML/YAML)
 │   ├── outline.ts            # Lezer syntax tree → OutlineSymbol[] (JS/CSS/HTML)
+│   ├── autocomplete.ts       # Language-aware autocomplete sources for JS/TS/JSX/TSX/CSS/HTML
+│   ├── breadcrumbs.ts        # Lezer syntax tree → Breadcrumb[] for cursor-position hierarchy
+│   ├── hover.ts              # Hover tooltip plugin — contextual info on keywords, APIs, tokens
+│   ├── indent-guides.ts      # Vertical indent guide lines at each tab stop
+│   ├── keymap.ts             # VS Code-inspired keymap (duplicate line, comment toggle, move lines, indent/outdent, etc.)
+│   ├── lint.ts               # Linter extensions for JS/TS/JSON/CSS/HTML using @codemirror/lint
 │   ├── emmet.ts              # Emmet CM6 plugin integration
 │   ├── emmet-langs.ts        # Emmet syntax mapping
 │   └── view-store.ts         # Active EditorView tracker
@@ -216,7 +276,9 @@ src/
     ├── SettingsModal.tsx     # API key, language, auto-save, tool toggles
     ├── ContextViewer.tsx     # Token budget, summary, tier visualization, memories
     ├── FaqModal.tsx          # FAQ with project links
-    ├── CodeEditor.tsx        # CM6 tabbed editor — auto-save, dirty tracking, VFS change subscription for external edits, flush-before-rename event handling
+    ├── CodeEditor.tsx        # CM6 tabbed editor — auto-save, dirty tracking, conflict detection (banner with Keep/Accept), VFS change subscription for external edits, flush-before-rename event handling, breadcrumbs bar, EditorStatusBar
+    ├── BreadcrumbsBar.tsx    # Cursor-position breadcrumbs (function/class/module hierarchy) with Lezer syntax tree
+    ├── EditorStatusBar.tsx   # Line/column/selection status bar with file save indicator
     ├── DiffView.tsx          # Unified diff with collapsible unchanged regions
     ├── FileSearchModal.tsx   # Ctrl+P fuzzy file search
     ├── PreviewPanel.tsx      # Live HTML preview via sandboxed iframe

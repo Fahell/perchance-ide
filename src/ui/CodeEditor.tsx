@@ -9,15 +9,19 @@
  * - Lazy-loaded — CM6 bundle only imported when component mounts
  */
 
+import { Transaction } from "@codemirror/state";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { getBreadcrumbs, type Breadcrumb } from "../editor/breadcrumbs.js";
 import { getEmmetSyntax } from "../editor/emmet-langs.js";
 import { getEmmetExtensions } from "../editor/emmet.js";
 import { setCurrentView } from "../editor/view-store.js";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
-import { getHash, onVfsChange, trackedWrite } from "../vfs-events.js";
-import { cancelScheduledPersist, flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
+import { getHash, onVfsChange, trackedRename, trackedWrite } from "../vfs-events.js";
+import { flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import { vfsExists, vfsRead } from "../vfs.js";
+import { BreadcrumbsBar } from "./BreadcrumbsBar.js";
+import { EditorStatusBar, dispatchStatusUpdate } from "./EditorStatusBar.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -43,6 +47,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const viewRef = useRef<import("codemirror").EditorView | null>(null);
   const debounceRef = useRef<number | null>(null);
   const [pendingCloseFile, setPendingCloseFile] = useState<string | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const lastSavedHashRef = useRef<string | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
@@ -84,7 +89,8 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         const content = viewRef.current.state.doc.toString();
         trackedWrite(prevActiveRef.current, content);
         ideStore.getState().setFileDirty(prevActiveRef.current, false);
-        scheduleVfsPersist();
+        // Use flush instead of schedule — user finished editing this file
+        flushVfsPersist();
       }
     }
     prevActiveRef.current = path;
@@ -119,10 +125,18 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         parent: containerRef.current,
         doc: content,
         language: getLanguageSupport(path),
+        filename: path,
         extraExtensions: emmetExts,
         fontSize,
         tabSize,
         wordWrap,
+        onCursorChange: (info) => {
+          dispatchStatusUpdate(info, path);
+          // Update breadcrumbs from cursor position
+          if (viewRef.current) {
+            setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
+          }
+        },
         onChange: (doc) => {
           if (!mountedRef.current) return;
           ideStore.getState().setFileSaveStatus(path, "saving");
@@ -139,10 +153,14 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             ideStore.getState().bumpVfsVersion();
             scheduleVfsPersist();
             scheduleSaveStatusClear(path);
-          }, 500);
+          }, 200);
           ideStore.getState().setFileDirty(path, true);
         },
       });
+
+      // Populate breadcrumbs for initial cursor position
+      // (onCursorChange callback won't fire for initial state)
+      setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
 
       // Share view with OutlinePanel (10.1)
       setCurrentView(viewRef.current);
@@ -220,12 +238,30 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         // Only sync if this is the active file and hash differs from our last save
         if (event.path !== currentPath) return;
         if (event.currentHash && event.currentHash === lastSavedHashRef.current) return;
-        // External change detected — reload buffer from VFS
+        // External change detected
+        const state = ideStore.getState();
+        const tab = state.files.find((f) => f.path === currentPath);
+
+        if (tab?.dirty) {
+          // Editor has unsaved changes — mark conflict instead of overwriting
+          state.setConflictedFile(currentPath, {
+            path: currentPath,
+            externalHash: event.currentHash ?? getHash(currentPath) ?? "",
+            timestamp: Date.now(),
+            notified: true,
+          });
+          return;
+        }
+
+        // Editor buffer is clean — safe to reload from VFS
         const newContent = vfsRead(currentPath);
         if (newContent === null) return;
         const view = viewRef.current;
         view.dispatch({
           changes: { from: 0, to: view.state.doc.length, insert: newContent },
+          // Don't add external reloads to undo history — prevents confusing
+          // Ctrl+Z behavior where "undo" jumps past the external change.
+          annotations: [Transaction.addToHistory.of(false)],
         });
         lastSavedHashRef.current = event.currentHash ?? getHash(currentPath) ?? null;
         ideStore.getState().setFileDirty(currentPath, false);
@@ -267,7 +303,6 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       mountedRef.current = false;
       setCurrentView(null);
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      cancelScheduledPersist();
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       if (viewRef.current) {
         const currentFile = activeFile;
@@ -277,8 +312,11 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         viewRef.current.destroy();
         viewRef.current = null;
       }
-      // Flush pending persist on unmount
-      flushVfsPersist().catch((e) =>
+      // Flush pending persist on unmount — use race timeout to avoid blocking
+      Promise.race([
+        flushVfsPersist(),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ]).catch((e) =>
         console.warn("[CodeEditor] final persist failed:", e)
       );
     };
@@ -354,6 +392,9 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         onAdd={addTab}
         locale={locale}
       />
+      {activeFile && (
+        <BreadcrumbsBar path={activeFile} symbols={breadcrumbs} />
+      )}
       <div ref={containerRef} style={{
         flex: 1, overflow: "hidden", position: "relative",
       }}>
@@ -371,6 +412,61 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             fontSize: "11px", fontFamily: fonts.mono,
           }}>
             {t("editor.loading", locale) || "loading editor..."}
+          </div>
+        )}
+
+        {/* Conflict banner — external edit detected while editor has unsaved changes */}
+        {activeFile && store.conflictedFiles[activeFile] && (
+          <div style={{
+            padding: "8px 12px",
+            background: "#3a2a1a",
+            borderBottom: `1px solid ${colors.border}`,
+            fontSize: "10px", fontFamily: fonts.mono,
+            display: "flex", alignItems: "center", gap: "8px",
+            flexShrink: 0,
+          }}>
+            <span style={{ color: "#e8a84c" }}>⚠</span>
+            <span style={{ color: colors.text, flex: 1 }}>
+              File modified externally while you have unsaved changes
+            </span>
+            <button
+              onClick={() => {
+                if (!viewRef.current || !activeFile) return;
+                // "Keep mine" — overwrite VFS with editor content
+                const content = viewRef.current.state.doc.toString();
+                trackedWrite(activeFile, content);
+                ideStore.getState().resolveConflict(activeFile, "keep");
+              }}
+              style={{
+                padding: "3px 8px", border: `1px solid ${colors.text}`,
+                background: "transparent", color: colors.text,
+                fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+              }}
+            >
+              Keep mine
+            </button>
+            <button
+              onClick={() => {
+                if (!viewRef.current || !activeFile) return;
+                // "Accept theirs" — reload editor buffer from VFS
+                const newContent = vfsRead(activeFile);
+                if (newContent === null) return;
+                viewRef.current.dispatch({
+                  changes: { from: 0, to: viewRef.current.state.doc.length, insert: newContent },
+                  annotations: [Transaction.addToHistory.of(false)],
+                });
+                lastSavedHashRef.current = getHash(activeFile) ?? null;
+                ideStore.getState().setFileDirty(activeFile, false);
+                ideStore.getState().resolveConflict(activeFile, "accept");
+              }}
+              style={{
+                padding: "3px 8px", border: `1px solid ${colors.borderEmphasis ?? colors.border}`,
+                background: "transparent", color: colors.textMuted,
+                fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+              }}
+            >
+              Accept theirs
+            </button>
           </div>
         )}
 
@@ -424,6 +520,8 @@ export function CodeEditor({ locale }: CodeEditorProps) {
           </div>
         )}
       </div>
+      {/* Status bar — outside containerRef to avoid layout conflict with CM6 100% height */}
+      {activeFile && <EditorStatusBar />}
     </div>
   );
 }
@@ -479,6 +577,8 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
       document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
         detail: { path: renamingPath },
       }));
+      // Update VFS entries before telling the store to update tab metadata
+      trackedRename(renamingPath, newPath);
       ideStore.getState().renameFile(renamingPath, newPath);
     }
     setRenamingPath(null);

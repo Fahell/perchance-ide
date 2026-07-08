@@ -7,6 +7,7 @@
  */
 
 import type { Extension } from "@codemirror/state";
+import type { EmmetSyntax } from "./emmet-langs.js";
 
 // ─── Module-level cache ────────────────────────────────────
 type EmmetPlugin = typeof import("@emmetio/codemirror6-plugin");
@@ -34,14 +35,15 @@ function loadPlugin(): Promise<EmmetPlugin> {
  * @returns A promise resolving to an array of CM6 extensions
  */
 export async function getEmmetExtensions(
-  syntax: string
+  syntax: EmmetSyntax
 ): Promise<Extension[]> {
   try {
     const plugin = await loadPlugin();
     if (!plugin) return [];
+    const emmetSyntax = syntax as import("@emmetio/codemirror6-plugin").EmmetKnownSyntax;
     return [
-      plugin.emmetConfig.of({ syntax: syntax as any }),
-      plugin.abbreviationTracker({ syntax: syntax as any }),
+      plugin.emmetConfig.of({ syntax: emmetSyntax }),
+      plugin.abbreviationTracker({ syntax: emmetSyntax }),
     ];
   } catch {
     // Silently fall back — Emmet is a nice-to-have, not critical
