@@ -206,8 +206,24 @@ export function vfsRename(oldPath, newPath) {
 export function vfsGetAll() {
     return [..._entries.values()];
 }
-/** Load entries into the VFS (replaces all). */
+/** Guard flag — set after vfsLoadAll completes, prevents accidental re-initialization. */
+let _vfsFinalized = false;
+/**
+ * Load entries into the VFS (replaces all).
+ * Only effective when VFS has only default system directories — any prior
+ * project data (files written by tools or editor) will cause this to be
+ * safely ignored. This is a defense-in-depth guard against the race condition
+ * where dbLoadVfs resolves after VFS has already been mutated.
+ */
 export function vfsLoadAll(entries) {
+    if (_vfsFinalized) {
+        console.warn("[VFS] vfsLoadAll ignored: already finalized");
+        return;
+    }
+    if (!vfsIsEmpty()) {
+        console.warn("[VFS] vfsLoadAll ignored: VFS already has project data");
+        return;
+    }
     _entries.clear();
     for (const e of entries) {
         _entries.set(e.path, e);
@@ -225,6 +241,7 @@ export function vfsLoadAll(entries) {
             });
         }
     }
+    _vfsFinalized = true;
 }
 /** Snapshot all file contents as a flat record (for Pyodide sync). */
 export function vfsSnapshot() {

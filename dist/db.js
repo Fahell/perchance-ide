@@ -132,6 +132,17 @@ export async function dbSaveVfs(entries) {
     }
     await tx.done;
 }
+/**
+ * Save a single VFS entry to IndexedDB (incremental).
+ * Uses `put()` which upserts — no clear+add overhead.
+ * Preferred over dbSaveVfs() when only a few files changed.
+ */
+export async function dbSaveSingleFile(entry) {
+    if (entry.path === "/")
+        return; // Root is implicit
+    const db = await getDb();
+    await db.put("files", entry);
+}
 /** Load all VFS entries from IndexedDB. */
 export async function dbLoadVfs() {
     const db = await getDb();

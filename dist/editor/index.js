@@ -9,31 +9,112 @@ import { EditorState } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { EditorView, basicSetup } from "codemirror";
 import { cmTheme } from "./theme.js";
+import { indentGuides } from "./indent-guides.js";
+import { vscodeKeymap } from "./keymap.js";
+import { jsLinter, jsonLinter, cssLinter, htmlLinter } from "./lint.js";
+import { hoverPlugin } from "./hover.js";
+import { nextSnippetField, prevSnippetField, clearSnippet } from "@codemirror/autocomplete";
+import { jsAutoComplete, tsAutoComplete, jsxAutoComplete, tsxAutoComplete, cssAutoComplete, htmlAutoComplete, } from "./autocomplete.js";
+// ─── Autocomplete selector ─────────────────────────────────
+function getAutoCompleteExtensions(filename) {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    switch (ext) {
+        case "js":
+        case "mjs":
+        case "cjs":
+            return [jsAutoComplete];
+        case "jsx":
+            return [jsAutoComplete, jsxAutoComplete];
+        case "ts":
+        case "mts":
+        case "cts":
+            return [tsAutoComplete];
+        case "tsx":
+            return [tsAutoComplete, tsxAutoComplete];
+        case "css":
+            return [cssAutoComplete];
+        case "html":
+        case "htm":
+            return [htmlAutoComplete];
+        default:
+            return [];
+    }
+}
+// ─── Linter selector ────────────────────────────────────────
+function getLinter(filename) {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    switch (ext) {
+        case "js":
+        case "mjs":
+        case "cjs":
+        case "jsx":
+        case "ts":
+        case "mts":
+        case "cts":
+        case "tsx":
+            return jsLinter;
+        case "json":
+            return jsonLinter;
+        case "css":
+            return cssLinter;
+        case "html":
+        case "htm":
+            return htmlLinter;
+        default:
+            return null;
+    }
+}
 // ─── Factory ────────────────────────────────────────────────
 export function createEditor(config) {
-    const { parent, doc, language, onChange, fontSize = 13, tabSize = 2, wordWrap = false, readonly = false, extraExtensions = [], } = config;
+    const { parent, doc, language, onChange, onCursorChange, fontSize = 13, tabSize = 2, wordWrap = false, readonly = false, extraExtensions = [], filename = "", } = config;
+    // Select linter based on file extension
+    const linterExt = filename ? getLinter(filename) : null;
     const extensions = [
         basicSetup,
         cmTheme,
         // Language
         language ?? [],
+        // Linters
+        linterExt ?? [],
         // Indentation
         indentUnit.of(" ".repeat(tabSize)),
+        // Indent guides (vertical lines at each tab stop)
+        indentGuides,
         // Line wrapping — opt-in
         wordWrap ? EditorView.lineWrapping : [],
         // Read-only
         readonly ? EditorView.editable.of(false) : [],
-        // Custom keymap
+        // VS Code-inspired keymap + snippet field navigation
+        // nextSnippetField returns false when no snippet is active,
+        // falling through to indentMore in vscodeKeymap
         keymap.of([
+            ...vscodeKeymap,
+            { key: "Tab", run: nextSnippetField, shift: clearSnippet },
+            { key: "Shift-Tab", run: prevSnippetField },
             // Escape: blur the editor (useful to trigger global shortcuts)
             { key: "Escape", run: (view) => { view.contentDOM.blur(); return true; } },
         ]),
+        // Hover tooltips — shows contextual info on hover (keywords, APIs, etc.)
+        hoverPlugin,
+        // Language-specific autocomplete (registered via languageData)
+        // Picked up automatically by the autocompletion from basicSetup
+        ...getAutoCompleteExtensions(filename),
         // Additional extensions (e.g., Emmet)
         ...extraExtensions,
-        // Change listener
+        // Change listener + cursor position tracker
         EditorView.updateListener.of((update) => {
             if (update.docChanged) {
                 onChange?.(update.state.doc.toString());
+            }
+            if ((update.selectionSet || update.docChanged || update.geometryChanged) && onCursorChange) {
+                const sel = update.state.selection.main;
+                const line = update.state.doc.lineAt(sel.head);
+                onCursorChange({
+                    line: line.number,
+                    column: sel.head - line.from + 1,
+                    totalLines: update.state.doc.lines,
+                    selectionLength: Math.abs(sel.to - sel.from),
+                });
             }
         }),
     ];

@@ -8,8 +8,7 @@
  */
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
-import { trackedRename } from "./vfs-events.js";
-import { scheduleVfsPersist } from "./vfs-persist.js";
+import { getDebounceMs, scheduleVfsPersist, setDebounceMs } from "./vfs-persist.js";
 // ─── Helpers ──────────────────────────────────────────────────
 let msgCounter = 0;
 function nextId() {
@@ -22,7 +21,7 @@ const DEFAULT_SETTINGS = {
     fontSize: 14,
     wordWrap: true,
     tabSize: 2,
-    autoSave: false,
+    autoSave: true,
     toolWebEnabled: true,
     toolContextEnabled: true,
     toolVfsEnabled: true,
@@ -53,6 +52,7 @@ export const ideStore = createStore()(subscribeWithSelector((set, get) => ({
     terminalOpen: false,
     activePortals: [],
     outputs: [],
+    conflictedFiles: {},
     // ── Actions ────────────────────────────────────────
     setActiveFile: (path) => set({ activeFile: path }),
     setFiles: (files) => set({ files }),
@@ -169,6 +169,32 @@ export const ideStore = createStore()(subscribeWithSelector((set, get) => ({
         return { messages: msgs };
     }),
     clearMessages: () => set({ messages: [], agentStatus: "idle" }),
+    // ── Conflict resolution ─────────────────────────────
+    setConflictedFile: (path, conflict) => set((s) => ({
+        conflictedFiles: { ...s.conflictedFiles, [path]: conflict },
+    })),
+    resolveConflict: (path, choice) => set((s) => {
+        const newConflicts = { ...s.conflictedFiles };
+        delete newConflicts[path];
+        if (choice === "accept") {
+            // Accept external (VFS) version — editor will reload via onVfsChange
+            return { conflictedFiles: newConflicts };
+        }
+        // "keep" — overwrite VFS with editor buffer, then persist
+        const tab = s.files.find((f) => f.path === path);
+        if (tab) {
+            // The editor will have already written its buffer via onVfsChange
+            // when the user clicks "keep", so just ensure mark clean
+            s.setFileDirty(path, false);
+            scheduleVfsPersist();
+        }
+        return { conflictedFiles: newConflicts };
+    }),
+    clearConflict: (path) => set((s) => {
+        const newConflicts = { ...s.conflictedFiles };
+        delete newConflicts[path];
+        return { conflictedFiles: newConflicts };
+    }),
     bumpVfsVersion: () => set((s) => ({ vfsVersion: s.vfsVersion + 1 })),
     setTerminalOpen: (open) => set({ terminalOpen: open }),
     addPortal: (portal) => set((s) => ({
@@ -191,10 +217,13 @@ export const ideStore = createStore()(subscribeWithSelector((set, get) => ({
     setBrowserPodStatus: (status, error) => set({ browserPodStatus: status, browserPodError: error ?? null }),
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setEditorView: (view) => set({ editorView: view }),
+    /**
+     * Rename a file tab in the IDE. Does NOT touch VFS — the caller must
+     * call trackedRename() before invoking this action (see vfs-tools.ts
+     * rename_file tool, RightPanel.tsx, CodeEditor TabBar).
+     * This action only updates tab metadata and triggers a persist.
+     */
     renameFile: (oldPath, newPath) => {
-        const events = trackedRename(oldPath, newPath);
-        if (events.length === 0)
-            return;
         const state = get();
         const oldTab = state.files.find((f) => f.path === oldPath);
         if (oldTab) {
@@ -236,5 +265,13 @@ ideStore.subscribe((s) => s.settings, (settings) => {
     }
     catch {
         // Storage full or unavailable — ignore
+    }
+    // Adjust vfs-persist debounce based on autoSave setting
+    // When autoSave is on, persist faster (500ms instead of 2000ms)
+    if (settings.autoSave === true && getDebounceMs() > 500) {
+        setDebounceMs(500);
+    }
+    else if (settings.autoSave === false && getDebounceMs() < 2000) {
+        setDebounceMs(2000);
     }
 });

@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { t } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import { serializeProject } from "../utils/vfs-io.js";
-import { trackedDelete, trackedWrite } from "../vfs-events.js";
+import { trackedDelete, trackedRename, trackedWrite } from "../vfs-events.js";
 import { flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import { vfsExists, vfsMkdir, vfsTree } from "../vfs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -160,6 +160,7 @@ export function RightPanel({ locale }) {
         parts.pop();
         const newPath = "/" + [...parts, renameValue.trim()].join("/");
         if (newPath !== renaming) {
+            trackedRename(renaming, newPath);
             ideStore.getState().renameFile(renaming, newPath);
             refresh();
         }

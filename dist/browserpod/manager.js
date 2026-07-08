@@ -8,13 +8,8 @@
  * async communication pattern similar to pyodide-manager.
  * Uses createCustomTerminal with onOutput callback for headless execution.
  */
-// ─── ANSI Strip & Error Detection ──────────────────────────
-// Same regex used by strip-ansi / ansi-regex (industry standard).
-// Implemented inline to avoid ESM/CJS bundling issues with esbuild single-file output.
-const ANSI_REGEX = /[\u001B\u009B][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g;
-function stripAnsi(input) {
-    return input.replace(ANSI_REGEX, "");
-}
+import stripAnsi from "strip-ansi";
+// ─── Error Detection ───────────────────────────────────────
 /** Known Node.js fatal error patterns that indicate real failure despite exitCode 0 */
 const NODE_FATAL_PATTERNS = [
     "ERR_INVALID_PACKAGE_CONFIG",
@@ -201,17 +196,13 @@ class BrowserPodManager {
                 // Clear output buffer before each execution
                 this.outputBuffer = [];
                 // Build run options — terminal is always required
-                const runOpts = {};
-                if (this.terminal)
-                    runOpts.terminal = this.terminal;
-                if (options?.cwd)
-                    runOpts.cwd = options.cwd;
-                if (options?.env)
-                    runOpts.env = options.env;
-                if (options?.echo)
-                    runOpts.echo = options.echo;
+                const runOpts = {
+                    terminal: this.terminal,
+                    ...(options?.cwd && { cwd: options.cwd }),
+                    ...(options?.env && { env: options.env }),
+                    ...(options?.echo && { echo: options.echo }),
+                };
                 // pod.run() resolves when the process exits — no .wait() needed.
-                // Signature: pod.run(executable, args[], { terminal, cwd?, env?, echo? })
                 const result = await this.pod.run(command, args, runOpts);
                 // Collect all captured output from onOutput callback
                 const rawStdout = this.outputBuffer.join("");
@@ -280,11 +271,25 @@ class BrowserPodManager {
     /**
      * Write a file into the pod's virtual filesystem.
      * Creates parent directories recursively before writing.
+     * Skips if the file already exists with identical content (avoiding
+     * unnecessary `createFile` which wipes existing content per BrowserPod docs).
      * Automatically reconnects and retries on WebSocket failure.
      */
     async writeFile(path, content) {
         if (!this.pod)
             return false;
+        // Pre-check: read existing content and skip if already in sync
+        // This prevents unnecessary Pod writes and avoids the destructive
+        // nature of createFile (which wipes existing content on open).
+        const existingContent = await this.readFile(path);
+        if (existingContent !== null && existingContent === content) {
+            // Already in sync — ensure it's tracked in the cache
+            const existingIdx = this.lastSyncedFiles.findIndex((f) => f.path === path);
+            if (existingIdx < 0) {
+                this.lastSyncedFiles.push({ path, content });
+            }
+            return true;
+        }
         for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
             try {
                 // Ensure parent directories exist first
@@ -365,10 +370,20 @@ class BrowserPodManager {
     /**
      * Sync multiple files from VFS to the pod.
      * Caches files for automatic re-sync after WebSocket reconnection.
+     * Merges files into the existing cache instead of replacing it,
+     * so files written by real-time subscription are not lost.
      */
     async syncFiles(files) {
-        // Update cache for reconnection recovery
-        this.lastSyncedFiles = [...files];
+        // Merge: update existing entries, add new ones — don't remove
+        for (const file of files) {
+            const idx = this.lastSyncedFiles.findIndex((f) => f.path === file.path);
+            if (idx >= 0) {
+                this.lastSyncedFiles[idx] = file;
+            }
+            else {
+                this.lastSyncedFiles.push(file);
+            }
+        }
         let synced = 0;
         for (const file of files) {
             // Validate package.json before syncing to prevent corrupting the Pod environment

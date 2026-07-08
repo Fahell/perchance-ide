@@ -126,14 +126,20 @@ async function startAgent() {
     initMessageStore().catch((e) => console.error("[Agent] initMessageStore failed:", e));
     // Load editor settings from localStorage
     loadSettings();
-    // Restore VFS from IndexedDB
-    // Fire-and-forget: VFS loads incrementally, no need to block
-    dbLoadVfs().then((entries) => {
+    // Restore VFS from IndexedDB (sequential — prevents race condition where
+    // vfsLoadAll replaces in-memory VFS after agent tools have already modified it)
+    try {
+        const entries = await dbLoadVfs();
         vfsLoadAll(entries);
         initHashes();
         initMapperDispatcher(() => agentProcessing);
         console.log("📁 [Agent] VFS restored: " + entries.length + " entries");
-    }).catch((e) => console.error("[Agent] dbLoadVfs failed:", e));
+    }
+    catch (e) {
+        console.error("[Agent] dbLoadVfs failed, continuing with empty VFS:", e);
+        // Still need mapper init for VFS events even without persisted data
+        initMapperDispatcher(() => agentProcessing);
+    }
     // Render Preact panel
     panel = renderPanel(document.body, {
         version: __VERSION__,
@@ -258,5 +264,24 @@ function bootstrap() {
         });
     }
 }
+// ─── beforeunload — Prevent data loss on accidental navigation ──
+function setupBeforeUnload() {
+    window.addEventListener("beforeunload", async (e) => {
+        const { ideStore } = await import("./store.js");
+        const state = ideStore.getState();
+        const hasDirty = state.files.some((f) => f.dirty);
+        if (hasDirty || state.isProcessing) {
+            e.preventDefault();
+            e.returnValue = "";
+        }
+        // Best-effort flush on beforeunload
+        const { flushVfsPersist } = await import("./vfs-persist.js");
+        await Promise.race([
+            flushVfsPersist(),
+            new Promise((resolve) => setTimeout(resolve, 1000)),
+        ]);
+    });
+}
 // ─── Run ────────────────────────────────────────────────────
 bootstrap();
+setupBeforeUnload();

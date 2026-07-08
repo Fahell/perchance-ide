@@ -4,6 +4,9 @@
  */
 /** Possible global names that the user might have imported the plugin as. */
 const AI_GLOBAL_NAMES = ["agentAi", "generateText", "text", "ai"];
+/** Narrow window to our Perchance-aware interface for global lookups. */
+const pw = window;
+const parentPw = window.parent;
 /**
  * Resolve the ai-text-plugin function across expected global names.
  *
@@ -20,17 +23,19 @@ let _cachedAi = null;
 function findAi() {
     for (const name of AI_GLOBAL_NAMES) {
         // 1. Direct global (non-ai names like agentAi, generateText)
-        let fn = window[name];
+        const fn = pw[name];
         if (typeof fn === "function")
             return fn;
         // 2. Perchance root object (all names including "ai")
-        const root = window.root;
-        if (root && typeof root[name] === "function")
-            return root[name];
+        const root = pw.root;
+        const rootFn = root?.[name];
+        if (typeof rootFn === "function")
+            return rootFn;
         // 3. Parent frame's Perchance root (iframe in HTML panel)
-        const parentRoot = window.parent?.root;
-        if (parentRoot && typeof parentRoot[name] === "function")
-            return parentRoot[name];
+        const parentRoot = parentPw?.root;
+        const parentRootFn = parentRoot?.[name];
+        if (typeof parentRootFn === "function")
+            return parentRootFn;
     }
     return null;
 }

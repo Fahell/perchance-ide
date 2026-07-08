@@ -9,15 +9,19 @@ import { jsx as _jsx, jsxs as _jsxs } from "preact/jsx-runtime";
  * - Auto-save to VFS (debounced 500ms)
  * - Lazy-loaded — CM6 bundle only imported when component mounts
  */
+import { Transaction } from "@codemirror/state";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { getBreadcrumbs } from "../editor/breadcrumbs.js";
 import { getEmmetSyntax } from "../editor/emmet-langs.js";
 import { getEmmetExtensions } from "../editor/emmet.js";
 import { setCurrentView } from "../editor/view-store.js";
 import { t } from "../i18n/index.js";
 import { ideStore } from "../store.js";
-import { getHash, onVfsChange, trackedWrite } from "../vfs-events.js";
-import { cancelScheduledPersist, flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
+import { getHash, onVfsChange, trackedRename, trackedWrite } from "../vfs-events.js";
+import { flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import { vfsExists, vfsRead } from "../vfs.js";
+import { BreadcrumbsBar } from "./BreadcrumbsBar.js";
+import { EditorStatusBar, dispatchStatusUpdate } from "./EditorStatusBar.js";
 import { colors, fonts } from "./theme.js";
 // ─── Helpers ────────────────────────────────────────────────
 function getExt(path) {
@@ -35,6 +39,7 @@ export function CodeEditor({ locale }) {
     const viewRef = useRef(null);
     const debounceRef = useRef(null);
     const [pendingCloseFile, setPendingCloseFile] = useState(null);
+    const [breadcrumbs, setBreadcrumbs] = useState([]);
     const lastSavedHashRef = useRef(null);
     const saveStatusTimerRef = useRef(null);
     const prevActiveRef = useRef(null);
@@ -74,7 +79,8 @@ export function CodeEditor({ locale }) {
                 const content = viewRef.current.state.doc.toString();
                 trackedWrite(prevActiveRef.current, content);
                 ideStore.getState().setFileDirty(prevActiveRef.current, false);
-                scheduleVfsPersist();
+                // Use flush instead of schedule — user finished editing this file
+                flushVfsPersist();
             }
         }
         prevActiveRef.current = path;
@@ -104,10 +110,18 @@ export function CodeEditor({ locale }) {
                 parent: containerRef.current,
                 doc: content,
                 language: getLanguageSupport(path),
+                filename: path,
                 extraExtensions: emmetExts,
                 fontSize,
                 tabSize,
                 wordWrap,
+                onCursorChange: (info) => {
+                    dispatchStatusUpdate(info, path);
+                    // Update breadcrumbs from cursor position
+                    if (viewRef.current) {
+                        setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
+                    }
+                },
                 onChange: (doc) => {
                     if (!mountedRef.current)
                         return;
@@ -128,10 +142,13 @@ export function CodeEditor({ locale }) {
                         ideStore.getState().bumpVfsVersion();
                         scheduleVfsPersist();
                         scheduleSaveStatusClear(path);
-                    }, 500);
+                    }, 200);
                     ideStore.getState().setFileDirty(path, true);
                 },
             });
+            // Populate breadcrumbs for initial cursor position
+            // (onCursorChange callback won't fire for initial state)
+            setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
             // Share view with OutlinePanel (10.1)
             setCurrentView(viewRef.current);
         })();
@@ -208,13 +225,29 @@ export function CodeEditor({ locale }) {
                     return;
                 if (event.currentHash && event.currentHash === lastSavedHashRef.current)
                     return;
-                // External change detected — reload buffer from VFS
+                // External change detected
+                const state = ideStore.getState();
+                const tab = state.files.find((f) => f.path === currentPath);
+                if (tab?.dirty) {
+                    // Editor has unsaved changes — mark conflict instead of overwriting
+                    state.setConflictedFile(currentPath, {
+                        path: currentPath,
+                        externalHash: event.currentHash ?? getHash(currentPath) ?? "",
+                        timestamp: Date.now(),
+                        notified: true,
+                    });
+                    return;
+                }
+                // Editor buffer is clean — safe to reload from VFS
                 const newContent = vfsRead(currentPath);
                 if (newContent === null)
                     return;
                 const view = viewRef.current;
                 view.dispatch({
                     changes: { from: 0, to: view.state.doc.length, insert: newContent },
+                    // Don't add external reloads to undo history — prevents confusing
+                    // Ctrl+Z behavior where "undo" jumps past the external change.
+                    annotations: [Transaction.addToHistory.of(false)],
                 });
                 lastSavedHashRef.current = event.currentHash ?? getHash(currentPath) ?? null;
                 ideStore.getState().setFileDirty(currentPath, false);
@@ -257,7 +290,6 @@ export function CodeEditor({ locale }) {
             setCurrentView(null);
             if (debounceRef.current)
                 clearTimeout(debounceRef.current);
-            cancelScheduledPersist();
             if (saveStatusTimerRef.current)
                 clearTimeout(saveStatusTimerRef.current);
             if (viewRef.current) {
@@ -268,8 +300,11 @@ export function CodeEditor({ locale }) {
                 viewRef.current.destroy();
                 viewRef.current = null;
             }
-            // Flush pending persist on unmount
-            flushVfsPersist().catch((e) => console.warn("[CodeEditor] final persist failed:", e));
+            // Flush pending persist on unmount — use race timeout to avoid blocking
+            Promise.race([
+                flushVfsPersist(),
+                new Promise((resolve) => setTimeout(resolve, 1000)),
+            ]).catch((e) => console.warn("[CodeEditor] final persist failed:", e));
         };
     }, []);
     // ── Actions ─────────────────────────────────────────────
@@ -327,7 +362,7 @@ export function CodeEditor({ locale }) {
     return (_jsxs("div", { style: {
             display: "flex", flexDirection: "column", height: "100%",
             background: colors.bg, borderLeft: `1px solid ${colors.border}`,
-        }, children: [_jsx(TabBar, { tabs: files, activeFile: activeFile ?? null, onSelect: selectTab, onClose: closeTab, onAdd: addTab, locale: locale }), _jsxs("div", { ref: containerRef, style: {
+        }, children: [_jsx(TabBar, { tabs: files, activeFile: activeFile ?? null, onSelect: selectTab, onClose: closeTab, onAdd: addTab, locale: locale }), activeFile && (_jsx(BreadcrumbsBar, { path: activeFile, symbols: breadcrumbs })), _jsxs("div", { ref: containerRef, style: {
                     flex: 1, overflow: "hidden", position: "relative",
                 }, children: [!activeTab && (_jsx("div", { style: {
                             padding: "12px", color: colors.textMuted,
@@ -335,7 +370,43 @@ export function CodeEditor({ locale }) {
                         }, children: t("editor.noFiles", locale) || "no files open" })), activeTab && !viewRef.current && (_jsx("div", { style: {
                             padding: "12px", color: colors.textMuted,
                             fontSize: "11px", fontFamily: fonts.mono,
-                        }, children: t("editor.loading", locale) || "loading editor..." })), pendingCloseFile && (_jsx("div", { style: {
+                        }, children: t("editor.loading", locale) || "loading editor..." })), activeFile && store.conflictedFiles[activeFile] && (_jsxs("div", { style: {
+                            padding: "8px 12px",
+                            background: "#3a2a1a",
+                            borderBottom: `1px solid ${colors.border}`,
+                            fontSize: "10px", fontFamily: fonts.mono,
+                            display: "flex", alignItems: "center", gap: "8px",
+                            flexShrink: 0,
+                        }, children: [_jsx("span", { style: { color: "#e8a84c" }, children: "\u26A0" }), _jsx("span", { style: { color: colors.text, flex: 1 }, children: "File modified externally while you have unsaved changes" }), _jsx("button", { onClick: () => {
+                                    if (!viewRef.current || !activeFile)
+                                        return;
+                                    // "Keep mine" — overwrite VFS with editor content
+                                    const content = viewRef.current.state.doc.toString();
+                                    trackedWrite(activeFile, content);
+                                    ideStore.getState().resolveConflict(activeFile, "keep");
+                                }, style: {
+                                    padding: "3px 8px", border: `1px solid ${colors.text}`,
+                                    background: "transparent", color: colors.text,
+                                    fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+                                }, children: "Keep mine" }), _jsx("button", { onClick: () => {
+                                    if (!viewRef.current || !activeFile)
+                                        return;
+                                    // "Accept theirs" — reload editor buffer from VFS
+                                    const newContent = vfsRead(activeFile);
+                                    if (newContent === null)
+                                        return;
+                                    viewRef.current.dispatch({
+                                        changes: { from: 0, to: viewRef.current.state.doc.length, insert: newContent },
+                                        annotations: [Transaction.addToHistory.of(false)],
+                                    });
+                                    lastSavedHashRef.current = getHash(activeFile) ?? null;
+                                    ideStore.getState().setFileDirty(activeFile, false);
+                                    ideStore.getState().resolveConflict(activeFile, "accept");
+                                }, style: {
+                                    padding: "3px 8px", border: `1px solid ${colors.borderEmphasis ?? colors.border}`,
+                                    background: "transparent", color: colors.textMuted,
+                                    fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
+                                }, children: "Accept theirs" })] })), pendingCloseFile && (_jsx("div", { style: {
                             position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                             background: "rgba(0,0,0,0.85)", zIndex: 100,
                             display: "flex", alignItems: "center", justifyContent: "center",
@@ -354,7 +425,7 @@ export function CodeEditor({ locale }) {
                                                 padding: "6px 10px", border: `1px solid ${colors.border}`,
                                                 background: "transparent", color: colors.textMuted,
                                                 fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
-                                            }, children: t("editor.cancel", locale) })] })] }) }))] })] }));
+                                            }, children: t("editor.cancel", locale) })] })] }) }))] }), activeFile && _jsx(EditorStatusBar, {})] }));
 }
 // ─── Tab Bar ────────────────────────────────────────────────
 function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }) {
@@ -397,6 +468,8 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }) {
             document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
                 detail: { path: renamingPath },
             }));
+            // Update VFS entries before telling the store to update tab metadata
+            trackedRename(renamingPath, newPath);
             ideStore.getState().renameFile(renamingPath, newPath);
         }
         setRenamingPath(null);

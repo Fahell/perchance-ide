@@ -9,8 +9,11 @@
  * This module is the single source of truth for "what changed in the VFS".
  * Consumers (mapper, preview, future features) subscribe to events
  * instead of polling or hooking into scattered call sites.
+ *
+ * Also notifies vfs-persist of dirty paths for incremental IndexedDB writes.
  */
-import { vfsWrite as _vfsWrite, vfsDeleteTree as _vfsDeleteTree, vfsRename as _vfsRename, vfsGetAll, } from "./vfs.js";
+import { markDeleted, markDirty, markRenamed } from "./vfs-persist.js";
+import { vfsDeleteTree as _vfsDeleteTree, vfsRename as _vfsRename, vfsWrite as _vfsWrite, vfsGetAll } from "./vfs.js";
 // ─── FNV-1a 32-bit Hash ─────────────────────────────────────
 const FNV_OFFSET = 2166136261;
 const FNV_PRIME = 16777619;
@@ -80,6 +83,8 @@ export function trackedWrite(path, content) {
         // Still update timestamp but don't emit
         return { type: "modified", path, previousHash: prevHash, currentHash: newHash, size: content.length, timestamp: now };
     }
+    // Notify vfs-persist for incremental IndexedDB write
+    markDirty(path);
     const event = {
         type: eventType,
         path,
@@ -111,6 +116,8 @@ export function trackedDelete(path) {
     for (const p of affectedPaths) {
         const prevEntry = _hashes.get(p);
         _hashes.delete(p);
+        // Notify vfs-persist for IndexedDB tombstone
+        markDeleted(p);
         const event = {
             type: "deleted",
             path: p,
@@ -146,6 +153,8 @@ export function trackedRename(oldPath, newPath) {
     for (const { oldP, newP, entry } of affectedEntries) {
         _hashes.delete(oldP);
         _hashes.set(newP, { ...entry, updatedAt: now });
+        // Notify vfs-persist for incremental IndexedDB update
+        markRenamed(oldP, newP);
         const event = {
             type: "renamed",
             path: newP,

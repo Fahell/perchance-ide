@@ -30,9 +30,10 @@ export async function getEmmetExtensions(syntax) {
         const plugin = await loadPlugin();
         if (!plugin)
             return [];
+        const emmetSyntax = syntax;
         return [
-            plugin.emmetConfig.of({ syntax: syntax }),
-            plugin.abbreviationTracker({ syntax: syntax }),
+            plugin.emmetConfig.of({ syntax: emmetSyntax }),
+            plugin.abbreviationTracker({ syntax: emmetSyntax }),
         ];
     }
     catch {
