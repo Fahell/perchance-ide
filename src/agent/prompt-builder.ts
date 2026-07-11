@@ -9,15 +9,49 @@
 
 import { ideStore } from "../store.js";
 import { getToolDescriptions } from "../tools/index.js";
+import type { VfsTreeNode } from "../vfs.js";
 
 // ─── Tag Constants (fill in manually) ───────────────────────
 const tcOpen: string = "<tool_call>";
 const tcClose: string = "</tool_call>";
 
+/**
+ * Render a VFS tree structure to an indented string for the system prompt.
+ * Capped at maxNodes total nodes and maxDepth levels to control token usage.
+ */
+export function buildVfsTreeString(nodes: VfsTreeNode[], maxNodes = 60, maxDepth = 4): string {
+  let result = "";
+  let remaining = maxNodes;
+
+  function walk(list: VfsTreeNode[], depth: number): void {
+    if (depth > maxDepth || remaining <= 0) return;
+    for (const node of list) {
+      if (remaining <= 0) {
+        result += `  … (more entries)\n`;
+        return;
+      }
+      const indent = "  ".repeat(depth);
+      if (node.type === "dir") {
+        result += `${indent}${node.name}/\n`;
+        remaining--;
+        if (node.children) walk(node.children, depth + 1);
+      } else {
+        result += `${indent}${node.name}\n`;
+        remaining--;
+      }
+    }
+  }
+
+  walk(nodes, 0);
+  return result || "(empty project)\n";
+}
+
 // ─── buildToolPrompt ────────────────────────────────────────
 export function buildToolPrompt(
   vfsFileCount?: number,
-  pyodideLoaded?: boolean
+  pyodideLoaded?: boolean,
+  vfsTreeStr?: string,
+  vfsDirCount?: number
 ): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -47,7 +81,19 @@ export function buildToolPrompt(
   sections.push(`KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.`);
 
   const bpStatus = ideStore.getState().browserPodStatus;
-  sections.push(`PROJECT STATE:\n- Files: ${vfsFileCount ?? "?"}\n- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}\n- Node.js: ${bpStatus === "ready" ? "● Ready (BrowserPod)" : bpStatus === "error" ? "✗ Error" : "○ Not available"}`);
+  sections.push(`PROJECT STATE:
+- Working dir: /home/user
+- Files: ${vfsFileCount ?? "?"}
+- Directories: ${vfsDirCount ?? "?"}
+- Python: ${pyodideLoaded ? "● Loaded" : "○ Loads on first use"}
+- Node.js: ${bpStatus === "ready" ? "● Ready (BrowserPod)" : bpStatus === "error" ? "✗ Error" : "○ Not available"}
+${vfsTreeStr ? `\nPROJECT TREE:\n${vfsTreeStr}` : ""}`);
+
+  sections.push(`ENVIRONMENT AWARENESS — Always verify the environment:
+- BEFORE starting a task, inspect what already exists (file tree / current directory).
+- AFTER you create, move, rename, or delete ANY file or directory (or run init / scaffold), re-inspect to confirm the change.
+- NEVER recreate an existing file or directory blindly — if it already exists, build on it instead.
+- Use whichever inspection tool is active: list_files (VFS) or run_shell_command with ls/find (Shell).`);
 
   sections.push(`OUTPUT LIMIT: ~1000 tokens (~3000 chars). Responses that exceed this are silently cut off.\n- Keep responses short; use bullet points\n- Create files ONE AT A TIME (write_file per file)\n- For large operations, split across multiple responses`);
 

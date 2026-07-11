@@ -17,10 +17,10 @@
 import { getPyodideStatus } from "./terminal/pyodide.js";
 import { checkToolRateLimit, getTool, validateToolArgs } from "./tools/index.js";
 import { truncateOutput } from "./utils/truncate.js";
-import { vfsGetAll } from "./vfs.js";
+import { vfsGetAll, vfsTree, PROJECT_ROOT } from "./vfs.js";
 
 // ─── Extracted Modules ──────────────────────────────────────
-import { buildToolPrompt } from "./agent/prompt-builder.js";
+import { buildToolPrompt, buildVfsTreeString } from "./agent/prompt-builder.js";
 import { RepetitionDetector } from "./agent/repetition-detector.js";
 import {
   LLM_TIMEOUT_MS,
@@ -85,8 +85,12 @@ export async function agentLoop(
 ): Promise<string> {
   // Gather dynamic state for the system prompt
   const pyodideStatus = getPyodideStatus();
-  const vfsFileCount = vfsGetAll().filter((e) => e.type === "file").length;
-  const toolPrompt = buildToolPrompt(vfsFileCount, pyodideStatus.loaded);
+  const allEntries = vfsGetAll();
+  const vfsFileCount = allEntries.filter((e) => e.type === "file").length;
+  const vfsDirCount = allEntries.filter((e) => e.type === "dir").length;
+  const treeNodes = vfsTree(PROJECT_ROOT);
+  const treeStr = buildVfsTreeString(treeNodes);
+  const toolPrompt = buildToolPrompt(vfsFileCount, pyodideStatus.loaded, treeStr, vfsDirCount);
 
   // Build the instruction for the LLM with structured context
   const instructionParts: string[] = [];
@@ -281,6 +285,8 @@ export async function agentLoop(
         } else if (call.name === "scrape_url") {
           nextStep =
             "Use the page content above to answer the user's question. If the scraped content doesn't contain the answer, try scraping a different URL from the earlier search results, or run a new web_search with a different query.";
+        } else if (["write_file", "delete_file", "rename_file", "run_shell_command", "run_git_command"].includes(call.name)) {
+          nextStep = "The file/dir operation completed. Verify the environment (list_files or ls) before any further create/move/delete — do NOT recreate what already exists.";
         } else {
           nextStep = "Now respond to the user based on this information.";
         }
@@ -295,7 +301,7 @@ export async function agentLoop(
             `[System]: You have called ${call.name} with the same arguments multiple times in a row. This appears to be repetitive. Try a different approach or synthesize the answer from information you already have.`
           );
         } else if (repStatus === "interrupt") {
-          return `The agent was interrupted because it appeared to be stuck in a loop (called ${call.name} with identical arguments too many times). Here's what was accomplished so far. Please try rephrasing your request.`;
+          return `The agent was interrupted because it appeared to be stuck in a loop (repeated identical tool calls). The target likely already exists — use list_files or ls to check the current environment before retrying. Please rephrase your request to inspect first.`;
         }
       } else {
         // Tool failed or returned no result

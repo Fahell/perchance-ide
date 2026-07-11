@@ -4,9 +4,12 @@
  * Shows the last 20 outputs from run_python / execute_script tools.
  * Each entry shows stdout, stderr, exit code, and timestamp.
  * Expandable cards with copy-to-clipboard.
+ *
+ * Features: search/filter, collapse-all/expand-all, auto-scroll,
+ * dynamic relative timestamps.
  */
 
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState, type OutputEntry } from "../store.js";
 import { colors, fonts } from "./theme.js";
@@ -16,18 +19,25 @@ interface OutputPanelProps {
   locale?: Locale;
 }
 
-// ─── Helpers ────────────────────────────────────────────────
-function formatTime(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return new Date(ts).toLocaleString();
+// ─── RelativeTime — dynamic timestamp ───────────────────────
+function RelativeTime({ timestamp }: { timestamp: number }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const diff = now - timestamp;
+  if (diff < 60_000) return <span>just now</span>;
+  if (diff < 3_600_000) return <span>{Math.floor(diff / 60_000)}m ago</span>;
+  if (diff < 86_400_000) return <span>{Math.floor(diff / 3_600_000)}h ago</span>;
+  return <span>{new Date(timestamp).toLocaleString()}</span>;
 }
 
+// ─── Helpers ────────────────────────────────────────────────
 function copyText(text: string) {
   navigator.clipboard.writeText(text).catch(() => {
-    // Fallback for older browsers
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
@@ -40,16 +50,37 @@ function copyText(text: string) {
 // ─── Component ──────────────────────────────────────────────
 export function OutputPanel({ locale }: OutputPanelProps) {
   const [store, setStore] = useState<IdeState>(ideStore.getState());
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(store.outputs.length);
 
   useEffect(() => {
     return ideStore.subscribe((s) => setStore(s));
   }, []);
 
   const { outputs } = store;
+
+  // Auto-scroll to top when new output arrives
+  useEffect(() => {
+    if (outputs.length > prevCountRef.current && listRef.current) {
+      listRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    prevCountRef.current = outputs.length;
+  }, [outputs.length]);
+
+  // Filter outputs by search query
+  const filtered = searchQuery.trim()
+    ? outputs.filter((e) =>
+        e.command.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.stdout && e.stdout.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (e.stderr && e.stderr.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : outputs;
+
   // Show newest first
-  const reversed = [...outputs].reverse();
+  const reversed = [...filtered].reverse();
 
   const handleCopy = useCallback((id: string, text: string) => {
     copyText(text);
@@ -59,7 +90,28 @@ export function OutputPanel({ locale }: OutputPanelProps) {
 
   const handleClear = useCallback(() => {
     ideStore.getState().clearOutputs();
+    setExpandedIds(new Set());
   }, []);
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => {
+    const ids = outputs.map((e) => e.id);
+    setExpandedIds(new Set(ids));
+  }, [outputs.length]);
+
+  const collapseAll = useCallback(() => {
+    setExpandedIds(new Set());
+  }, []);
+
+  const hasSearch = outputs.length >= 5;
 
   return (
     <div style={{
@@ -77,37 +129,71 @@ export function OutputPanel({ locale }: OutputPanelProps) {
       }}>
         <span>{t("output.title", locale) || "output"}</span>
         {outputs.length > 0 && (
-          <button
-            onClick={handleClear}
-            style={{
-              background: "none", border: `1px solid ${colors.border}`,
-              color: colors.textMuted, cursor: "pointer",
-              fontSize: "9px", padding: "2px 6px",
-              fontFamily: fonts.mono,
-            }}
-          >
-            {t("output.clear", locale) || "clear"}
-          </button>
+          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+            {filtered.length > 1 && (
+              <>
+                <button onClick={expandAll}
+                  style={{ background: "none", border: "none", color: colors.textMuted, cursor: "pointer", fontSize: "9px", padding: "0 4px", fontFamily: fonts.mono }}>
+                  [+]
+                </button>
+                <button onClick={collapseAll}
+                  style={{ background: "none", border: "none", color: colors.textMuted, cursor: "pointer", fontSize: "9px", padding: "0 4px", fontFamily: fonts.mono }}>
+                  [-]
+                </button>
+              </>
+            )}
+            <button onClick={handleClear}
+              style={{
+                background: "none", border: `1px solid ${colors.border}`,
+                color: colors.textMuted, cursor: "pointer",
+                fontSize: "9px", padding: "2px 6px",
+                fontFamily: fonts.mono,
+              }}>
+              {t("output.clear", locale) || "clear"}
+            </button>
+          </div>
         )}
       </div>
 
+      {/* Search input */}
+      {hasSearch && (
+        <div style={{
+          display: "flex", alignItems: "center",
+          padding: "4px 8px", borderBottom: `1px solid ${colors.border}`,
+        }}>
+          <input
+            value={searchQuery}
+            onInput={(e: any) => setSearchQuery(e.currentTarget.value)}
+            placeholder={t("fileSearch.placeholder", locale) || "filter outputs..."}
+            style={{
+              flex: 1,
+              background: colors.inputBg, border: `1px solid ${colors.border}`,
+              color: colors.text, fontSize: "10px", fontFamily: fonts.mono,
+              outline: "none", padding: "2px 6px",
+            }}
+          />
+        </div>
+      )}
+
       {/* List */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
+      <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
         {reversed.length === 0 ? (
           <div style={{
             padding: "20px", textAlign: "center",
             color: colors.textMuted, fontSize: "10px", fontStyle: "italic",
           }}>
-            {t("output.empty", locale) || "no outputs yet"}
+            {searchQuery.trim()
+              ? (t("fileSearch.noResults", locale) || "no results")
+              : (t("output.empty", locale) || "no outputs yet")}
           </div>
         ) : (
           reversed.map((entry) => (
             <OutputEntryCard
               key={entry.id}
               entry={entry}
-              isExpanded={expandedId === entry.id}
+              isExpanded={expandedIds.has(entry.id)}
               isCopied={copiedId === entry.id}
-              onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+              onToggle={() => toggleExpanded(entry.id)}
               onCopy={handleCopy}
               locale={locale}
             />
@@ -122,7 +208,9 @@ export function OutputPanel({ locale }: OutputPanelProps) {
           padding: "3px 8px", fontSize: "9px",
           color: colors.textMuted, flexShrink: 0,
         }}>
-          {outputs.length} / 20
+          {filtered.length === outputs.length
+            ? `${outputs.length} / 20`
+            : `${filtered.length} / ${outputs.length}`}
         </div>
       )}
     </div>
@@ -177,11 +265,11 @@ function OutputEntryCard({ entry, isExpanded, isCopied, onToggle, onCopy, locale
         }}>
           {cmdPreview}
         </span>
-        {/* Timestamp */}
+        {/* Dynamic timestamp */}
         <span style={{
           flexShrink: 0, fontSize: "8px", color: colors.textMuted,
         }}>
-          {formatTime(entry.timestamp)}
+          <RelativeTime timestamp={entry.timestamp} />
         </span>
         {/* Arrow */}
         <span style={{ flexShrink: 0, color: colors.textMuted, fontSize: "8px" }}>

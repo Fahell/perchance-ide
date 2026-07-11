@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { Locale } from "../i18n/index.js";
 import { t } from "../i18n/index.js";
 import { clearMessages as clearPersistedMessages } from "../message-store.js";
@@ -54,7 +54,11 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [locale, setLocale] = useState<Locale>(initialLocale || "en");
+  const [rightWidth, setRightWidth] = useState(300);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onResizePanel = useCallback((delta: number) => {
+    setRightWidth((w) => Math.max(200, Math.min(window.innerWidth * 0.5, w - delta)));
+  }, []);
 
   const handleLocaleChange = (l: Locale) => {
     setLocale(l);
@@ -190,8 +194,9 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
           />
         </div>
 
-        {/* ── Right: Placeholder panel ───────────────────── */}
-        <div style={{ width: "300px", minWidth: "300px" }}>
+        {/* ── Right: Resizable panel ────────────────────── */}
+        <ResizeHandle onResize={onResizePanel} />
+        <div style={{ width: `${rightWidth}px`, minWidth: "200px", flexShrink: 0 }}>
           <ErrorBoundary name="RightPanel">
             <RightPanel locale={locale} />
           </ErrorBoundary>
@@ -233,3 +238,65 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
     </div>
   );
 }
+
+// ─── Resize Handle ──────────────────────────────────────────
+function ResizeHandle({ onResize }: { onResize: (delta: number) => void }) {
+  const draggingRef = useRef(false);
+  const startXRef = useRef(0);
+
+  const onMouseDown = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    startXRef.current = e.clientX;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!draggingRef.current) return;
+      const delta = startXRef.current - e.clientX;
+      onResize(delta);
+      startXRef.current = e.clientX;
+    }
+    function onMouseUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [onResize]);
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{
+        width: "4px",
+        cursor: "ew-resize",
+        background: "transparent",
+        flexShrink: 0,
+        position: "relative",
+        zIndex: 10,
+      }}
+      title="Drag to resize"
+    >
+      <div style={{
+        position: "absolute",
+        top: "50%",
+        left: "1px",
+        transform: "translateY(-50%)",
+        height: "30px",
+        width: "2px",
+        background: "#222",
+        borderRadius: "1px",
+      }} />
+    </div>
+  );
+}
+

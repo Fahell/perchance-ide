@@ -46,6 +46,14 @@ export function useKeyboardShortcuts(opts: UseKeyboardShortcutsOptions): void {
         return;
       }
 
+      // ── Ctrl+N / Cmd+N: New file ────────────────────
+      if (meta && e.key === "n") {
+        e.preventDefault();
+        // Start new file creation at root via custom event
+        document.dispatchEvent(new Event("explorer:new-file"));
+        return;
+      }
+
       // ── Ctrl+P / Cmd+P: File search ─────────────────
       if (meta && e.key === "p") {
         e.preventDefault();

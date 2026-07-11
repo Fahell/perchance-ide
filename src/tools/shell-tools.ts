@@ -235,6 +235,34 @@ export async function pullProjectFilesFromPod(): Promise<void> {
   }
 }
 
+/** Shell commands that mutate the filesystem — eligible for post-op state enrichment */
+const FS_MUTATING_COMMANDS = new Set(["mkdir", "touch", "cp", "mv", "rm"]);
+
+/**
+ * Detect if a shell command is a FS-mutating operation and extract the
+ * primary target path. Returns the resolved absolute path, or null.
+ * The target is the first non-flag argument (e.g. `mkdir -p src` → `src`).
+ * Resolves relative paths against PROJECT_ROOT.
+ */
+function detectFsMutationTarget(command: string): string | null {
+  const tokens = command.trim().split(/\s+/);
+  const baseCmd = tokens[0];
+  if (!baseCmd || !FS_MUTATING_COMMANDS.has(baseCmd)) return null;
+
+  let target: string | null = null;
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.startsWith("-")) continue;
+    target = t;
+    break;
+  }
+  if (!target) return null;
+  // Avoid shell expansion — can't resolve ~, $HOME, etc.
+  if (target.startsWith("~") || target.startsWith("$")) return null;
+  if (target.startsWith("/")) return target;
+  return `${PROJECT_ROOT}/${target}`;
+}
+
 // ─── Shell Command Whitelist ────────────────────────────────
 /**
  * Commands allowed in run_shell_command.
@@ -351,6 +379,8 @@ function createRunShellCommandTool(): Tool {
 
       // Pull any new files created by the command back into VFS
       await pullProjectFilesFromPod();
+
+      // Assemble primary output
       const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
         result.stderr ? `stderr:\n${result.stderr}` : "",
@@ -358,6 +388,19 @@ function createRunShellCommandTool(): Tool {
       ]
         .filter(Boolean)
         .join("\n\n");
+
+      // For FS-mutating commands, enrich with an `ls` of the target so the
+      // agent sees the post-op state (and cannot silently re-create what exists).
+      const mutationTarget = detectFsMutationTarget(command);
+      if (mutationTarget) {
+        try {
+          const lsResult = await browserPodManager.run("ls", ["-la", mutationTarget], { cwd: "/home/user" });
+          const lsOut = `[post-op state] ls -la ${mutationTarget}:\n${lsResult.stdout || "(empty)"}`;
+          return [output || "Command completed (no output)", lsOut].join("\n\n");
+        } catch {
+          // best-effort — fall through to plain output below
+        }
+      }
 
       return output || "Command completed (no output)";
     },
