@@ -13,7 +13,6 @@ const TRUNCATE_HEIGHT = 150;
 
 export function ResponseText({ content, loading, locale }: ResponseTextProps) {
   const [expanded, setExpanded] = useState(false);
-  const [showCopy, setShowCopy] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
 
@@ -75,8 +74,6 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
         animation: "fade-in 0.3s ease-out",
         position: "relative",
       }}
-      onMouseEnter={() => setShowCopy(true)}
-      onMouseLeave={() => setShowCopy(false)}
     >        <div style={{ color: colors.textMuted, fontSize: "8px", fontWeight: "600", marginBottom: "2px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
           agent
         </div>
@@ -94,7 +91,7 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
           fontSize: "9px",
           cursor: "pointer",
           fontFamily: fonts.mono,
-          opacity: showCopy ? 1 : 0,
+          opacity: 1,
           transition: "opacity 0.15s",
           padding: "2px 4px",
         }}

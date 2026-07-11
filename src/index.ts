@@ -177,7 +177,6 @@ async function startAgent() {
     commit: __COMMIT__,
     currentApiKey: getApiKey(),
     locale: loadLocale(),
-    userName: "",
     onSettingsSave: async (key: string) => {
       const valid = await validateApiKey(key);
       if (valid) {

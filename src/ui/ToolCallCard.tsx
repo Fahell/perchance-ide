@@ -10,9 +10,26 @@ interface ToolCallCardProps {
 }
 
 const TOOL_LABELS: Record<string, string> = {
-  web_search: "web_search",
-  scrape_url: "scrape_url",
-  run_python: "run_python",
+  web_search: "web",
+  scrape_url: "scrape",
+  search_history: "history",
+  get_messages: "messages",
+  read_file: "read",
+  write_file: "write",
+  edit_file: "edit",
+  list_files: "list",
+  search_files: "find",
+  delete_file: "delete",
+  rename_file: "rename",
+  run_python: "python",
+  execute_script: "script",
+  install_package: "pip",
+  run_npm_install: "npm i",
+  run_node_script: "node",
+  execute_npm_command: "npm",
+  run_shell_command: "shell",
+  run_git_command: "git",
+  start_http_server: "serve",
 };
 
 const BRAILLE = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

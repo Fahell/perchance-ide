@@ -15,43 +15,30 @@ export interface ChatMessagesProps {
   messages: PanelMessage[];
   agentStatus: AgentStatus;
   locale: Locale;
-  userName?: string;
   onContinue?: (content: string) => void;
 }
 
-export function ChatMessages({ messages, agentStatus, locale, userName, onContinue }: ChatMessagesProps) {
-  const isCompact = false;
-
-  const filtered = isCompact
-    ? messages.filter((msg) => {
-      if (msg.role === "user") return false;
-      if (msg.toolCalls.length > 0) return true;
-      if (agentStatus !== "idle") return true;
-      return false;
-    })
-    : messages;
-
+export function ChatMessages({ messages, agentStatus, locale, onContinue }: ChatMessagesProps) {
   // Find index of last agent message to show Continue button
-  const lastAgentIdx = filtered
+  const lastAgentIdx = messages
     .map((m, i) => (m.role === "agent" ? i : -1))
     .filter((i) => i !== -1)
     .pop();
 
   const elements: preact.VNode[] = [];
-  filtered.forEach((msg, i) => {
-    const prev = filtered[i - 1];
+  messages.forEach((msg, i) => {
+    const prev = messages[i - 1];
     if (prev && prev.role !== msg.role) {
       elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
     }
     if (msg.role === "user") {
-      elements.push(<UserMessage key={msg.id} content={msg.content} userName={userName} locale={locale} timestamp={msg.timestamp} />);
+      elements.push(<UserMessage key={msg.id} content={msg.content} locale={locale} timestamp={msg.timestamp} />);
     } else {
       elements.push(
         <AgentMessage
           key={msg.id}
           message={msg}
           agentStatus={agentStatus}
-          compact={isCompact}
           locale={locale}
           onContinue={onContinue}
           isLastAgentMessage={i === lastAgentIdx}
@@ -63,7 +50,7 @@ export function ChatMessages({ messages, agentStatus, locale, userName, onContin
   // Thinking gap after last user message
   if (agentStatus === "thinking" && messages.length > 0 && messages[messages.length - 1].role === "user") {
     elements.push(<div key="thinking-sep" className="msg-turn-separator" />);
-    elements.push(<ThinkingIndicator key="thinking-indicator" />);
+    elements.push(<ThinkingIndicator key="thinking-indicator" status={agentStatus} />);
   }
 
   return <>{elements}</>;

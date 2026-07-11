@@ -1,88 +1,61 @@
 import { h } from "preact";
 import { useEffect, useRef } from "preact/hooks";
 import { colors, fonts } from "./theme.js";
+import type { AgentStatus } from "./types.js";
 
 /**
- * Terminal-style thinking animation.
- * "thinking" shimmer label + 3 typewriter lines with > prefix.
- * Uses DOM manipulation for 60fps — no React re-renders.
+ * Terminal-style thinking animation keyed to the real agent status.
+ *
+ * Shows a shimmer label + typewriter lines with > prefix.
+ * Fragments reflect what the agent is actually doing.
  */
 
-const FRAGMENTS = [
-  "analyzing context...",
-  "retrieving memory_0x7f3a",
-  "pattern match: 94.2%",
-  "tokenizing input stream",
-  "inference step 1/12",
-  "activating layer_7",
-  "gradient descent ok",
-  "checking constraints",
-  "rewriting query plan",
-  "embedding space scan",
-  "similarity: 0.8912",
-  "backprop delta: 0.003",
-  "pruning tree nodes",
-  "evaluating branch_a",
-  "evaluating branch_b",
-  "confidence: 0.97",
-  "merging outputs",
-  "validating syntax",
-  "resolving references",
-  "compiling response",
-  "ranking candidates",
-  "filtering noise",
-  "cross-ref: confirmed",
-  "latent vector ready",
-  "attention heads: 8/8",
-  "dropout: disabled",
-  "batch norm: stable",
-  "loss: 0.0021",
-  "epoch: converged",
-  "sampling temperature 0.7",
-  "top_p: 0.92",
-  "generating tokens...",
-  "decoding sequence",
-  "post-processing...",
-  "final check pass",
-  "output buffer ready",
-  "streaming...",
-  "optimizing path",
-  "cache hit: 0x4a2b",
-  "context window: 78%",
-  "rotary embed: applied",
-  "rope scaling: on",
-  "kv cache: allocated",
-  "prefill: complete",
-  "decoding: active",
-  "logits: normalized",
-  "softmax: computed",
-  "argmax: selected",
-  "sampling: multinomial",
-  "repetition penalty: 1.1",
-  "stop sequence: found",
-  "tool call: pending",
-  "function: parse_json",
-  "schema: validated",
-  "retry: 0/3",
-  "streaming chunk #14",
-  "buffer flush",
-  "checkpoint: saved",
-  "consensus: reached",
-  "uncertainty: low",
-  "hallucination check: pass",
-  "safety filter: pass",
-  "format: markdown",
-  "rendering...",
-  "done.",
-];
-
-const LINE_COUNT = 3;
-
-function pickFragment(): string {
-  return FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
+interface ThinkingIndicatorProps {
+  status?: AgentStatus;
 }
 
-export function ThinkingIndicator() {
+const STATUS_LABELS: Record<AgentStatus, string> = {
+  idle: "",
+  thinking: "thinking",
+  searching: "searching",
+  scraping: "reading",
+  responding: "responding",
+};
+
+const FRAGMENTS: Record<Exclude<AgentStatus, "idle">, string[]> = {
+  thinking: [
+    "analyzing request...",
+    "loading context...",
+    "preparing response...",
+    "processing...",
+  ],
+  searching: [
+    "querying web...",
+    "fetching results...",
+    "parsing content...",
+    "filtering results...",
+  ],
+  scraping: [
+    "reading page...",
+    "extracting content...",
+    "parsing data...",
+    "processing...",
+  ],
+  responding: [
+    "composing...",
+    "formatting output...",
+    "preparing...",
+  ],
+};
+
+const LINE_COUNT = 2;
+
+function pickFragment(status: Exclude<AgentStatus, "idle">): string {
+  const pool = FRAGMENTS[status];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+export function ThinkingIndicator({ status = "thinking" }: ThinkingIndicatorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -90,14 +63,17 @@ export function ThinkingIndicator() {
     const container = containerRef.current;
     if (!container) return;
 
-    // Create DOM structure
+    // Reset
     container.innerHTML = "";
+
+    const activeStatus = (status !== "idle" ? status : "thinking") as Exclude<AgentStatus, "idle">;
+    const labelText = STATUS_LABELS[activeStatus];
 
     // Shimmer label
     const label = document.createElement("div");
     label.className = "shimmer-text";
     label.style.cssText = `font-family:${fonts.mono};font-size:11px;letter-spacing:1px;margin-bottom:4px;`;
-    label.textContent = "thinking";
+    label.textContent = labelText;
     container.appendChild(label);
 
     // Terminal lines container
@@ -117,10 +93,10 @@ export function ThinkingIndicator() {
     container.appendChild(linesWrap);
 
     // Animation state
-    const buffer = ["", "", ""];
+    const buffer = ["", ""];
     let currentLineIdx = 0;
     let currentText = "";
-    let targetText = "";
+    let targetText = pickFragment(activeStatus);
     let charIndex = 0;
     let phase: "type" | "pause" | "scroll" = "type";
     let phaseEnd = 0;
@@ -131,11 +107,9 @@ export function ThinkingIndicator() {
         const prefix = line.firstChild as HTMLElement;
         const isActive = i === currentLineIdx && phase === "type";
         line.style.opacity = isActive ? "1" : "0.3";
-        // Clear all text nodes after prefix
         while (prefix.nextSibling) line.removeChild(prefix.nextSibling);
         line.appendChild(document.createTextNode(buffer[i] || ""));
         if (isActive) {
-          // Blinking cursor
           const cursor = document.createElement("span");
           cursor.style.cssText = `display:inline-block;width:6px;height:1em;background:${colors.text};margin-left:2px;vertical-align:text-bottom;animation:cursor-blink 0.7s steps(1) infinite;`;
           line.appendChild(cursor);
@@ -145,11 +119,10 @@ export function ThinkingIndicator() {
 
     function scrollUp() {
       buffer[0] = buffer[1];
-      buffer[1] = buffer[2];
-      buffer[2] = "";
-      currentLineIdx = 2;
+      buffer[1] = "";
+      currentLineIdx = 1;
       currentText = "";
-      targetText = "";
+      targetText = pickFragment(activeStatus);
       charIndex = 0;
     }
 
@@ -158,7 +131,7 @@ export function ThinkingIndicator() {
 
       if (phase === "type") {
         if (!targetText) {
-          targetText = pickFragment();
+          targetText = pickFragment(activeStatus);
           charIndex = 0;
         }
         const burst = Math.random() > 0.5 ? 6 : Math.random() > 0.25 ? 4 : 2;
@@ -179,10 +152,10 @@ export function ThinkingIndicator() {
         }
       } else if (phase === "scroll") {
         if (now >= phaseEnd) {
-          if (currentLineIdx < 2) {
+          if (currentLineIdx < LINE_COUNT - 1) {
             currentLineIdx++;
             currentText = "";
-            targetText = "";
+            targetText = pickFragment(activeStatus);
             charIndex = 0;
             phase = "type";
           } else {
@@ -203,7 +176,7 @@ export function ThinkingIndicator() {
         intervalRef.current = null;
       }
     };
-  }, []);
+  }, [status]);
 
   return (
     <div

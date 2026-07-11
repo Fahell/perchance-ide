@@ -17,7 +17,7 @@ const SUGGEST_COUNT = 4;
 
 export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
   const [text, setText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const suggestIndexRef = useRef(0);
   const isFocusedRef = useRef(false);
 
@@ -40,6 +40,10 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
     if (!trimmed || disabled) return;
     onSend(trimmed);
     setText("");
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -58,15 +62,26 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
           padding: "4px 8px",
           gap: "6px",
         }}>
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={text}
-            onInput={(e) => setText((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setText((e.target as HTMLTextAreaElement).value);
+              // Auto-grow
+              const ta = e.target as HTMLTextAreaElement;
+              ta.style.height = "auto";
+              ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
+            }}
             onFocus={() => { isFocusedRef.current = true; }}
             onBlur={() => { isFocusedRef.current = false; }}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e: KeyboardEvent) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             placeholder={t("suggests.0", locale) || "> _"}
+            rows={1}
             style={{
               flex: "1",
               padding: "5px 8px",
@@ -76,6 +91,11 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
               fontSize: "11px",
               fontFamily: fonts.mono,
               outline: "none",
+              resize: "none",
+              lineHeight: "1.4",
+              minHeight: "26px",
+              maxHeight: "120px",
+              overflowY: "auto",
             }}
           />
           <button
@@ -102,9 +122,8 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
         <div style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          padding: "4px 8px",
-          gap: "6px",
+          justifyContent: "space-between",
+          padding: "4px 12px",
         }}>
           <span style={{
             fontSize: "10px",
