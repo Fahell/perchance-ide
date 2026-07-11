@@ -594,6 +594,18 @@ class BrowserPodManager {
   }
 
   /**
+   * TEST-ONLY: Inject a mock pod instance for unit testing without a real BrowserPod.
+   * The mock must implement the same methods used by this manager:
+   * createFile, openFile, createDirectory, run, onPortal, dispose.
+   */
+  __setTestPod(mockPod: any): void {
+    this.pod = mockPod;
+    this.terminal = {} as any;
+    this.setStatus("ready");
+    this.config = { apiKey: "test" };
+  }
+
+  /**
    * Terminate the pod and release resources.
    */
   async dispose(): Promise<void> {

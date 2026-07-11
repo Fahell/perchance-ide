@@ -307,6 +307,19 @@ export interface VfsChangeEvent {
 
 type VfsChangeListener = (event: VfsChangeEvent) => void;
 
+// ─── Test Helpers ───────────────────────────────────────────
+
+/**
+ * Reset VFS to initial state (root dirs only). Used by tests to
+ * ensure clean state between cases without reloading the module.
+ */
+export function vfsReset(): void {
+  const keep = new Set(["/", "/home", PROJECT_ROOT]);
+  for (const key of _entries.keys()) {
+    if (!keep.has(key)) _entries.delete(key);
+  }
+}
+
 const _vfsChangeListeners: VfsChangeListener[] = [];
 
 /** Subscribe to VFS mutation events. Returns an unsubscribe function. */

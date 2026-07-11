@@ -45,10 +45,35 @@ export async function syncVfsToPod(reconcileDeletions = false): Promise<void> {
     const vfsFilePaths = new Set(vfsFiles.map((f) => f.path));
     const cachedPaths = browserPodManager.getLastSyncedPaths();
 
+    // Track parent directories of deleted files so we can clean up empty dirs
+    const deletedDirs = new Set<string>();
+
     for (const cachedPath of cachedPaths) {
       if (!vfsFilePaths.has(cachedPath) && cachedPath.startsWith(PROJECT_ROOT + "/")) {
         const ok = await browserPodManager.deleteFile(cachedPath);
-        if (ok) console.log(`[SyncUtils] Deleted stale file on Pod: ${cachedPath}`);
+        if (ok) {
+          console.log(`[SyncUtils] Deleted stale file on Pod: ${cachedPath}`);
+          // Collect ancestor directories for later cleanup
+          let parent = cachedPath.slice(0, cachedPath.lastIndexOf("/"));
+          while (parent.startsWith(PROJECT_ROOT + "/")) {
+            deletedDirs.add(parent);
+            parent = parent.slice(0, parent.lastIndexOf("/"));
+          }
+        }
+      }
+    }
+
+    // Remove empty directories: for each dir that had deleted files, check if
+    // any remaining synced file still lives under it. If not, delete the dir.
+    if (deletedDirs.size > 0) {
+      const remainingPaths = cachedPaths.filter((p) => vfsFilePaths.has(p));
+      const sorted = [...deletedDirs].sort((a, b) => b.length - a.length); // deepest first
+      for (const dir of sorted) {
+        const hasContent = remainingPaths.some((p) => p.startsWith(dir + "/"));
+        if (!hasContent) {
+          const ok = await browserPodManager.deleteFile(dir);
+          if (ok) console.log(`[SyncUtils] Deleted stale directory on Pod: ${dir}`);
+        }
       }
     }
   }
