@@ -129,6 +129,12 @@ ${shellExample2}
 ${shellExample3}`);
   }
 
+  // Positive mandate — actions MUST use tool_call, never prose
+  sections.push(`ACTION RULE:
+- To perform ANY action (run a command, install a package, create/edit/run a file, search, etc.), you MUST output a <tool_call> block.
+- Do NOT describe or script the action in prose or code-fences — that is not how actions are carried out.
+- Tool calls are the only way actions are executed. The user sees them rendered as cards showing input + result.`);
+
   // Tool call format instruction — uses flat XML tags with CDATA
   const formatExample = [
     `${tcOpen}`,

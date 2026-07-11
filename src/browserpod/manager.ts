@@ -439,7 +439,16 @@ class BrowserPodManager {
           continue;
         }
 
-        console.error(`[BrowserPod] readFile(${path}) failed:`, err);
+        const message = err instanceof Error ? err.message : String(err);
+        const isNotFound =
+          message.includes("Failed to open file") ||
+          message.includes("ENOENT") ||
+          message.includes("no such file");
+        if (isNotFound) {
+          console.debug(`[BrowserPod] readFile(${path}) not found (expected during pre-check)`);
+        } else {
+          console.error(`[BrowserPod] readFile(${path}) failed:`, err);
+        }
         return null;
       } finally {
         // Ensure file handle is closed even if read() throws
@@ -638,9 +647,26 @@ class BrowserPodManager {
               // Read fresh content from VFS (may have changed since event fired)
               const { vfsRead } = await import("../vfs.js");
               const content = vfsRead(event.path);
-              if (content !== null) {
-                await this.writeFile(event.path, content);
+              if (content === null) break;
+
+              // Guard: never propagate an empty or invalid package.json to the Pod.
+              // Doing so would overwrite/destroy the real package.json (e.g., after a
+              // corrupt pull left the VFS entry empty). Mirror syncFiles() validation.
+              if (event.path.endsWith("package.json")) {
+                const trimmed = content.replace(/^\uFEFF/, "").trim();
+                if (trimmed === "") {
+                  console.warn(`[BrowserPod] Skipping VFS→Pod sync of EMPTY package.json at ${event.path} to preserve the Pod copy`);
+                  break;
+                }
+                try {
+                  JSON.parse(trimmed);
+                } catch {
+                  console.warn(`[BrowserPod] Skipping VFS→Pod sync of INVALID package.json at ${event.path} to preserve the Pod copy`);
+                  break;
+                }
               }
+
+              await this.writeFile(event.path, content);
               break;
             }
             case "delete":

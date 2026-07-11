@@ -54,7 +54,7 @@ export async function continueResponse(
     instruction:
       "Continue from where you left off in your previous response. " +
       "Do NOT repeat what was already written — just continue naturally. " +
-      "Keep it concise. Do not use tool calls unless absolutely necessary.",
+      "Keep it concise. If continuing a <tool_call>, complete it properly.",
     startWith: truncatedText,
     stopSequences: [tcClose],
   });
@@ -192,7 +192,7 @@ export async function agentLoop(
       if (!signal?.aborted) {
         onStatus?.("Retrying — empty response...");
         instructionParts.push(
-          "Your previous response was empty. Write a clear, concise answer to the user's question using the information above. Do NOT output tool_call XML — just write your answer directly."
+          "Your previous response was empty. Write a clear, concise answer using the information above. If the task requires an action, emit a <tool_call>."
         );
         continue;
       }
