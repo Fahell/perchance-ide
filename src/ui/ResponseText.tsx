@@ -5,35 +5,17 @@ import { colors, fonts } from "./theme.js";
 
 interface ResponseTextProps {
   content: string;
-  loading?: boolean;
   locale?: Locale;
 }
 
 const TRUNCATE_HEIGHT = 150;
 
-export function ResponseText({ content, loading, locale }: ResponseTextProps) {
+export function ResponseText({ content, locale }: ResponseTextProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
 
-  if (loading && !content) {
-    return (
-      <div style={{
-        margin: "2px 0",
-        padding: "6px 10px",
-        background: colors.surface1,
-        borderLeft: `2px solid ${colors.borderEmphasis}`,
-        animation: "agent-slide-in 0.2s ease-out",
-      }}>
-        <div style={{ color: colors.textMuted, fontSize: "8px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
-          agent
-        </div>
-        <div className="skeleton-line" style={{ width: "85%" }} />
-        <div className="skeleton-line" style={{ width: "60%" }} />
-        <div className="skeleton-line" style={{ width: "70%" }} />
-      </div>
-    );
-  }
+  if (!content) return null;
 
   const isLong = content.length > 500;
 

@@ -48,13 +48,23 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   const debounceRef = useRef<number | null>(null);
   const [pendingCloseFile, setPendingCloseFile] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [loadRetry, setLoadRetry] = useState(0);
   const lastSavedHashRef = useRef<string | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const prevActiveRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const filesRef = useRef(files);
+  const activeFileRef = useRef(activeFile);
+  const localeRef = useRef(locale);
+  const autoSaveRef = useRef(store.settings.autoSave);
+  filesRef.current = files;
+  activeFileRef.current = activeFile;
+  localeRef.current = locale;
+  autoSaveRef.current = store.settings.autoSave;
 
   // Auto-clear save status after a delay (replaces orphan setTimeout calls)
-  function scheduleSaveStatusClear(path: string, delay = 2000) {
+  function scheduleSaveStatusClear(path: string, delay = 800) {
     if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
     saveStatusTimerRef.current = window.setTimeout(() => {
       if (!mountedRef.current) return;
@@ -78,6 +88,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         containerRef.current.innerHTML = "";
       }
       prevActiveRef.current = null;
+      setEditorError(null);
       return;
     }
 
@@ -94,6 +105,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
       }
     }
     prevActiveRef.current = path;
+    setEditorError(null);
 
     // Destroy old editor
     if (viewRef.current) {
@@ -109,68 +121,83 @@ export function CodeEditor({ locale }: CodeEditorProps) {
     const content = vfsRead(path) ?? "";
     lastSavedHashRef.current = getHash(path) ?? null;
 
+    // Timeout: if CM6 doesn't load within 10s, show error
+    const loadTimeout = window.setTimeout(() => {
+      if (!mountedRef.current || viewRef.current) return;
+      setEditorError("Editor failed to load. The CodeMirror bundle may be unavailable.");
+    }, 10000);
+
     let cancelled = false;
     (async () => {
-      const [{ createEditor }, { getLanguageSupport }] = await Promise.all([
-        import("../editor/index.js"),
-        import("../editor/langs.js"),
-      ]);
-      if (cancelled || !containerRef.current) return;
+      try {
+        const [{ createEditor }, { getLanguageSupport }] = await Promise.all([
+          import("../editor/index.js"),
+          import("../editor/langs.js"),
+        ]);
+        if (cancelled || !containerRef.current) return;
+        clearTimeout(loadTimeout);
 
-      // Lazy-load Emmet for eligible file types (11.5)
-      const emmetSyntax = getEmmetSyntax(path);
-      const emmetExts = emmetSyntax ? await getEmmetExtensions(emmetSyntax) : [];
+        // Lazy-load Emmet for eligible file types (11.5)
+        const emmetSyntax = getEmmetSyntax(path);
+        const emmetExts = emmetSyntax ? await getEmmetExtensions(emmetSyntax) : [];
+        if (cancelled) return;
 
-      viewRef.current = createEditor({
-        parent: containerRef.current,
-        doc: content,
-        language: getLanguageSupport(path),
-        filename: path,
-        extraExtensions: emmetExts,
-        fontSize,
-        tabSize,
-        wordWrap,
-        onCursorChange: (info) => {
-          dispatchStatusUpdate(info, path);
-          // Update breadcrumbs from cursor position
-          if (viewRef.current) {
-            setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
-          }
-        },
-        onChange: (doc) => {
-          if (!mountedRef.current) return;
-          ideStore.getState().setFileSaveStatus(path, "saving");
-          // Debounce save to VFS
-          if (debounceRef.current) clearTimeout(debounceRef.current);
-          debounceRef.current = window.setTimeout(() => {
+        viewRef.current = createEditor({
+          parent: containerRef.current,
+          doc: content,
+          language: getLanguageSupport(path),
+          filename: path,
+          extraExtensions: emmetExts,
+          fontSize,
+          tabSize,
+          wordWrap,
+          onCursorChange: (info) => {
+            dispatchStatusUpdate(info, path);
+            // Update breadcrumbs from cursor position
+            if (viewRef.current) {
+              setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
+            }
+          },
+          onChange: (doc) => {
             if (!mountedRef.current) return;
-            // Skip auto-save if disabled in settings
-            if (!ideStore.getState().settings.autoSave) return;
-            trackedWrite(path, doc);
-            lastSavedHashRef.current = getHash(path) ?? null;
-            ideStore.getState().setFileDirty(path, false);
-            ideStore.getState().setFileSaveStatus(path, "saved");
-            ideStore.getState().bumpVfsVersion();
-            scheduleVfsPersist();
-            scheduleSaveStatusClear(path);
-          }, 200);
-          ideStore.getState().setFileDirty(path, true);
-        },
-      });
+            ideStore.getState().setFileSaveStatus(path, "saving");
+            // Debounce save to VFS
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = window.setTimeout(() => {
+              if (!mountedRef.current) return;
+              // Skip auto-save if disabled in settings
+              if (!ideStore.getState().settings.autoSave) return;
+              trackedWrite(path, doc);
+              lastSavedHashRef.current = getHash(path) ?? null;
+              ideStore.getState().setFileDirty(path, false);
+              ideStore.getState().setFileSaveStatus(path, "saved");
+              ideStore.getState().bumpVfsVersion();
+              scheduleVfsPersist();
+              scheduleSaveStatusClear(path);
+            }, 200);
+            ideStore.getState().setFileDirty(path, true);
+          },
+        });
 
-      // Populate breadcrumbs for initial cursor position
-      // (onCursorChange callback won't fire for initial state)
-      setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
+        // Populate breadcrumbs for initial cursor position
+        // (onCursorChange callback won't fire for initial state)
+        setBreadcrumbs(getBreadcrumbs(viewRef.current, viewRef.current.state.selection.main.head));
 
-      // Share view with OutlinePanel (10.1)
-      setCurrentView(viewRef.current);
+        // Share view with OutlinePanel (10.1)
+        setCurrentView(viewRef.current);
+      } catch (err) {
+        if (cancelled) return;
+        clearTimeout(loadTimeout);
+        setEditorError(`Editor failed to load: ${err instanceof Error ? err.message : String(err)}`);
+      }
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(loadTimeout);
       setCurrentView(null);
     };
-  }, [activeFile, store.settingsVersion]);
+  }, [activeFile, store.settingsVersion, loadRetry]);
 
   // ── Listen for flush-save event (from Ctrl+S shortcut) ─
   useEffect(() => {
@@ -281,20 +308,19 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   useEffect(() => {
     function handleCloseTabRequest(e: Event) {
       const { path } = (e as CustomEvent).detail as { path: string };
-      const tab = files.find((f) => f.path === path);
+      const currentFiles = filesRef.current;
+      const tab = currentFiles.find((f) => f.path === path);
       if (!tab) return;
+      // Always use the custom dialog — unified for both auto-save states
       if (tab.dirty) {
-        if (!store.settings.autoSave) {
-          setPendingCloseFile(path);
-          return;
-        }
-        if (!confirm(t("editor.unsavedConfirm", locale))) return;
+        setPendingCloseFile(path);
+        return;
       }
       doCloseFile(path);
     }
     document.addEventListener("editor:request-close-tab", handleCloseTabRequest);
     return () => document.removeEventListener("editor:request-close-tab", handleCloseTabRequest);
-  }, [files, store.settings.autoSave, locale, activeFile]);
+  }, []);
 
   // ── Cleanup on unmount ──────────────────────────────────
   useEffect(() => {
@@ -346,13 +372,10 @@ export function CodeEditor({ locale }: CodeEditorProps) {
   function closeTab(path: string, e: MouseEvent) {
     e.stopPropagation();
     const tab = files.find((f) => f.path === path);
+    // Always use the custom dialog for dirty tabs — unified for both auto-save states
     if (tab?.dirty) {
-      if (!store.settings.autoSave) {
-        // Show custom confirmation dialog when auto-save is off
-        setPendingCloseFile(path);
-        return;
-      }
-      if (!confirm(t("editor.unsavedConfirm", locale))) return;
+      setPendingCloseFile(path);
+      return;
     }
     doCloseFile(path);
   }
@@ -406,12 +429,38 @@ export function CodeEditor({ locale }: CodeEditorProps) {
             {t("editor.noFiles", locale) || "no files open"}
           </div>
         )}
-        {activeTab && !viewRef.current && (
+        {activeTab && !viewRef.current && !editorError && (
           <div style={{
             padding: "12px", color: colors.textMuted,
             fontSize: "11px", fontFamily: fonts.mono,
           }}>
             {t("editor.loading", locale) || "loading editor..."}
+          </div>
+        )}
+        {editorError && (
+          <div style={{
+            padding: "16px", color: colors.statusError,
+            fontSize: "11px", fontFamily: fonts.mono,
+            display: "flex", flexDirection: "column", gap: "10px",
+            alignItems: "flex-start",
+          }}>
+            <span>⚠ {editorError}</span>
+            <button
+              onClick={() => {
+                setEditorError(null);
+                setLoadRetry((n) => n + 1);
+              }}
+              style={{
+                padding: "6px 12px",
+                border: `1px solid ${colors.textSecondary}`,
+                background: "transparent",
+                color: colors.textSecondary,
+                fontSize: "10px", fontFamily: fonts.mono,
+                cursor: "pointer",
+              }}
+            >
+              retry
+            </button>
           </div>
         )}
 
@@ -558,10 +607,22 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
 
   function startRename(path: string) {
     const tab = tabs.find((t) => t.path === path);
+    const name = tab?.name ?? "";
     setRenamingPath(path);
-    setRenameValue(tab?.name ?? "");
+    setRenameValue(name);
     setCtxPath(null);
     setCtxPos(null);
+    // Auto-select the name part (without extension) for easier editing
+    setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[value="${name.replace(/"/g, "&quot;")}"]`
+      );
+      if (input) {
+        const dotIdx = name.lastIndexOf(".");
+        const selEnd = dotIdx > 0 ? dotIdx : name.length;
+        input.setSelectionRange(0, selEnd);
+      }
+    }, 0);
   }
 
   function commitRename() {
@@ -570,8 +631,16 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
       return;
     }
     const parts = renamingPath.split("/").filter(Boolean);
-    parts.pop();
-    const newPath = "/" + [...parts, renameValue.trim()].join("/");
+    const oldName = parts.pop()!;
+    let newName = renameValue.trim();
+
+    // Preserve original extension if the user didn't type one
+    const dotIdx = oldName.lastIndexOf(".");
+    if (dotIdx > 0 && !newName.includes(".")) {
+      newName += oldName.slice(dotIdx);
+    }
+
+    const newPath = "/" + [...parts, newName].join("/");
     if (newPath !== renamingPath) {
       // Flush editor buffer before rename to prevent stale content
       document.dispatchEvent(new CustomEvent("editor:flush-before-rename", {
@@ -631,11 +700,10 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
                 <span>{tab.name}</span>
               )}
               {tab.dirty && (
-                <span style={{
-                  color: colors.textMuted, fontSize: "10px",
-                  width: "6px", height: "6px", borderRadius: "50%",
-                  background: "#888", display: "inline-block",
-                }} />
+                <span title="unsaved changes" style={{
+                  color: "#aaa", fontSize: "8px", lineHeight: 1,
+                  marginLeft: "2px",
+                }}>●</span>
               )}
               {tab.saveStatus === "saving" && (
                 <span style={{ color: colors.textMuted, fontSize: "8px", marginLeft: "2px" }}>
@@ -648,10 +716,16 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
                 </span>
               )}
               <span onClick={(e: MouseEvent) => onClose(tab.path, e)}
+                title="Close tab (Ctrl+W)"
                 style={{
-                  color: colors.textMuted, fontSize: "10px",
-                  padding: "0 2px", cursor: "pointer", lineHeight: 1,
-                }}>
+                  color: colors.textMuted, fontSize: "12px",
+                  padding: "2px 6px", cursor: "pointer", lineHeight: 1,
+                  borderRadius: "2px",
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = colors.surface2}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = "transparent"}
+              >
                 ×
               </span>
             </div>
@@ -664,16 +738,37 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
         <div style={{
           position: "fixed", left: ctxPos.x, top: ctxPos.y,
           background: colors.surface2, border: `1px solid ${colors.borderEmphasis}`,
-          zIndex: 1000, minWidth: "80px",
+          zIndex: 1000, minWidth: "100px", padding: "2px 0",
           fontSize: "11px", fontFamily: fonts.mono,
         }}>
-          <div onClick={(e: MouseEvent) => { e.stopPropagation(); startRename(ctxPath); }}
-            style={{
-              padding: "4px 10px", cursor: "pointer",
-              color: colors.textSecondary,
-            }}>
+          <CtxMenuItem onClick={() => { startRename(ctxPath); }}>
             {t("editor.rename", locale) || "rename"}
-          </div>
+          </CtxMenuItem>
+          <CtxMenuItem onClick={() => {
+            const path = ctxPath;
+            setCtxPath(null); setCtxPos(null);
+            onClose(path, new MouseEvent("click"));
+          }}>
+            close
+          </CtxMenuItem>
+          <CtxMenuItem onClick={() => {
+            const path = ctxPath;
+            setCtxPath(null); setCtxPos(null);
+            const currentFiles = ideStore.getState().files;
+            currentFiles.forEach((t) => {
+              if (t.path !== path && !t.dirty) {
+                onClose(t.path, new MouseEvent("click"));
+              }
+            });
+          }}>
+            close others
+          </CtxMenuItem>
+          <CtxMenuItem onClick={() => {
+            navigator.clipboard.writeText(ctxPath).catch(() => {});
+            setCtxPath(null); setCtxPos(null);
+          }}>
+            copy path
+          </CtxMenuItem>
         </div>
       )}
 
@@ -691,9 +786,38 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
 
 // ─── Language label ──────────────────────────────────────────
 function LangLabel({ ext }: { ext: string }) {
-  const labels: Record<string, string> = {
-    js: "JS", jsx: "RX", ts: "TS", tsx: "TX",
-    json: "{}", html: "<>", htm: "<>", css: "#", md: "MD",
+  const labels: Record<string, { text: string; color: string }> = {
+    js:  { text: "JS", color: "#61afef" },
+    jsx: { text: "RX", color: "#61afef" },
+    ts:  { text: "TS", color: "#61afef" },
+    tsx: { text: "TX", color: "#61afef" },
+    json:{ text: "{}", color: "#c678dd" },
+    html:{ text: "<>", color: "#e5c07b" },
+    htm: { text: "<>", color: "#e5c07b" },
+    css: { text: "#", color: "#98c379" },
+    md:  { text: "MD", color: "#c678dd" },
   };
-  return <span style={{ color: "#555", fontSize: "9px" }}>{labels[ext] ?? "TX"}</span>;
+  const info = labels[ext] ?? { text: "TX", color: "#555" };
+  return <span style={{ color: info.color, fontSize: "9px", fontWeight: "600" }}>{info.text}</span>;
+}
+
+// ─── Context menu item ──────────────────────────────────────
+function CtxMenuItem({ onClick, children }: { onClick: () => void; children: preact.ComponentChildren }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "5px 12px",
+        cursor: "pointer",
+        color: hover ? colors.text : colors.textSecondary,
+        background: hover ? colors.surface1 : "transparent",
+        transition: "background 0.1s, color 0.1s",
+      }}
+    >
+      {children}
+    </div>
+  );
 }

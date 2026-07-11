@@ -70,6 +70,7 @@ export function Modal({ isOpen, onClose, title, children, wide }: ModalProps) {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
         return;
       }

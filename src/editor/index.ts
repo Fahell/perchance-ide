@@ -12,7 +12,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { cmTheme } from "./theme.js";
 import { indentGuides } from "./indent-guides.js";
 import { vscodeKeymap } from "./keymap.js";
-import { jsLinter, jsonLinter, cssLinter, htmlLinter } from "./lint.js";
+import { jsLinter, jsonLinter, cssLinter, htmlLinter, pyLinter } from "./lint.js";
 import { hoverPlugin } from "./hover.js";
 import { nextSnippetField, prevSnippetField, clearSnippet } from "@codemirror/autocomplete";
 import {
@@ -22,6 +22,7 @@ import {
   tsxAutoComplete,
   cssAutoComplete,
   htmlAutoComplete,
+  pyAutoComplete,
 } from "./autocomplete.js";
 
 export type { LanguageSupport } from "@codemirror/language";
@@ -47,6 +48,8 @@ function getAutoCompleteExtensions(filename: string): Extension[] {
     case "html":
     case "htm":
       return [htmlAutoComplete];
+    case "py":
+      return [pyAutoComplete];
     default:
       return [];
   }
@@ -72,6 +75,8 @@ function getLinter(filename: string): Extension | null {
     case "html":
     case "htm":
       return htmlLinter;
+    case "py":
+      return pyLinter;
     default:
       return null;
   }

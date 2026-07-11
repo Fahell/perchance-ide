@@ -2,9 +2,11 @@
  * BreadcrumbsBar — shows file path + symbol hierarchy for cursor position.
  *
  * Renders above the editor content (below the tab bar) like VS Code's
- * breadcrumb navigation. Each segment is clickable to navigate.
+ * breadcrumb navigation. File path segments are clickable to navigate.
+ * Hidden entirely when there are no symbols to show.
  */
 
+import { useState } from "preact/hooks";
 import { BREADCRUMB_COLORS, type Breadcrumb } from "../editor/breadcrumbs.js";
 import { getCurrentView } from "../editor/view-store.js";
 import { colors, fonts } from "./theme.js";
@@ -19,10 +21,16 @@ interface BreadcrumbsBarProps {
 
 // ─── Component ──────────────────────────────────────────────
 export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
+  // Hide when no symbols — reduces visual noise for files without outline support
+  if (symbols.length === 0) return null;
+
+  const [hoveredPath, setHoveredPath] = useState<number | null>(null);
+  const [hoveredSym, setHoveredSym] = useState<number | null>(null);
+
   // Split file path into segments
   const parts = path.split("/").filter(Boolean);
 
-  function handleGoTo(from: number) {
+  function handleGoToSymbol(from: number) {
     const view = getCurrentView();
     if (!view) return;
     view.dispatch({
@@ -30,6 +38,11 @@ export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
       scrollIntoView: true,
     });
     view.focus();
+  }
+
+  function handlePathClick(part: string) {
+    // Open path segment in file explorer / outline if possible
+    // For now, no-op — reserved for future navigation
   }
 
   return (
@@ -54,6 +67,9 @@ export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
       {/* ── File path segments ── */}
       {parts.map((part, i) => (
         <span key={`file-${i}`}
+          onClick={() => handlePathClick(part)}
+          onMouseEnter={() => setHoveredPath(i)}
+          onMouseLeave={() => setHoveredPath(null)}
           style={{
             color: i === parts.length - 1 ? colors.text : colors.textMuted,
             cursor: "default",
@@ -61,6 +77,9 @@ export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
             display: "inline-flex",
             alignItems: "center",
             gap: "4px",
+            background: hoveredPath === i ? colors.surface2 : "transparent",
+            borderRadius: "2px",
+            transition: "background 0.1s",
           }}
         >
           <span>{part}</span>
@@ -87,13 +106,9 @@ export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
       {/* ── Symbol hierarchy ── */}
       {symbols.map((sym, i) => (
         <span key={`sym-${i}`}
-          onClick={() => handleGoTo(sym.from)}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = colors.surface2;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "transparent";
-          }}
+          onClick={() => handleGoToSymbol(sym.from)}
+          onMouseEnter={() => setHoveredSym(i)}
+          onMouseLeave={() => setHoveredSym(null)}
           style={{
             color: BREADCRUMB_COLORS[sym.type] ?? colors.text,
             cursor: "pointer",
@@ -102,6 +117,7 @@ export function BreadcrumbsBar({ path, symbols }: BreadcrumbsBarProps) {
             display: "inline-flex",
             alignItems: "center",
             gap: "4px",
+            background: hoveredSym === i ? colors.surface2 : "transparent",
             transition: "background 0.1s",
           }}
         >

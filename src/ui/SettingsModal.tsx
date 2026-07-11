@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { LOCALES, LOCALE_LABELS, t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import { Modal } from "./Modal.js";
@@ -13,46 +13,233 @@ interface SettingsModalProps {
   onLocaleChange: (locale: Locale) => void;
 }
 
+// ─── Sub-components ────────────────────────────────────────
+
+interface ToggleRowProps {
+  label: string;
+  description: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  locale: Locale;
+}
+
+function ToggleRow({ label, description, value, onChange, locale }: ToggleRowProps) {
+  const [highlight, setHighlight] = useState(false);
+
+  function handleChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value === "on";
+    onChange(v);
+    setHighlight(true);
+    setTimeout(() => setHighlight(false), 400);
+  }
+
+  return (
+    <div
+      style={{
+        marginBottom: "10px",
+        padding: "10px 12px",
+        background: colors.surface1,
+        border: `1px solid ${highlight ? colors.textMuted : colors.border}`,
+        transition: "border-color 0.15s",
+      }}
+      onMouseEnter={(e) => { if (!highlight) (e.currentTarget as HTMLElement).style.borderColor = colors.borderEmphasis; }}
+      onMouseLeave={(e) => { if (!highlight) (e.currentTarget as HTMLElement).style.borderColor = colors.border; }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+          {label}
+        </label>
+        <select
+          value={value ? "on" : "off"}
+          onChange={handleChange}
+          style={{
+            fontFamily: fonts.mono,
+            fontSize: "10px",
+            background: colors.surface2,
+            color: colors.text,
+            border: `1px solid ${colors.border}`,
+            padding: "3px 6px",
+            outline: "none",
+            cursor: "pointer",
+            transition: "border-color 0.15s",
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+          onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+        >
+          <option value="on">{t("settings.toggle.on", locale)}</option>
+          <option value="off">{t("settings.toggle.off", locale)}</option>
+        </select>
+      </div>
+      <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+        {description}
+      </div>
+    </div>
+  );
+}
+
+interface InputRowProps {
+  label: string;
+  description: string;
+  value: string;
+  placeholder: string;
+  maskedPreview: string;
+  onInput: (v: string) => void;
+}
+
+function InputRow({ label, description, value, placeholder, maskedPreview, onInput }: InputRowProps) {
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      <label style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+        {label}
+      </label>
+      <input
+        type="password"
+        value={value}
+        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
+        placeholder={placeholder}
+        aria-label={label}
+        style={{
+          width: "100%",
+          padding: "8px 10px",
+          border: `1px solid ${colors.border}`,
+          background: colors.surface1,
+          color: colors.text,
+          fontSize: "11px",
+          fontFamily: fonts.mono,
+          boxSizing: "border-box",
+          outline: "none",
+          transition: "border-color 0.15s",
+        }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+        onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      />
+      <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+        {description}
+      </div>
+      {maskedPreview && (
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono, opacity: 0.7 }}>
+          current: {maskedPreview}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Section Header ────────────────────────────────────────
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      margin: "16px 0 8px",
+      color: colors.textMuted,
+      fontSize: "9px",
+      fontFamily: fonts.mono,
+      letterSpacing: "1px",
+      textTransform: "uppercase",
+    }}>
+      <span>{label}</span>
+      <div style={{ flex: 1, height: "1px", background: colors.border }} />
+    </div>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────
+
 export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onLocaleChange }: SettingsModalProps) {
   const [key, setKey] = useState(currentKey);
   const [msg, setMsg] = useState("");
-  const [autoSave, setAutoSave] = useState(ideStore.getState().settings.autoSave);
-  const [toolWeb, setToolWeb] = useState(ideStore.getState().settings.toolWebEnabled);
-  const [toolCtx, setToolCtx] = useState(ideStore.getState().settings.toolContextEnabled);
-  const [toolVfs, setToolVfs] = useState(ideStore.getState().settings.toolVfsEnabled);
-  const [toolTerm, setToolTerm] = useState(ideStore.getState().settings.toolTerminalEnabled);
-  const [toolNode, setToolNode] = useState(ideStore.getState().settings.toolNodeEnabled);
-  const [bpKey, setBpKey] = useState(ideStore.getState().settings.browserPodApiKey);
+  const [saved, setSaved] = useState(false);
 
-  function handleAutoSaveToggle(e: Event) {
-    const val = (e.target as HTMLSelectElement).value === "on";
-    setAutoSave(val);
-    ideStore.getState().updateSettings({ autoSave: val });
+  // Sync local state from store on open
+  const settings = ideStore.getState().settings;
+  const [autoSave, setAutoSave] = useState(settings.autoSave);
+  const [fontSize, setFontSize] = useState(settings.fontSize);
+  const [wordWrap, setWordWrap] = useState(settings.wordWrap);
+  const [tabSize, setTabSize] = useState(settings.tabSize);
+  const [toolWeb, setToolWeb] = useState(settings.toolWebEnabled);
+  const [toolCtx, setToolCtx] = useState(settings.toolContextEnabled);
+  const [toolVfs, setToolVfs] = useState(settings.toolVfsEnabled);
+  const [toolTerm, setToolTerm] = useState(settings.toolTerminalEnabled);
+  const [toolNode, setToolNode] = useState(settings.toolNodeEnabled);
+  const [bpKey, setBpKey] = useState(settings.browserPodApiKey);
+
+  // Subscribe to store to stay in sync
+  useEffect(() => {
+    if (!isOpen) return;
+    return ideStore.subscribe((s) => {
+      const st = s.settings;
+      setAutoSave(st.autoSave);
+      setFontSize(st.fontSize);
+      setWordWrap(st.wordWrap);
+      setTabSize(st.tabSize);
+      setToolWeb(st.toolWebEnabled);
+      setToolCtx(st.toolContextEnabled);
+      setToolVfs(st.toolVfsEnabled);
+      setToolTerm(st.toolTerminalEnabled);
+      setToolNode(st.toolNodeEnabled);
+      setBpKey(st.browserPodApiKey);
+    });
+  }, [isOpen]);
+
+  // Reset API key state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setKey(currentKey);
+      setMsg("");
+      setSaved(false);
+    }
+  }, [isOpen, currentKey]);
+
+  function updateSetting<K extends keyof typeof settings>(field: K, value: (typeof settings)[K]) {
+    ideStore.getState().updateSettings({ [field]: value } as any);
   }
 
   async function handleSave() {
     if (!key.trim()) {
       setMsg(t("settings.apiKey.error.empty", locale));
+      setSaved(false);
       return;
     }
     setMsg(t("settings.apiKey.validating", locale));
+    setSaved(false);
     const ok = await onSave(key.trim());
-    setMsg(ok ? t("settings.apiKey.saved", locale) : t("settings.apiKey.error.invalid", locale));
-    if (ok) setTimeout(onClose, 800);
+    if (ok) {
+      setMsg(t("settings.apiKey.saved", locale));
+      setSaved(true);
+    } else {
+      setMsg(t("settings.apiKey.error.invalid", locale));
+      setSaved(false);
+    }
   }
 
   const maskedKey = currentKey
     ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4)
-    : "none";
+    : "";
 
   const maskedBpKey = bpKey
     ? bpKey.slice(0, 6) + "..." + bpKey.slice(-4)
-    : "none";
+    : "";
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t("settings.title", locale)}>
+    <Modal isOpen={isOpen} onClose={onClose} title={t("settings.title", locale)} wide>
+      {/* ── EDITOR ─────────────────────────────────────── */}
+      <SectionHeader label={t("settings.section.editor", locale)} />
+
       {/* Language selector */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+      <div
+        style={{
+          marginBottom: "10px",
+          padding: "10px 12px",
+          background: colors.surface1,
+          border: `1px solid ${colors.border}`,
+          transition: "border-color 0.15s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <label htmlFor="settings-lang" style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
             {t("settings.language", locale)}
@@ -70,7 +257,10 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
               padding: "3px 6px",
               outline: "none",
               cursor: "pointer",
+              transition: "border-color 0.15s",
             }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
           >
             {LOCALES.map((l) => (
               <option key={l} value={l}>{LOCALE_LABELS[l]}</option>
@@ -79,16 +269,97 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         </div>
       </div>
 
-      {/* Auto-save toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
+      <ToggleRow
+        label={t("settings.autoSave", locale)}
+        description={t("settings.autoSave.desc", locale)}
+        value={autoSave}
+        onChange={(v) => { setAutoSave(v); updateSetting("autoSave", v); }}
+        locale={locale}
+      />
+
+      {/* Font size */}
+      <div
+        style={{
+          marginBottom: "10px",
+          padding: "10px 12px",
+          background: colors.surface1,
+          border: `1px solid ${colors.border}`,
+          transition: "border-color 0.15s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label htmlFor="settings-autosave" style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.autoSave", locale)}
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.fontSize", locale)}
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <input
+              type="number"
+              value={fontSize}
+              min={10}
+              max={24}
+              step={1}
+              onInput={(e) => {
+                const v = Math.max(10, Math.min(24, parseInt((e.target as HTMLInputElement).value) || 14));
+                setFontSize(v);
+                updateSetting("fontSize", v);
+              }}
+              aria-label={t("settings.fontSize", locale)}
+              style={{
+                width: "48px",
+                padding: "3px 6px",
+                fontFamily: fonts.mono,
+                fontSize: "10px",
+                background: colors.surface2,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                outline: "none",
+                textAlign: "center",
+                transition: "border-color 0.15s",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+              onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+            />
+            <span style={{ color: colors.textMuted, fontSize: "9px", fontFamily: fonts.mono }}>px</span>
+          </div>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.fontSize.desc", locale)}
+        </div>
+      </div>
+
+      <ToggleRow
+        label={t("settings.wordWrap", locale)}
+        description={t("settings.wordWrap.desc", locale)}
+        value={wordWrap}
+        onChange={(v) => { setWordWrap(v); updateSetting("wordWrap", v); }}
+        locale={locale}
+      />
+
+      {/* Tab size */}
+      <div
+        style={{
+          marginBottom: "10px",
+          padding: "10px 12px",
+          background: colors.surface1,
+          border: `1px solid ${colors.border}`,
+          transition: "border-color 0.15s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.tabSize", locale)}
           </label>
           <select
-            id="settings-autosave"
-            value={autoSave ? "on" : "off"}
-            onChange={handleAutoSaveToggle}
+            value={tabSize}
+            onChange={(e) => {
+              const v = parseInt((e.target as HTMLSelectElement).value) as 2 | 4 | 8;
+              setTabSize(v);
+              updateSetting("tabSize", v);
+            }}
             style={{
               fontFamily: fonts.mono,
               fontSize: "10px",
@@ -98,175 +369,83 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
               padding: "3px 6px",
               outline: "none",
               cursor: "pointer",
+              transition: "border-color 0.15s",
             }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
           >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
+            <option value={2}>2</option>
+            <option value={4}>4</option>
+            <option value={8}>8</option>
           </select>
         </div>
         <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.autoSave.desc", locale)}
+          {t("settings.tabSize.desc", locale)}
         </div>
       </div>
 
-      {/* Agent Tools section */}
-      <div style={{ marginBottom: "14px", color: colors.textMuted, fontSize: "9px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
-        agent tools
-      </div>
+      {/* ── AGENT TOOLS ────────────────────────────────── */}
+      <SectionHeader label={t("settings.section.tools", locale)} />
 
-      {/* Web tools toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.tools.web", locale)}
-          </label>
-          <select
-            value={toolWeb ? "on" : "off"}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value === "on";
-              setToolWeb(val);
-              ideStore.getState().updateSettings({ toolWebEnabled: val });
-            }}
-            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
-          >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
-          </select>
-        </div>
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.tools.web.desc", locale)}
-        </div>
-      </div>
+      <ToggleRow
+        label={t("settings.tools.web", locale)}
+        description={t("settings.tools.web.desc", locale)}
+        value={toolWeb}
+        onChange={(v) => { setToolWeb(v); updateSetting("toolWebEnabled", v); }}
+        locale={locale}
+      />
+      <ToggleRow
+        label={t("settings.tools.context", locale)}
+        description={t("settings.tools.context.desc", locale)}
+        value={toolCtx}
+        onChange={(v) => { setToolCtx(v); updateSetting("toolContextEnabled", v); }}
+        locale={locale}
+      />
+      <ToggleRow
+        label={t("settings.tools.files", locale)}
+        description={t("settings.tools.files.desc", locale)}
+        value={toolVfs}
+        onChange={(v) => { setToolVfs(v); updateSetting("toolVfsEnabled", v); }}
+        locale={locale}
+      />
+      <ToggleRow
+        label={t("settings.tools.terminal", locale)}
+        description={t("settings.tools.terminal.desc", locale)}
+        value={toolTerm}
+        onChange={(v) => { setToolTerm(v); updateSetting("toolTerminalEnabled", v); }}
+        locale={locale}
+      />
+      <ToggleRow
+        label={t("settings.tools.node", locale)}
+        description={t("settings.tools.node.desc", locale)}
+        value={toolNode}
+        onChange={(v) => { setToolNode(v); updateSetting("toolNodeEnabled", v); }}
+        locale={locale}
+      />
 
-      {/* Context tools toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.tools.context", locale)}
-          </label>
-          <select
-            value={toolCtx ? "on" : "off"}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value === "on";
-              setToolCtx(val);
-              ideStore.getState().updateSettings({ toolContextEnabled: val });
-            }}
-            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
-          >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
-          </select>
-        </div>
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.tools.context.desc", locale)}
-        </div>
-      </div>
+      {/* ── API KEYS ───────────────────────────────────── */}
+      <SectionHeader label={t("settings.section.keys", locale)} />
 
-      {/* File tools toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.tools.files", locale)}
-          </label>
-          <select
-            value={toolVfs ? "on" : "off"}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value === "on";
-              setToolVfs(val);
-              ideStore.getState().updateSettings({ toolVfsEnabled: val });
-            }}
-            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
-          >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
-          </select>
-        </div>
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.tools.files.desc", locale)}
-        </div>
-      </div>
+      <InputRow
+        label={t("settings.browserPodApiKey", locale)}
+        description={t("settings.browserPodApiKey.current", locale).replace("{key}", maskedBpKey || "none")}
+        value={bpKey}
+        placeholder={t("settings.browserPodApiKey.placeholder", locale)}
+        maskedPreview=""
+        onInput={(v) => { setBpKey(v); updateSetting("browserPodApiKey", v); }}
+      />
 
-      {/* Python tools toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.tools.terminal", locale)}
-          </label>
-          <select
-            value={toolTerm ? "on" : "off"}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value === "on";
-              setToolTerm(val);
-              ideStore.getState().updateSettings({ toolTerminalEnabled: val });
-            }}
-            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
-          >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
-          </select>
-        </div>
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.tools.terminal.desc", locale)}
-        </div>
-      </div>
-
-      {/* Node.js tools toggle */}
-      <div style={{ marginBottom: "14px", padding: "10px 12px", background: colors.surface1, border: `1px solid ${colors.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
-            {t("settings.tools.node", locale)}
-          </label>
-          <select
-            value={toolNode ? "on" : "off"}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value === "on";
-              setToolNode(val);
-              ideStore.getState().updateSettings({ toolNodeEnabled: val });
-            }}
-            style={{ fontFamily: fonts.mono, fontSize: "10px", background: colors.surface2, color: colors.text, border: `1px solid ${colors.border}`, padding: "3px 6px", outline: "none", cursor: "pointer" }}
-          >
-            <option value="on">{t("settings.toggle.on", locale)}</option>
-            <option value="off">{t("settings.toggle.off", locale)}</option>
-          </select>
-        </div>
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.tools.node.desc", locale)}
-        </div>
-      </div>
-
-      {/* BrowserPod API Key */}
-      <div style={{ marginBottom: "14px" }}>
-        <label htmlFor="settings-bp-key" style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
-          {t("settings.browserPodApiKey", locale)}
-        </label>
-        <input
-          id="settings-bp-key"
-          type="password"
-          value={bpKey}
-          onInput={(e) => {
-            const val = (e.target as HTMLInputElement).value;
-            setBpKey(val);
-            ideStore.getState().updateSettings({ browserPodApiKey: val });
-          }}
-          placeholder={t("settings.browserPodApiKey.placeholder", locale)}
-          style={{
-            width: "100%",
-            padding: "8px 10px",
-            border: `1px solid ${colors.border}`,
-            background: colors.surface1,
-            color: colors.text,
-            fontSize: "11px",
-            fontFamily: fonts.mono,
-            boxSizing: "border-box",
-            outline: "none",
-          }}
-        />
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.browserPodApiKey.current", locale).replace("{key}", maskedBpKey)}
-        </div>
-      </div>
-
-      <div style={{ marginBottom: "14px" }}>
+      <div
+        style={{
+          padding: "10px 12px",
+          marginBottom: "10px",
+          background: colors.surface2,
+          border: `1px solid ${colors.border}`,
+          transition: "border-color 0.15s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      >
         <label htmlFor="settings-api-key" style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
           {t("settings.apiKey", locale)}
         </label>
@@ -274,8 +453,9 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
           id="settings-api-key"
           type="password"
           value={key}
-          onInput={(e) => setKey((e.target as HTMLInputElement).value)}
+          onInput={(e) => { setKey((e.target as HTMLInputElement).value); setSaved(false); setMsg(""); }}
           placeholder={t("settings.apiKey.placeholder", locale)}
+          aria-label={t("settings.apiKey", locale)}
           style={{
             width: "100%",
             padding: "8px 10px",
@@ -286,58 +466,70 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
             fontFamily: fonts.mono,
             boxSizing: "border-box",
             outline: "none",
+            transition: "border-color 0.15s",
           }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+          onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
         />
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-          {t("settings.apiKey.current", locale).replace("{key}", maskedKey)}
+        {maskedKey && (
+          <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono, opacity: 0.7 }}>
+            {t("settings.apiKey.current", locale).replace("{key}", maskedKey)}
+          </div>
+        )}
+
+        {/* Save button + message inline */}
+        <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "center" }}>
+          <button
+            onClick={handleSave}
+            style={{
+              padding: "6px 12px",
+              border: `1px solid ${saved ? colors.textSecondary : colors.text}`,
+              background: "transparent",
+              color: saved ? colors.textSecondary : colors.text,
+              fontSize: "10px",
+              fontFamily: fonts.mono,
+              cursor: "pointer",
+              letterSpacing: "0.5px",
+              transition: "opacity 0.15s",
+              opacity: 1,
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.7")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            {saved ? t("settings.apiKey.saved", locale) : t("settings.save", locale)}
+          </button>
+          {msg && !saved && (
+            <span style={{
+              fontSize: "10px",
+              color: msg.includes("[ok]") ? colors.textSecondary : msg.includes("[!!]") ? colors.statusError : colors.textMuted,
+              fontFamily: fonts.mono,
+            }}>
+              {msg}
+            </span>
+          )}
         </div>
       </div>
 
-      {msg && (
-        <div style={{
-          fontSize: "10px",
-          marginBottom: "10px",
-          color: msg.startsWith("[ok]") ? colors.textSecondary : msg.startsWith("[!!]") ? colors.statusError : colors.textMuted,
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        style={{
+          width: "100%",
+          padding: "8px",
+          border: `1px solid ${colors.border}`,
+          background: "transparent",
+          color: colors.textMuted,
+          fontSize: "11px",
           fontFamily: fonts.mono,
-        }}>
-          {msg}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-        <button
-          onClick={handleSave}
-          style={{
-            flex: "1",
-            padding: "8px",
-            border: `1px solid ${colors.text}`,
-            background: "transparent",
-            color: colors.text,
-            fontSize: "11px",
-            fontFamily: fonts.mono,
-            cursor: "pointer",
-            letterSpacing: "0.5px",
-          }}
-        >
-          {t("settings.save", locale)}
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            flex: "1",
-            padding: "8px",
-            border: `1px solid ${colors.border}`,
-            background: "transparent",
-            color: colors.textMuted,
-            fontSize: "11px",
-            fontFamily: fonts.mono,
-            cursor: "pointer",
-            letterSpacing: "0.5px",
-          }}
-        >
-          {t("settings.close", locale)}
-        </button>
-      </div>
+          cursor: "pointer",
+          letterSpacing: "0.5px",
+          transition: "opacity 0.15s",
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.opacity = "0.7")}
+        onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+      >
+        {t("settings.close", locale)}
+      </button>
     </Modal>
   );
 }

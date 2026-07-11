@@ -55,7 +55,7 @@ export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterPro
             display: "inline",
           }}
         >
-          [term]{terminalOpen ? "▼" : "▲"}
+          [terminal]{terminalOpen ? "▽" : "△"}
         </button>
       </div>
 
@@ -66,7 +66,9 @@ export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterPro
             fontSize: "9px",
             fontFamily: fonts.mono,
             color: "#e8a84c",
-          }}>
+          }}
+            title={`${dirtyCount} file${dirtyCount > 1 ? "s have" : " has"} unsaved changes`}
+          >
             {dirtyCount} dirty
           </span>
         )}
@@ -80,7 +82,13 @@ export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterPro
             : persistStatus === "saving"
               ? colors.textSecondary
               : colors.textMuted,
-        }}>
+        }}
+          title={hasPendingPersists
+            ? "Pending writes to storage..."
+            : persistStatus === "saving"
+              ? "Writing to storage..."
+              : "All changes saved"}
+        >
           {hasPendingPersists ? "⏳" : persistStatus === "saving" ? "⋯" : "✓"}
         </span>
 

@@ -121,6 +121,32 @@ function htmlLintSource(view: EditorView): Diagnostic[] {
   return diagnostics;
 }
 
+// ─── Python Linter — detect parser errors ──────────────────
+function pyLintSource(view: EditorView): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const tree = syntaxTree(view.state);
+
+  tree.iterate({
+    enter: (nodeRef) => {
+      const { name, from, to } = nodeRef;
+
+      if (name === "⚠" || name === "✖" || name === "Invalid" || name === "ERROR") {
+        const text = view.state.doc.sliceString(from, Math.min(to, from + 60));
+        diagnostics.push({
+          from,
+          to,
+          severity: "error",
+          message: text.trim() || "Python syntax error",
+          source: "py-lint",
+        });
+        return false;
+      }
+    },
+  });
+
+  return diagnostics;
+}
+
 // ─── Exported linter extensions ─────────────────────────────
 // Each uses a 300ms delay to avoid linting on every keystroke.
 
@@ -128,3 +154,4 @@ export const jsLinter = linter(jsLintSource, { delay: 300 });
 export const jsonLinter = linter(jsonLintSource, { delay: 300 });
 export const cssLinter = linter(cssLintSource, { delay: 300 });
 export const htmlLinter = linter(htmlLintSource, { delay: 300 });
+export const pyLinter = linter(pyLintSource, { delay: 300 });

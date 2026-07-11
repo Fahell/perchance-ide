@@ -20,16 +20,16 @@ export function AgentMessage({ message, agentStatus, locale, onContinue, isLastA
   return (
     <div style={{ display: "flex", justifyContent: "flex-start" }}>
       <div style={{ animation: "agent-slide-in 0.2s ease-out", maxWidth: "85%", textAlign: "left" }}>
-        {/* Thinking indicator — terminal typing animation */}
-        {isActive && !message.content && message.toolCalls.length === 0 && <ThinkingIndicator status={agentStatus} />}
-
         {/* Tool call cards */}
         {message.toolCalls.map((tc) => (
           <ToolCallCard key={tc.id} toolCall={tc} />
         ))}
 
+        {/* Status indicator — shown while agent is active, below tool cards */}
+        {isActive && <ThinkingIndicator status={agentStatus} />}
+
         {/* Final response */}
-        <ResponseText content={message.content} loading={isActive && message.toolCalls.length > 0} locale={locale} />
+        <ResponseText content={message.content} locale={locale} />
 
         {/* Continue button — only on last agent message when idle */}
         {isLastAgentMessage && onContinue && agentStatus === "idle" && message.content && (

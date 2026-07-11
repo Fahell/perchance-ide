@@ -16,6 +16,7 @@ import type { Completion, CompletionContext, CompletionResult } from "@codemirro
 import { javascriptLanguage, typescriptLanguage, jsxLanguage, tsxLanguage } from "@codemirror/lang-javascript";
 import { cssLanguage } from "@codemirror/lang-css";
 import { htmlLanguage } from "@codemirror/lang-html";
+import { pythonLanguage } from "@codemirror/lang-python";
 
 // ─── Re-export snippetKeymap for use in editor factory ──────
 export { snippetKeymap };
@@ -385,6 +386,146 @@ const cssValues: Completion[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════
+// PYTHON SNIPPETS & KEYWORDS
+// ═══════════════════════════════════════════════════════════════
+
+const pySnippets: Completion[] = [
+  snippetCompletion(
+    "def ${1:name}(${2:args}):\n    ${3:pass}",
+    { label: "def", detail: "function definition", type: "keyword", boost: 100 }
+  ),
+  snippetCompletion(
+    "class ${1:Name}:\n    def __init__(self${2:, args}):\n        ${3:pass}",
+    { label: "class", detail: "class definition", type: "keyword", boost: 95 }
+  ),
+  snippetCompletion(
+    "if ${1:condition}:\n    ${2:pass}",
+    { label: "if", detail: "if statement", type: "keyword", boost: 95 }
+  ),
+  snippetCompletion(
+    "if ${1:condition}:\n    ${2:pass}\nelse:\n    ${3:pass}",
+    { label: "ifelse", detail: "if...else", type: "keyword", boost: 85 }
+  ),
+  snippetCompletion(
+    "for ${1:item} in ${2:iterable}:\n    ${3:pass}",
+    { label: "for", detail: "for loop", type: "keyword", boost: 95 }
+  ),
+  snippetCompletion(
+    "while ${1:condition}:\n    ${2:pass}",
+    { label: "while", detail: "while loop", type: "keyword", boost: 90 }
+  ),
+  snippetCompletion(
+    "try:\n    ${1:pass}\nexcept ${2:Exception} as ${3:e}:\n    ${4:pass}",
+    { label: "try", detail: "try/except", type: "keyword", boost: 90 }
+  ),
+  snippetCompletion(
+    "with ${1:expr} as ${2:var}:\n    ${3:pass}",
+    { label: "with", detail: "with statement", type: "keyword", boost: 85 }
+  ),
+  snippetCompletion(
+    "def __init__(self${2:, args}):\n    ${3:pass}",
+    { label: "init", detail: "constructor", type: "function", boost: 95 }
+  ),
+  snippetCompletion(
+    "if __name__ == \"__main__\":\n    ${1:main()}",
+    { label: "main", detail: "if __name__ guard", type: "keyword", boost: 90 }
+  ),
+  snippetCompletion(
+    "print(${1})",
+    { label: "print", detail: "print()", type: "function", boost: 100 }
+  ),
+  snippetCompletion(
+    "import ${1:module}",
+    { label: "import", detail: "import statement", type: "keyword", boost: 95 }
+  ),
+  snippetCompletion(
+    "from ${1:module} import ${2:name}",
+    { label: "from", detail: "from...import", type: "keyword", boost: 95 }
+  ),
+  snippetCompletion(
+    "lambda ${1:args}: ${2:expr}",
+    { label: "lambda", detail: "lambda expression", type: "keyword", boost: 85 }
+  ),
+  snippetCompletion(
+    "async def ${1:name}(${2:args}):\n    ${3:pass}",
+    { label: "async", detail: "async function", type: "keyword", boost: 80 }
+  ),
+  snippetCompletion(
+    "@${1:decorator}\ndef ${2:name}(${3:args}):\n    ${4:pass}",
+    { label: "decorator", detail: "decorator", type: "keyword", boost: 80 }
+  ),
+];
+
+const pyKeywords: Completion[] = [
+  { label: "None", type: "keyword", boost: 100, detail: "Python" },
+  { label: "True", type: "keyword", boost: 100, detail: "Python" },
+  { label: "False", type: "keyword", boost: 100, detail: "Python" },
+  { label: "self", type: "keyword", boost: 100, detail: "Python" },
+  { label: "cls", type: "keyword", boost: 90, detail: "Python" },
+  { label: "return", type: "keyword", boost: 100, detail: "Python" },
+  { label: "yield", type: "keyword", boost: 85, detail: "Python" },
+  { label: "def", type: "keyword", boost: 100, detail: "Python" },
+  { label: "class", type: "keyword", boost: 100, detail: "Python" },
+  { label: "if", type: "keyword", boost: 100, detail: "Python" },
+  { label: "elif", type: "keyword", boost: 95, detail: "Python" },
+  { label: "else", type: "keyword", boost: 95, detail: "Python" },
+  { label: "for", type: "keyword", boost: 100, detail: "Python" },
+  { label: "while", type: "keyword", boost: 95, detail: "Python" },
+  { label: "break", type: "keyword", boost: 95, detail: "Python" },
+  { label: "continue", type: "keyword", boost: 95, detail: "Python" },
+  { label: "pass", type: "keyword", boost: 100, detail: "Python" },
+  { label: "import", type: "keyword", boost: 100, detail: "Python" },
+  { label: "from", type: "keyword", boost: 100, detail: "Python" },
+  { label: "as", type: "keyword", boost: 95, detail: "Python" },
+  { label: "try", type: "keyword", boost: 100, detail: "Python" },
+  { label: "except", type: "keyword", boost: 100, detail: "Python" },
+  { label: "finally", type: "keyword", boost: 85, detail: "Python" },
+  { label: "raise", type: "keyword", boost: 90, detail: "Python" },
+  { label: "with", type: "keyword", boost: 95, detail: "Python" },
+  { label: "lambda", type: "keyword", boost: 90, detail: "Python" },
+  { label: "global", type: "keyword", boost: 80, detail: "Python" },
+  { label: "nonlocal", type: "keyword", boost: 75, detail: "Python" },
+  { label: "del", type: "keyword", boost: 80, detail: "Python" },
+  { label: "assert", type: "keyword", boost: 80, detail: "Python" },
+  { label: "in", type: "keyword", boost: 95, detail: "Python" },
+  { label: "is", type: "keyword", boost: 90, detail: "Python" },
+  { label: "not", type: "keyword", boost: 95, detail: "Python" },
+  { label: "and", type: "keyword", boost: 95, detail: "Python" },
+  { label: "or", type: "keyword", boost: 95, detail: "Python" },
+  { label: "async", type: "keyword", boost: 90, detail: "Python" },
+  { label: "await", type: "keyword", boost: 85, detail: "Python" },
+  { label: "match", type: "keyword", boost: 80, detail: "Python 3.10" },
+  { label: "case", type: "keyword", boost: 80, detail: "Python 3.10" },
+  { label: "print", type: "function", boost: 100, detail: "built-in" },
+  { label: "len", type: "function", boost: 95, detail: "built-in" },
+  { label: "range", type: "function", boost: 95, detail: "built-in" },
+  { label: "int", type: "function", boost: 90, detail: "built-in" },
+  { label: "float", type: "function", boost: 85, detail: "built-in" },
+  { label: "str", type: "function", boost: 90, detail: "built-in" },
+  { label: "list", type: "function", boost: 90, detail: "built-in" },
+  { label: "dict", type: "function", boost: 90, detail: "built-in" },
+  { label: "set", type: "function", boost: 85, detail: "built-in" },
+  { label: "tuple", type: "function", boost: 85, detail: "built-in" },
+  { label: "bool", type: "function", boost: 85, detail: "built-in" },
+  { label: "type", type: "function", boost: 85, detail: "built-in" },
+  { label: "isinstance", type: "function", boost: 80, detail: "built-in" },
+  { label: "enumerate", type: "function", boost: 85, detail: "built-in" },
+  { label: "zip", type: "function", boost: 85, detail: "built-in" },
+  { label: "map", type: "function", boost: 80, detail: "built-in" },
+  { label: "filter", type: "function", boost: 80, detail: "built-in" },
+  { label: "sorted", type: "function", boost: 85, detail: "built-in" },
+  { label: "open", type: "function", boost: 90, detail: "built-in" },
+  { label: "super", type: "function", boost: 85, detail: "built-in" },
+  { label: "property", type: "function", boost: 80, detail: "built-in" },
+  { label: "staticmethod", type: "function", boost: 80, detail: "built-in" },
+  { label: "classmethod", type: "function", boost: 80, detail: "built-in" },
+  { label: "__init__", type: "function", boost: 90, detail: "Python" },
+  { label: "__str__", type: "function", boost: 85, detail: "Python" },
+  { label: "__repr__", type: "function", boost: 80, detail: "Python" },
+  { label: "__call__", type: "function", boost: 75, detail: "Python" },
+];
+
+// ═══════════════════════════════════════════════════════════════
 // HTML COMPLETIONS
 // ═══════════════════════════════════════════════════════════════
 
@@ -538,6 +679,17 @@ function htmlCompletionSource(context: CompletionContext): CompletionResult | nu
   return { from: word.from, options, validFor: /^[\w$-]*$/ };
 }
 
+function pyCompletionSource(context: CompletionContext): CompletionResult | null {
+  const word = matchWord(context);
+  if (!word) return null;
+
+  const prefix = context.state.sliceDoc(word.from, word.to).toLowerCase();
+  const all = [...pySnippets, ...pyKeywords];
+  const options = all.filter((c) => c.label.toLowerCase().startsWith(prefix));
+
+  return { from: word.from, options, validFor: /^[\w$]*$/ };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // LANGUAGE-REGISTERED EXTENSIONS
 // ═══════════════════════════════════════════════════════════════
@@ -566,4 +718,8 @@ export const cssAutoComplete = cssLanguage.data.of({
 
 export const htmlAutoComplete = htmlLanguage.data.of({
   autocomplete: htmlCompletionSource,
+});
+
+export const pyAutoComplete = pythonLanguage.data.of({
+  autocomplete: pyCompletionSource,
 });

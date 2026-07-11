@@ -59,8 +59,8 @@ export function EditorStatusBar() {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        height: "22px",
-        padding: "0 12px",
+        minHeight: "22px",
+        padding: "2px 12px",
         borderTop: `1px solid ${colors.border}`,
         background: colors.surface1,
         fontSize: "10px",
@@ -83,7 +83,6 @@ export function EditorStatusBar() {
         <span>
           Ln {info.line}, Col {info.column}
         </span>
-        <span>UTF-8</span>
       </div>
     </div>
   );

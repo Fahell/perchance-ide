@@ -47,8 +47,8 @@ export function ChatMessages({ messages, agentStatus, locale, onContinue }: Chat
     }
   });
 
-  // Thinking gap after last user message
-  if (agentStatus === "thinking" && messages.length > 0 && messages[messages.length - 1].role === "user") {
+  // Status indicator gap — shown after last user message while agent is working
+  if (agentStatus !== "idle" && messages.length > 0 && messages[messages.length - 1].role === "user") {
     elements.push(<div key="thinking-sep" className="msg-turn-separator" />);
     elements.push(<ThinkingIndicator key="thinking-indicator" status={agentStatus} />);
   }

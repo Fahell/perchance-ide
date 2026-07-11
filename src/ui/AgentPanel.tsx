@@ -19,6 +19,7 @@ import { RightPanel } from "./RightPanel.js";
 import { ScrollFAB } from "./ScrollFAB.js";
 import { SettingsModal } from "./SettingsModal.js";
 import { TerminalPanel } from "./TerminalPanel.js";
+import { ResizeHandle } from "./ResizeHandle.js";
 import { colors, fonts } from "./theme.js";
 import type { AgentStatus, ToolCallEntry } from "./types.js";
 
@@ -63,6 +64,8 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
   const handleLocaleChange = (l: Locale) => {
     setLocale(l);
     onLocaleChange(l);
+    // Sync locale into store settings for consistency
+    ideStore.getState().updateSettings({ locale: l });
   };
 
   const handleClearConversation = async () => {
@@ -195,7 +198,7 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
         </div>
 
         {/* ── Right: Resizable panel ────────────────────── */}
-        <ResizeHandle onResize={onResizePanel} />
+        <ResizeHandle direction="horizontal" onResize={onResizePanel} />
         <div style={{ width: `${rightWidth}px`, minWidth: "200px", flexShrink: 0 }}>
           <ErrorBoundary name="RightPanel">
             <RightPanel locale={locale} />
@@ -239,64 +242,4 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
   );
 }
 
-// ─── Resize Handle ──────────────────────────────────────────
-function ResizeHandle({ onResize }: { onResize: (delta: number) => void }) {
-  const draggingRef = useRef(false);
-  const startXRef = useRef(0);
-
-  const onMouseDown = useCallback((e: MouseEvent) => {
-    e.preventDefault();
-    draggingRef.current = true;
-    startXRef.current = e.clientX;
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
-  }, []);
-
-  useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
-      if (!draggingRef.current) return;
-      const delta = startXRef.current - e.clientX;
-      onResize(delta);
-      startXRef.current = e.clientX;
-    }
-    function onMouseUp() {
-      if (!draggingRef.current) return;
-      draggingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [onResize]);
-
-  return (
-    <div
-      onMouseDown={onMouseDown}
-      style={{
-        width: "4px",
-        cursor: "ew-resize",
-        background: "transparent",
-        flexShrink: 0,
-        position: "relative",
-        zIndex: 10,
-      }}
-      title="Drag to resize"
-    >
-      <div style={{
-        position: "absolute",
-        top: "50%",
-        left: "1px",
-        transform: "translateY(-50%)",
-        height: "30px",
-        width: "2px",
-        background: "#222",
-        borderRadius: "1px",
-      }} />
-    </div>
-  );
-}
 
