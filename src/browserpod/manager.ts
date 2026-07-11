@@ -408,7 +408,24 @@ class BrowserPodManager {
       let file: any = null;
       try {
         file = await this.pod.openFile(path, "utf-8");
-        const content = await file.read();
+
+        // BrowserPod's TextFile.read(length) REQUIRES an integer byte length.
+        // Passing no argument reads 0 bytes and silently returns "".
+        // Read the byte size via getSize() and iterate in chunks, advancing
+        // the seek position by the actual UTF-8 bytes decoded per chunk.
+        const totalBytes = await file.getSize();
+        const CHUNK = 1024 * 1024; // 1 MiB
+        const encoder = new TextEncoder();
+        let content = "";
+        let position = 0;
+        while (position < totalBytes) {
+          const toRead = Math.min(CHUNK, totalBytes - position);
+          const chunk = await file.read(toRead);
+          if (chunk === "") break; // EOF / read cap reached
+          content += chunk;
+          position += encoder.encode(chunk).length;
+        }
+
         await file.close();
         file = null; // prevent double-close in finally
         return content;

@@ -5,7 +5,8 @@ declare module "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@2.12.1/+esm
 
   export interface BrowserPodFile {
     write(content: string): Promise<number>;
-    read(length?: number): Promise<string>;
+    /** Reads `length` bytes (decoded as UTF-8). A length is REQUIRED — omitting it reads 0 bytes. */
+    read(length: number): Promise<string>;
     getSize(): Promise<number>;
     close(): Promise<void>;
   }
