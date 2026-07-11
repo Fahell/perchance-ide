@@ -12,7 +12,7 @@
 
 import { browserPodManager } from "../browserpod/manager.js";
 import { ideStore } from "../store.js";
-import { PROJECT_ROOT, vfsDeleteTree } from "../vfs.js";
+import { PROJECT_ROOT, vfsDeleteTree, vfsMkdir } from "../vfs.js";
 import type { Tool } from "./index.js";
 import { syncVfsToPod, writeToVfs } from "./sync-utils.js";
 
@@ -197,9 +197,26 @@ export async function pullProjectFilesFromPod(): Promise<void> {
     const syncedPaths = new Set(browserPodManager.getLastSyncedPaths());
     for (const cachedPath of syncedPaths) {
       if (!pulledPaths.has(cachedPath) && cachedPath.startsWith(PROJECT_ROOT + "/") && isProjectSourceFile(cachedPath)) {
-        vfsDeleteTree(cachedPath);
+        // Silent VFS delete: do NOT emit a delete event (which would propagate
+        // an rm -rf to the Pod). The Pod is the source of truth in this
+        // Pod→VFS direction; if the file is absent from the Pod it's already gone.
+        vfsDeleteTree(cachedPath, true);
+        browserPodManager.untrackSyncedPath(cachedPath);
         orphaned++;
       }
+    }
+
+    // Reflect directories created inside the Pod (e.g. via `mkdir`) into the VFS.
+    // Without this, empty dirs never appear in VFS and the agent may endlessly
+    // re-create them because it cannot observe they already exist.
+    try {
+      const podDirs = await browserPodManager.listDirectories(PROJECT_ROOT);
+      for (const d of podDirs) {
+        if (d === PROJECT_ROOT) continue;
+        vfsMkdir(d);
+      }
+    } catch {
+      // best-effort
     }
 
     if (pulled > 0 || sizeSkipped > 0 || orphaned > 0) {

@@ -506,6 +506,11 @@ class BrowserPodManager {
     return this.lastSyncedFiles.map((f) => f.path);
   }
 
+  /** Remove a path from the last-synced cache. Keeps the reconcile cache accurate. */
+  untrackSyncedPath(path: string): void {
+    this.lastSyncedFiles = this.lastSyncedFiles.filter((f) => f.path !== path);
+  }
+
   /**
    * Delete a file or directory inside the Pod.
    * Uses `rm -rf` directly (no shell wrapping) for safety and to avoid shell injection.
@@ -556,6 +561,27 @@ class BrowserPodManager {
     }
     if (!result.stdout.trim()) return [];
 
+    return result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  /**
+   * List all directories under a path in the Pod (mirror of listFiles for -type d).
+   */
+  async listDirectories(dir: string): Promise<string[]> {
+    if (!this.pod) return [];
+    const result = await this.run("find", [
+      dir, "-type", "d",
+      "-not", "-path", "*/node_modules/*",
+      "-not", "-path", "*/.git/*",
+      "-not", "-path", "*/.npm/*",
+      "-not", "-path", "*/__pycache__/*",
+    ]);
+    if (result.exitCode !== 0) return [];
+    if (!result.stdout.trim()) return [];
     return result.stdout
       .trim()
       .split("\n")

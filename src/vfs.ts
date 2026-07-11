@@ -151,7 +151,7 @@ export function vfsMkdir(path: string): void {
 }
 
 /** Recursively delete a path (file or directory tree). */
-export function vfsDeleteTree(path: string): boolean {
+export function vfsDeleteTree(path: string, silent = false): boolean {
   const npath = normalize(path);
   if (npath === "/" || npath === PROJECT_ROOT) return false;
   if (!_entries.has(npath)) return false;
@@ -162,7 +162,7 @@ export function vfsDeleteTree(path: string): boolean {
     }
   }
 
-  notifyVfsChange({ type: "delete", path: npath });
+  if (!silent) notifyVfsChange({ type: "delete", path: npath });
   return true;
 }
 
