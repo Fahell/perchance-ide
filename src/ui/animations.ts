@@ -122,10 +122,16 @@ body { background: #000; }
   background: #0f0f0f;
 }
 
+/* Status dot pulse */
+@keyframes status-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* Turn separator */
 .msg-turn-separator {
   border-top: 1px solid #1a1a1a;
-  margin: 6px 0;
+  margin: 4px 0;
 }
 
 /* Bottom status line */

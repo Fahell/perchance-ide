@@ -268,8 +268,12 @@ class BrowserPodManager {
         // pod.run() resolves when the process exits — no .wait() needed.
         const result = await this.pod.run(command, args, runOpts);
 
-        // Collect all captured output from onOutput callback
-        const rawStdout = this.outputBuffer.join("");
+        // Primary source of output is the terminal onOutput callback buffer.
+        // Fall back to result.stdout when the buffer is empty but the process
+        // result carries stdout directly (some run backends return it inline).
+        const rawStdout = this.outputBuffer.length > 0
+          ? this.outputBuffer.join("")
+          : (result as { stdout?: string } | null)?.stdout ?? "";
 
         // Strip ANSI escape codes and terminal artifacts (e.g., "null:0 null")
         const stdout = stripAnsi(rawStdout).replace(/^(?:null:\d+\s*null\s*)+/m, "").trimStart();

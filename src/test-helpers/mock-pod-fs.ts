@@ -34,7 +34,6 @@ export class MockPodFs {
     if (!this._files.has(normalized)) {
       this._files.set(normalized, "");
     }
-    this._dirs.add(normalized);
     return {
       write: async (content: string) => {
         this._files.set(normalized, content);
@@ -143,26 +142,35 @@ export class MockPodFs {
       case "find": {
         const dirIdx = args.findIndex((a) => !a.startsWith("-"));
         const root = dirIdx >= 0 ? this._normalize(args[dirIdx]) : "/";
-        const typeF = args.includes("-type") && args[args.indexOf("-type") + 1] === "f";
-        const exclusions: Array<{ flag: string; glob: string }> = [];
-        for (let i = 0; i < args.length - 1; i++) {
+        const typeIdx = args.indexOf("-type");
+        const typeArg = typeIdx >= 0 ? args[typeIdx + 1] : null;
+        const exclusions: string[] = [];
+        for (let i = 0; i < args.length - 2; i++) {
           if (args[i] === "-not" && args[i + 1] === "-path") {
-            exclusions.push({ flag: args[i], glob: args[i + 2] ?? "" });
+            exclusions.push(args[i + 2] ?? "");
           }
         }
-        const results: string[] = [];
-        for (const f of [...this._files.keys()].sort()) {
-          if (!f.startsWith(root)) continue;
-          if (!typeF) { results.push(f); continue; }
-          // Apply exclusions (simple glob match, * prefix/suffix)
-          const excluded = exclusions.some((e) => {
-            const g = e.glob;
-            if (g.startsWith("*/") && f.includes(g.slice(1))) return true;
-            if (g.endsWith("/*") && f.startsWith(g.slice(0, -1))) return true;
-            return f.includes(g);
+        const isExcluded = (p: string): boolean =>
+          exclusions.some((g) => {
+            if (g.startsWith("*/") && p.includes(g.slice(1))) return true;
+            if (g.endsWith("/*") && p.startsWith(g.slice(0, -1))) return true;
+            return p.includes(g);
           });
-          if (excluded) continue;
-          results.push(f);
+        const results: string[] = [];
+        if (typeArg === "d") {
+          for (const d of [...this._dirs].sort()) {
+            if (d === "/" || d === "/home" || d === "/home/user") continue;
+            if (!d.startsWith(root)) continue;
+            if (isExcluded(d)) continue;
+            results.push(d);
+          }
+        } else {
+          for (const f of [...this._files.keys()].sort()) {
+            if (!f.startsWith(root)) continue;
+            if (typeArg && typeArg !== "f") continue;
+            if (isExcluded(f)) continue;
+            results.push(f);
+          }
         }
         return { stdout: results.join("\n") + "\n", stderr: "", exitCode: 0 };
       }

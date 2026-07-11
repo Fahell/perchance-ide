@@ -96,7 +96,7 @@ export function AgentPanel({ version, commit, currentApiKey, userName, locale: i
       boxSizing: "border-box",
       overflow: "hidden",
     }}>
-      <Header version={version} commit={commit} onFaq={() => setFaqOpen(true)} />
+      <Header version={version} commit={commit} agentStatus={agentStatus} onFaq={() => setFaqOpen(true)} />
 
       {/* ─── 3-Column Layout ──────────────────────────────── */}
       <div style={{

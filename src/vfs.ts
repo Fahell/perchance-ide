@@ -166,6 +166,39 @@ export function vfsDeleteTree(path: string, silent = false): boolean {
   return true;
 }
 
+/**
+ * Remove empty directory entries that are NOT in `keepDirs`.
+ * Used by the Pod→VFS pull to drop stale directory entries left behind after
+ * an in-Pod rename/move (e.g. the old directory whose files were orphaned and
+ * deleted). Keeps the VFS tree consistent with the Pod tree. System
+ * directories (/, /home, PROJECT_ROOT) are always preserved.
+ *
+ * NOTE: This only protects directories that exist in the Pod (plus system dirs).
+ * Any directory that exists ONLY in the VFS (created e.g. by a VFS-only mkdir
+ * tool) and is empty will be removed on the next shell-command pull cycle,
+ * because `syncVfsToPod()` only pushes files, not empty directories.
+ *
+ * @returns number of directory entries removed
+ */
+export function vfsPruneEmptyDirs(keepDirs: Set<string>): number {
+  const dirEntries = [..._entries.values()].filter((e) => e.type === "dir");
+  // Deepest first so a parent only becomes removable after its children.
+  dirEntries.sort((a, b) => b.path.length - a.path.length);
+  let removed = 0;
+  for (const dir of dirEntries) {
+    if (dir.path === "/" || dir.path === "/home" || dir.path === PROJECT_ROOT) continue;
+    if (keepDirs.has(dir.path)) continue;
+    const hasChildren = [..._entries.keys()].some(
+      (p) => p !== dir.path && p.startsWith(dir.path + "/")
+    );
+    if (!hasChildren) {
+      _entries.delete(dir.path);
+      removed++;
+    }
+  }
+  return removed;
+}
+
 /** Build a nested tree structure for the file explorer. */
 export function vfsTree(dir: string = PROJECT_ROOT): VfsTreeNode[] {
   const ndir = normalize(dir) === "/" ? "/" : normalize(dir) + "/";

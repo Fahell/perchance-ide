@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
 import { colors, fonts } from "./theme.js";
 
@@ -13,9 +13,27 @@ interface FooterProps {
   locale?: Locale;
 }
 
+const SUGGEST_COUNT = 4;
+
 export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
-  const placeholder = t("footer.waiting", locale);
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestIndexRef = useRef(0);
+  const isFocusedRef = useRef(false);
+
+  // Cycle placeholder suggestions
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const interval = setInterval(() => {
+      if (!isFocusedRef.current) {
+        suggestIndexRef.current = (suggestIndexRef.current + 1) % SUGGEST_COUNT;
+        const suggestion = t(`suggests.${suggestIndexRef.current}`, locale);
+        if (suggestion) input.placeholder = suggestion;
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [locale]);
 
   function handleSend() {
     const trimmed = text.trim();
@@ -41,11 +59,14 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
           gap: "6px",
         }}>
           <input
+            ref={inputRef}
             type="text"
             value={text}
             onInput={(e) => setText((e.target as HTMLInputElement).value)}
+            onFocus={() => { isFocusedRef.current = true; }}
+            onBlur={() => { isFocusedRef.current = false; }}
             onKeyDown={handleKeyDown}
-            placeholder="> _"
+            placeholder={t("suggests.0", locale) || "> _"}
             style={{
               flex: "1",
               padding: "5px 8px",

@@ -16,11 +16,13 @@ export function MessageList({ children, outerRef }: MessageListProps) {
     const el = containerRef.current;
     if (!el) return;
     const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
-    if (childrenLen > childrenCountRef.current || isNearBottom) {
-      el.scrollTop = el.scrollHeight;
+    if (isNearBottom || childrenLen > childrenCountRef.current) {
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop = el.scrollHeight;
+      });
     }
     childrenCountRef.current = childrenLen;
-  }, [childrenLen]);
+  });
 
   return (
     <div
@@ -32,8 +34,8 @@ export function MessageList({ children, outerRef }: MessageListProps) {
         flex: "1",
         minHeight: "0",
         overflowY: "auto",
-        padding: "8px",
-        fontSize: "13px",
+        padding: "6px",
+        fontSize: "12px",
         scrollBehavior: "smooth",
         position: "relative",
       }}

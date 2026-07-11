@@ -1,12 +1,16 @@
 import { colors, fonts } from "./theme.js";
+import type { AgentStatus } from "./types.js";
 
 interface HeaderProps {
   version: string;
   commit: string;
+  agentStatus: AgentStatus;
   onFaq?: () => void;
 }
 
-export function Header({ version, commit, onFaq }: HeaderProps) {
+export function Header({ version, commit, agentStatus, onFaq }: HeaderProps) {
+  const isActive = agentStatus !== "idle";
+
   return (
     <div style={{
       display: "flex",
@@ -16,9 +20,21 @@ export function Header({ version, commit, onFaq }: HeaderProps) {
       borderBottom: `1px solid ${colors.border}`,
       flexShrink: "0",
     }}>
-      <span style={{ color: colors.textSecondary, fontSize: "12px", fontWeight: "600", fontFamily: fonts.mono, letterSpacing: "0.5px" }}>
-        agent
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {/* Minimal status dot */}
+        <div style={{
+          width: "6px",
+          height: "6px",
+          borderRadius: "50%",
+          background: isActive ? colors.text : "transparent",
+          transition: "background 0.3s",
+          opacity: isActive ? 1 : 0.3,
+          animation: isActive ? "status-dot-pulse 1.5s ease-in-out infinite" : "none",
+        }} />
+        <span style={{ color: colors.textSecondary, fontSize: "12px", fontWeight: "600", fontFamily: fonts.mono, letterSpacing: "0.5px" }}>
+          agent
+        </span>
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         {onFaq && (
           <button

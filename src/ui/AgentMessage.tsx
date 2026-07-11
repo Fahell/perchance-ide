@@ -59,7 +59,7 @@ export function AgentMessage({ message, agentStatus, compact, locale, onContinue
         {message.timestamp && (
           <div
             title={formatAbsoluteTime(message.timestamp, locale)}
-            style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", padding: "0 12px", fontFamily: fonts.mono }}
+            style={{ color: colors.textMuted, fontSize: "8px", marginTop: "1px", padding: "0 10px", fontFamily: fonts.mono }}
           >
             {formatRelativeTime(message.timestamp, locale)}
           </div>

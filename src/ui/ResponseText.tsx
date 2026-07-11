@@ -20,13 +20,13 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
   if (loading && !content) {
     return (
       <div style={{
-        margin: "4px 0",
-        padding: "8px 12px",
+        margin: "2px 0",
+        padding: "6px 10px",
         background: colors.surface1,
         borderLeft: `2px solid ${colors.borderEmphasis}`,
         animation: "agent-slide-in 0.2s ease-out",
       }}>
-        <div style={{ color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "6px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+        <div style={{ color: colors.textMuted, fontSize: "8px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
           agent
         </div>
         <div className="skeleton-line" style={{ width: "85%" }} />
@@ -63,24 +63,23 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
   return (
     <div
       style={{
-        margin: "4px 0",
-        padding: "8px 12px",
+        margin: "2px 0",
+        padding: "6px 10px",
         background: colors.surface1,
         borderLeft: `2px solid ${colors.borderEmphasis}`,
-        fontSize: "13px",
+        fontSize: "12px",
         lineHeight: "1.5",
         color: colors.text,
-        fontFamily: fonts.mono,
+        fontFamily: fonts.main,
         wordBreak: "break-word",
         animation: "fade-in 0.3s ease-out",
         position: "relative",
       }}
       onMouseEnter={() => setShowCopy(true)}
       onMouseLeave={() => setShowCopy(false)}
-    >
-      <div style={{ color: colors.textMuted, fontSize: "9px", fontWeight: "600", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
-        agent
-      </div>
+    >        <div style={{ color: colors.textMuted, fontSize: "8px", fontWeight: "600", marginBottom: "2px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+          agent
+        </div>
 
       {/* Copy button */}
       <button
@@ -107,11 +106,11 @@ export function ResponseText({ content, loading, locale }: ResponseTextProps) {
         maxHeight: !expanded && isLong ? `${TRUNCATE_HEIGHT}px` : undefined,
         overflow: !expanded && isLong ? "hidden" : undefined,
         position: !expanded && isLong ? "relative" : undefined,
-      }}>
-        <div
-          className="md-content"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-        />
+      }}>          <div
+            className="md-content"
+            style={{ fontFamily: fonts.main }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+          />
         {!expanded && isLong && (
           <div style={{
             position: "absolute",

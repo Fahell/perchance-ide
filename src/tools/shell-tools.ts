@@ -12,7 +12,7 @@
 
 import { browserPodManager } from "../browserpod/manager.js";
 import { ideStore } from "../store.js";
-import { PROJECT_ROOT, vfsDeleteTree, vfsMkdir } from "../vfs.js";
+import { PROJECT_ROOT, vfsDeleteTree, vfsMkdir, vfsPruneEmptyDirs } from "../vfs.js";
 import type { Tool } from "./index.js";
 import { syncVfsToPod, writeToVfs } from "./sync-utils.js";
 
@@ -211,10 +211,15 @@ export async function pullProjectFilesFromPod(): Promise<void> {
     // re-create them because it cannot observe they already exist.
     try {
       const podDirs = await browserPodManager.listDirectories(PROJECT_ROOT);
+      const keepDirs = new Set<string>();
       for (const d of podDirs) {
         if (d === PROJECT_ROOT) continue;
         vfsMkdir(d);
+        keepDirs.add(d);
       }
+      // Drop stale VFS directory entries that no longer exist in the Pod
+      // (e.g. the old directory left behind after an in-Pod rename/move).
+      vfsPruneEmptyDirs(keepDirs);
     } catch {
       // best-effort
     }

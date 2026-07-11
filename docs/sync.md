@@ -38,6 +38,7 @@ After each shell/git command, the system performs a bulk pull:
 To prevent the VFS from accumulating stale files that were deleted in the Pod, the pull process performs "orphan removal":
 - It compares the paths actually pulled from the Pod against the `lastSyncedFiles` cache (files previously synced VFS $\to$ Pod).
 - If a previously-synced path is missing from the Pod's current state, it is considered an "orphan" and deleted from the VFS via `vfsDeleteTree()`.
+- **Empty Directory Pruning**: Any empty directory entry in the VFS that does not exist in the Pod (and is not a system directory) is removed during the pull cycle to keep the VFS tree consistent with the Pod.
 - **Non-Destructive Design**: Orphan deletion is performed **silently** in the VFS. It does NOT emit a delete event that would propagate back to the Pod, preventing destructive feedback loops.
 - **Cache Pruning**: The `lastSyncedFiles` cache is pruned whenever an orphan is removed, ensuring the cache remains honest and prevents redundant "orphan removed" logs.
 

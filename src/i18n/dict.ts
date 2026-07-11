@@ -92,6 +92,11 @@ const en: Translations = {
 
   // Footer
   "footer.waiting": "waiting...",
+  "footer.placeholder": "> _",
+  "suggests.0": "try: create a new file",
+  "suggests.1": "try: write some code",
+  "suggests.2": "try: search the web",
+  "suggests.3": "try: edit a file",
 
   // Context Viewer
   "context.title": "context",
@@ -248,6 +253,11 @@ const ptBR: Translations = {
 
   // Footer
   "footer.waiting": "aguardando...",
+  "footer.placeholder": "> _",
+  "suggests.0": "tente: criar um arquivo",
+  "suggests.1": "tente: escrever código",
+  "suggests.2": "tente: pesquisar na web",
+  "suggests.3": "tente: editar um arquivo",
 
   // Context Viewer
   "context.title": "contexto",
@@ -390,6 +400,11 @@ const es: Translations = {
   "setup.save": "guardar + iniciar",
   "setup.note": "tu clave se almacena localmente y nunca se comparte.",
   "footer.waiting": "esperando...",
+  "footer.placeholder": "> _",
+  "suggests.0": "prueba: crear un archivo",
+  "suggests.1": "prueba: escribir código",
+  "suggests.2": "prueba: buscar en la web",
+  "suggests.3": "prueba: editar un archivo",
 
   // Context Viewer
   "context.title": "contexto",
@@ -531,6 +546,11 @@ const ja: Translations = {
   "setup.save": "保存して開始",
   "setup.note": "キーはローカルに保存され、共有されることはありません。",
   "footer.waiting": "待機中...",
+  "footer.placeholder": "> _",
+  "suggests.0": "試す: ファイルを作成",
+  "suggests.1": "試す: コードを書く",
+  "suggests.2": "試す: Web検索",
+  "suggests.3": "試す: ファイルを編集",
 
   // Context Viewer
   "context.title": "コンテキスト",
@@ -673,6 +693,11 @@ const zh: Translations = {
   "setup.save": "保存并开始",
   "setup.note": "密钥仅本地存储，绝不共享。",
   "footer.waiting": "等待中...",
+  "footer.placeholder": "> _",
+  "suggests.0": "试试：创建文件",
+  "suggests.1": "试试：写代码",
+  "suggests.2": "试试：搜索网络",
+  "suggests.3": "试试：编辑文件",
 
   // Context Viewer
   "context.title": "上下文",

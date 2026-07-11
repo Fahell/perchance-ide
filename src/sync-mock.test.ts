@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockPodFs } from "./test-helpers/mock-pod-fs.js";
 import { trackedWrite, trackedDelete, trackedRename, initHashes } from "./vfs-events.js";
-import { vfsRead, vfsReset, PROJECT_ROOT } from "./vfs.js";
+import { vfsRead, vfsReset, vfsGetAll, PROJECT_ROOT } from "./vfs.js";
 import { syncVfsToPod, writeToVfs } from "./tools/sync-utils.js";
+import { pullProjectFilesFromPod } from "./tools/shell-tools.js";
 import { browserPodManager } from "./browserpod/manager.js";
 
 // Mock vfs-persist to avoid IndexedDB
@@ -32,6 +33,11 @@ async function writeMockFile(pod: MockPodFs, path: string, content: string): Pro
   const handle = await pod.createFile(path, "utf-8");
   await handle.write(content);
   await handle.close();
+}
+
+/** Check whether a directory entry exists in the VFS. */
+function vfsHasDir(path: string): boolean {
+  return vfsGetAll().some((e) => e.type === "dir" && e.path === path);
 }
 
 describe("VFS <-> BrowserPod bidirectional sync", () => {
@@ -392,6 +398,43 @@ describe("VFS <-> BrowserPod bidirectional sync", () => {
       expect(mockPod.has(PROJECT_ROOT + "/package.json")).toBe(true);
       expect(await readMockFile(mockPod, PROJECT_ROOT + "/package.json")).toBe(valid);
       unsub();
+    });
+  });
+
+  // ─── Phase 5: Pod→VFS directory rename leaves no stale dir ──────
+
+  describe("Phase 5 — Pod→VFS directory rename leaves no stale dir", () => {
+    it("renaming a dir inside the Pod removes the old VFS dir and keeps the new one", async () => {
+      // Pre-populate VFS + Pod with a directory tree
+      const podPaths = [
+        PROJECT_ROOT + "/olddir/a.txt",
+        PROJECT_ROOT + "/olddir/sub/b.txt",
+      ];
+      for (const p of podPaths) {
+        await writeMockFile(mockPod, p, "x");
+        trackedWrite(p, "x");
+      }
+      await flushMicrotasks();
+
+      // Sync VFS → Pod (populates lastSyncedFiles, mirroring run_shell_command)
+      await syncVfsToPod();
+      await flushMicrotasks();
+
+      // Agent renames the directory *inside the Pod* (not via the VFS rename tool)
+      await mockPod.run("mv", [PROJECT_ROOT + "/olddir", PROJECT_ROOT + "/newdir"]);
+
+      // Pull Pod → VFS (mirrors run_shell_command's post-execution pull)
+      await pullProjectFilesFromPod();
+      await flushMicrotasks();
+
+      // Old (now empty) directory must be gone from the VFS
+      expect(vfsHasDir(PROJECT_ROOT + "/olddir")).toBe(false);
+      expect(vfsHasDir(PROJECT_ROOT + "/olddir/sub")).toBe(false);
+      // New directory present with its files
+      expect(vfsRead(PROJECT_ROOT + "/newdir/a.txt")).toBe("x");
+      expect(vfsRead(PROJECT_ROOT + "/newdir/sub/b.txt")).toBe("x");
+      // Old files must not exist
+      expect(vfsRead(PROJECT_ROOT + "/olddir/a.txt")).toBeNull();
     });
   });
 });
