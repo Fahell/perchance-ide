@@ -37,114 +37,154 @@ Agent Loop
   Your message is sent to the LLM with context (recent messages + summary).
   The LLM responds, possibly with <tool_call> XML tags.
   Tool calls are detected and executed — results go back to the LLM.
-  This repeats until the LLM gives a final answer (you can cancel at any time).
+  This repeats (up to 8 iterations) until the LLM gives a final answer.
 
 Tool Calls
-  The LLM outputs <tool_call name="tool_name">{"args"}</tool_call> on its own line.
-  Multiple independent tool calls can run in parallel.
-  Tools that depend on each other's results must be called sequentially.
+  Multiple independent tool calls in one response run in parallel.
+  Dependent tools must be called sequentially (wait for result, then call next).
+  The agent has timeout (5min) and cancellation (click [Cancel]) support.
 
-Context Management
-  The last 5 messages are always kept in full.
-  When the total exceeds 6000 tokens, older messages get summarized.
-  Summaries are stored in IndexedDB and persist across sessions.
+Context & Memory
+  Last 5 messages always kept in full. Older ones summarized when >6K tokens.
+  Key facts are auto-extracted after each exchange ("memories").
 
-Memory Extraction
-  Key facts from conversations are automatically extracted in the background.
-  These "memories" are included in the context on future interactions.`,
+Mapper Agent
+  After each file change, a subagent maintains <project>/_map/ documentation.
+  The main agent uses _map/ summaries to navigate projects without reading full files.
+  Index files show dependency graphs, entry points, and file purposes.`,
   },
   {
     id: "file-system",
     title: "File System & Editor",
-    content: `The project uses a virtual file system (VFS) in memory backed by IndexedDB.
+    content: `Virtual file system (VFS) in memory backed by IndexedDB. PROJECT_ROOT: /home/user
 
-CodeMirror 6 Editor
-  Tabbed editor with syntax highlighting for JS, TS, JSX, TSX, JSON, HTML, CSS, Markdown, and Python.
-  Emmet support for HTML, CSS, and JSX.
-  Configurable font size, tab size, and word wrap (via editor settings).
+Code Editor
+  CodeMirror 6 with syntax highlighting for 10+ languages (JS/TS/JSX/TSX/HTML/CSS/JSON/MD/Python/XML/YAML).
+  Emmet support, autocomplete, linting, hover tooltips, and indent guides.
+  One Dark Pro dark theme. Configurable font size, tab size, word wrap.
 
-Tabs
-  Open files by clicking in the explorer (right panel).
-  Close with the × button, Ctrl+W, or middle-click.
-  Files with unsaved changes show a small dot indicator.
-  Double-click a tab to rename it inline.
+File Explorer (right panel)
+  Tree view with create, rename, delete (right-click context menu).
+  Upload single files or entire folders via the webkitdirectory picker.
+  Download project as ZIP or individual files via right-click → download.
 
-Saving
-  Auto-save writes to VFS 500ms after the last edit (can be disabled in Settings).
-  Ctrl+S flushes pending writes immediately.
-  Tab switches and tab closes also trigger a save.
-  The entire VFS is persisted to IndexedDB.`,
+Preview Panel
+  Live HTML preview via sandboxed iframe. CSS/JS files linked in HTML are
+  auto-inlined from the VFS so separate files render correctly.
+  Markdown preview with marked library. Refresh and open-in-new-tab buttons.`,
   },
   {
     id: "tools-reference",
     title: "Tools Reference",
-    content: `The agent has tools organized in four categories:
+    content: `The agent has 5 tool categories (each can be toggled in Settings):
 
-Web Tools
-  web_search       Search the web via Jina.ai (requires API key). Up to 5 results.
-  scrape_url       Fetch full text content from a URL as markdown.
+Web Tools (requires Jina API key)
+  web_search       Search the web. Results include URLs + snippets.
+  scrape_url       Fetch full page content as markdown.
 
 Context Tools
-  search_history   Keyword search in conversation history (BM25-lite).
-  get_messages     Retrieve messages by index range or count.
+  search_history   BM25-lite keyword search across conversation history.
+  get_messages     Retrieve raw messages by position or count.
 
 VFS Tools
-  read_file        Read a file from the VFS (max 5000 chars).
+  read_file        Read a file from VFS.
   write_file       Create or overwrite a file. Auto-creates directories.
-  edit_file        Make partial edits by searching and replacing text.
-  list_files       Show directory tree with icons.
-  search_files     Find files by name or content (case-insensitive).
-  delete_file      Delete a file or folder (recursive).
-  rename_file      Rename or move a file or folder.
+  edit_file        Partial edit via exact string replacement.
+  list_files       Show project tree.
+  search_files     Find files by name or content.
+  delete_file      Delete file/folder recursively.
+  rename_file      Rename or move.
 
-Terminal Tools
-  run_python       Execute Python code via Pyodide (WebAssembly).
-  execute_script   Run a .py file from the VFS.
-  install_package  Install Python packages (numpy, pandas, etc.).`,
+Python Tools (in-browser via Pyodide WebAssembly)
+  run_python       Execute Python snippets.
+  execute_script   Run a .py file from VFS.
+  install_package  Install PyPI packages (numpy, pandas, etc.).
+
+Node.js Tools (via BrowserPod remote runtime, requires API key)
+  run_npm_install       Install npm packages.
+  run_node_script       Execute a .js/.mjs file.
+  execute_npm_command   Run npm/npx commands (test, build).
+  run_shell_command     Execute safe Bash commands (ls, cat, grep, curl, mkdir, git).
+  run_git_command       Git operations (status, diff, add, commit, branch).
+  start_http_server     Start HTTP server with public URL via BrowserPod portal.`,
   },
   {
-    id: "python-execution",
-    title: "Python Execution",
-    content: `Python runs entirely in the browser via Pyodide (WebAssembly).
+    id: "node-execution",
+    title: "Node.js & Shell",
+    content: `Node.js runs remotely via BrowserPod (requires API key from console.browserpod.io).
 
 How It Works
-  Python code is executed in a Pyodide runtime loaded on first use.
-  No external server needed — everything runs client-side.
-  The VFS is synced to Pyodide's filesystem before execution and synced back after.
+  BrowserPod boots a Node.js 22 environment in the cloud.
+  Files are auto-synced between the local VFS and the Pod filesystem.
+  VFS → Pod sync happens before each command. Pod → VFS pull happens after.
+  The pod disk persists across page reloads (same storageKey).
 
-Available Tools
-  run_python       Execute a Python snippet directly. Use for quick calculations.
-  execute_script   Run a .py file from the VFS. Use for existing scripts.
-  install_package  Install packages from PyPI (e.g., numpy, pandas, requests).
+Interactive Terminal
+  The terminal panel ([terminal] button in editor footer) opens an interactive bash
+  shell connected to the Pod. Type commands directly — ls, node, npm, git, etc.
+  Files created in the terminal are synced back to the VFS when the panel closes.
+  Resizable (drag handle) with close button.
 
-Output
-  Both stdout and stderr are captured and returned with the exit code.
-  Outputs appear in the Output tab (right panel, bottom).
-  Each execution gets a timestamped, expandable card.
-  Max 20 entries are kept (newest first).`,
+Shell Tools
+  run_shell_command: Whitelist-enforced Bash (safe commands only).
+  run_git_command: Git operations (push/fetch/remote blocked for safety).
+  start_http_server: Get a public URL for any HTTP server running in the Pod.`,
+  },
+  {
+    id: "layout-ui",
+    title: "Layout & UI",
+    content: `The IDE has a 3-column layout with collapsible panels:
+
+Left Panel (Chat)
+  Conversation with the agent. Messages, tool call cards, thinking indicator.
+  [new] archives current conversation and starts fresh.
+  [hist] opens archived conversations — reopen or delete old chats.
+  [=] opens Settings. [ctx] opens Context Viewer (token budget visualization).
+  Resizable width — drag the edge between chat and editor.
+  Collapsible with the ◀ button.
+
+Middle (Editor)
+  Tabbed CodeMirror editor. Status bar with line/column, dirty count.
+  [terminal] button toggles the interactive terminal panel.
+  Auto-save status indicator.
+
+Right Panel
+  Vertical icon sidebar: 📁 Files | ◎ Outline | ▶ Preview | >_ Output.
+  Each panel resizable — drag the handle between editor and right panel.
+
+Modals
+  Settings (Ctrl+,): API keys, language, auto-save, tool toggles.
+  Context Viewer (Ctrl+I): Token budget, summaries, memories.
+  FAQ (?): Help system (this).
+  File Search (Ctrl+P): Fuzzy file name search.`,
   },
   {
     id: "settings",
     title: "Settings & Customization",
-    content: `Available settings in the Settings panel ([=] button):
+    content: `Access via [=] button in chat footer or Ctrl+, shortcut.
 
 Language
-  Choose from 5 locales: English, Portuguese, Spanish, Japanese, Chinese.
-  Changes the UI labels throughout the panels.
+  Choose from 5 locales: English, Português, Español, 日本語, 中文.
 
 Jina API Key
-  Required for the agent's web search tool.
-  Get a free key at jina.ai.
-  Your key is stored locally in localStorage and never shared.
+  Required for web search. Get free key at jina.ai.
+  Stored locally in localStorage, never sent anywhere.
+
+BrowserPod API Key
+  Required for Node.js/shell tools and interactive terminal.
+  Get key at console.browserpod.io.
 
 Auto-Save
-  Toggle automatic saving of file edits after 500ms of inactivity.
+  When enabled, saves files 500ms after the last edit.
   When disabled, save manually with Ctrl+S or by switching tabs.
 
 Agent Tools
-  Enable or disable entire tool categories (Web, Context, VFS, Terminal).
-  The agent's system prompt only lists enabled tools.
-  Disabled tools cannot be called by the agent.`,
+  Toggle entire tool categories on/off. Disabled tools are:
+  - Hidden from the agent's system prompt
+  - Blocked at execution time with a clear error message
+
+Editor
+  Font size (10-24px), tab size (2/4/8), word wrap on/off.`,
   },
   {
     id: "tips",
@@ -155,30 +195,25 @@ Agent Tools
                           agentAi = {import:ai-text-plugin}
                           Then reload the generator.
 
-  Web search failing      Verify your Jina API key in Settings (bottom of left panel).
+  Web search failing      Verify your Jina API key in Settings.
                           The key should start with "jina_".
 
-  Python errors           Use install_package first before importing third-party libraries.
+  Python errors           Use install_package first before importing third-party libs.
                           Check the Output tab for full error messages.
 
-  Files not saving        Check if auto-save is enabled in Settings.
-                          Use Ctrl+S to force an immediate save.
-                          Tab switches also trigger saves.
+  Node.js not working     Enable Node.js tools in Settings and add a BrowserPod API key.
+                          The terminal panel shows connection status.
+
+  File tree not updating  Files created by the agent or editor should appear
+                          automatically. If not, switch tabs to refresh.
 
 Best Practices
 
-  Be specific in your requests to the agent.
-  Good: "Search for recent TypeScript 5.8 features"
-  Avoid: "Search for something about TypeScript"
-
-  Use the editor to prepare files before asking the agent.
-  The agent can read, write, and edit files based on your requests.
-
-  Check the Output tab for Python execution results.
-  stdout/stderr are captured and displayed as formatted cards.
-
-  Use context tools when referencing earlier conversation.
-  The agent can search history or retrieve specific messages.`,
+  Be specific in requests. The agent has tool-calling loop with 8 max iterations.
+  Let the agent navigate first — it reads _map/ docs before touching files.
+  Use [new] to archive conversations when switching topics.
+  Check the Context Viewer (Ctrl+I) to see token usage and memories.
+  Download your project as ZIP (⬇ button) regularly as backup.`,
   },
 ];
 

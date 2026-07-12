@@ -113,6 +113,14 @@ export function hasTool(name: string): boolean {
   return name in tools;
 }
 
+/**
+ * Get the category of a registered tool.
+ * Returns undefined if the tool is not registered.
+ */
+export function getToolCategory(name: string): string | undefined {
+  return toolCategories[name];
+}
+
 // ─── Web Tools ───────────────────────────────────────────────
 export function initWebTools(): void {
   const webTools = createWebTools();

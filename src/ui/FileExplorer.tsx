@@ -11,11 +11,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
-import { serializeProject } from "../utils/vfs-io.js";
+import { createZipBlob, getProjectFiles } from "../utils/vfs-io.js";
 import { trackedDelete, trackedRename, trackedWrite } from "../vfs-events.js";
 import { flushVfsPersist, scheduleVfsPersist } from "../vfs-persist.js";
 import {
-  vfsExists, vfsMkdir,
+  vfsExists, vfsMkdir, vfsRead,
   vfsTree,
   type VfsTreeNode,
 } from "../vfs.js";
@@ -48,6 +48,7 @@ export function FileExplorer({ locale }: FileExplorerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
+
   // Tree keyboard navigation ref
   const treeRef = useRef<HTMLDivElement>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -56,23 +57,47 @@ export function FileExplorer({ locale }: FileExplorerProps) {
   const [vfsVersion, setVfsVersion] = useState(0);
   useEffect(() => {
     return ideStore.subscribe((s) => {
-      if (s.vfsVersion !== vfsVersion) setVfsVersion(s.vfsVersion);
+      setVfsVersion(s.vfsVersion);
     });
-  }, [vfsVersion]);
+  }, []);
 
   const tree = useMemo(() => vfsTree("/"), [vfsVersion]);
 
   // ── Download / Upload handlers ─────────────────────────
-  function handleDownload() {
-    const json = serializeProject();
-    const blob = new Blob([json], { type: "application/json" });
+  function triggerDownload(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = downloadRef.current;
     if (a) {
       a.href = url;
+      a.download = filename;
       a.click();
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  /** Download entire project as ZIP */
+  function handleDownloadAll() {
+    const files = getProjectFiles();
+    if (files.length === 0) return;
+    const blob = createZipBlob(files);
+    triggerDownload(blob, "project.zip");
+  }
+
+  /** Download a specific file or directory as ZIP */
+  function handleDownloadPath(path: string) {
+    const files = getProjectFiles(path);
+    if (files.length === 0) {
+      // Single file outside project root
+      const content = vfsRead(path);
+      if (content === null) return;
+      const name = path.split("/").filter(Boolean).pop() ?? "file";
+      const blob = new Blob([content], { type: "text/plain" });
+      triggerDownload(blob, name);
+      return;
+    }
+    const blob = createZipBlob(files);
+    const name = path.split("/").filter(Boolean).pop() ?? "project";
+    triggerDownload(blob, `${name}.zip`);
   }
 
   async function handleUploadFile(e: Event) {
@@ -143,7 +168,7 @@ export function FileExplorer({ locale }: FileExplorerProps) {
     setCtxTarget(path);
 
     const MENU_WIDTH = 140;
-    const MENU_HEIGHT = 56;
+    const MENU_HEIGHT = 82;
     const PAD = 8;
     let x = e.clientX;
     let y = e.clientY;
@@ -182,6 +207,7 @@ export function FileExplorer({ locale }: FileExplorerProps) {
     if (newPath !== renaming) {
       trackedRename(renaming, newPath);
       ideStore.getState().renameFile(renaming, newPath);
+      ideStore.getState().bumpVfsVersion();
     }
     setRenaming(null);
   }
@@ -213,6 +239,7 @@ export function FileExplorer({ locale }: FileExplorerProps) {
       return next;
     });
     setCreatingIn(null);
+    ideStore.getState().bumpVfsVersion();
     scheduleVfsPersist();
   }
 
@@ -309,6 +336,7 @@ export function FileExplorer({ locale }: FileExplorerProps) {
       }
     }
     if (selectedPath === path) setSelectedPath(null);
+    ideStore.getState().bumpVfsVersion();
     await flushVfsPersist();
   }
 
@@ -441,6 +469,12 @@ export function FileExplorer({ locale }: FileExplorerProps) {
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
             {t("fileExplorer.rename", locale) || "rename"}
           </div>
+          <div onClick={(e: MouseEvent) => { e.stopPropagation(); handleDownloadPath(ctxTarget); }}
+            style={ctxItemStyle}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface1; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+            download
+          </div>
           <div onClick={(e: MouseEvent) => { e.stopPropagation(); handleDeleteStart(ctxTarget); }}
             style={ctxItemStyle}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface1; }}
@@ -458,12 +492,12 @@ export function FileExplorer({ locale }: FileExplorerProps) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", gap: "4px" }}>
-          <a ref={downloadRef} download="project.json" style={{ display: "none" }} />
+          <a ref={downloadRef} download="project.zip" style={{ display: "none" }} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }}
             onChange={handleUploadFile} />
           <input ref={folderInputRef} type="file" {...{ webkitdirectory: true }} style={{ display: "none" }}
             onChange={handleUploadFolder} />
-          <button onClick={handleDownload}
+          <button onClick={handleDownloadAll}
             title={t("vfs.download", locale) || "download project"}
             style={{...btnStyle, fontSize: "11px"}}>⬇</button>
           <button onClick={() => fileInputRef.current?.click()}
@@ -555,7 +589,7 @@ function TreeNode({ node, depth, expanded, onToggle, onOpen, onContextMenu, onSt
       >
         {/* Arrow / icon */}
         <span style={{ width: "14px", textAlign: "center", flexShrink: 0, color: isDir ? colors.textMuted : fileInfo(node.path).color }}>
-          {isDir ? (isExpanded ? "▾" : "▸") : fileInfo(node.path).icon}
+          {isDir ? "📁" : fileInfo(node.path).icon}
         </span>
 
         {/* Name or rename input */}

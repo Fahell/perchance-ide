@@ -32,7 +32,7 @@ export function ChatMessages({ messages, agentStatus, locale, onContinue }: Chat
       elements.push(<div key={`sep-${i}`} className="msg-turn-separator" />);
     }
     if (msg.role === "user") {
-      elements.push(<UserMessage key={msg.id} content={msg.content} locale={locale} timestamp={msg.timestamp} />);
+      elements.push(<UserMessage key={msg.id} content={msg.content} />);
     } else {
       elements.push(
         <AgentMessage

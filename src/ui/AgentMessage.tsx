@@ -15,7 +15,7 @@ interface AgentMessageProps {
 }
 
 export function AgentMessage({ message, agentStatus, locale, onContinue, isLastAgentMessage }: AgentMessageProps) {
-  const isActive = message.role === "agent" && agentStatus !== "idle";
+  const isActive = isLastAgentMessage && message.role === "agent" && agentStatus !== "idle";
 
   return (
     <div style={{ display: "flex", justifyContent: "flex-start" }}>

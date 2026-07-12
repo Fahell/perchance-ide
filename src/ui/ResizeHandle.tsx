@@ -29,7 +29,7 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
     function onMouseMove(e: MouseEvent) {
       if (!draggingRef.current) return;
       const currentPos = isHorizontal ? e.clientX : e.clientY;
-      const delta = startPosRef.current - currentPos;
+      const delta = currentPos - startPosRef.current;
       onResize(delta);
       startPosRef.current = currentPos;
     }

@@ -5,17 +5,19 @@ import { colors, fonts } from "./theme.js";
 interface FooterProps {
   onSettings: () => void;
   onContext: () => void;
-  onClear?: () => void;
+  onNew?: () => void;
+  onHistory?: () => void;
   inputEnabled: boolean;
   onSend: (text: string) => void;
   disabled: boolean;
   onCancel?: () => void;
   locale?: Locale;
+  conversationCount?: number;
 }
 
 const SUGGEST_COUNT = 4;
 
-export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, disabled, onCancel, locale }: FooterProps) {
+export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, onSend, disabled, onCancel, locale, conversationCount = 0 }: FooterProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const suggestIndexRef = useRef(0);
@@ -135,13 +137,13 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
           <button
             onClick={onCancel}
             style={{
-              padding: "5px 8px",
-              border: `1px solid ${colors.textSecondary}`,
               background: "none",
+              border: "none",
               color: colors.textSecondary,
               fontSize: "11px",
-              fontFamily: fonts.mono,
+              padding: "2px 6px",
               cursor: "pointer",
+              fontFamily: fonts.mono,
               flexShrink: "0",
             }}
           >
@@ -157,12 +159,22 @@ export function Footer({ onSettings, onContext, onClear, inputEnabled, onSend, d
         padding: "6px 12px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {onClear && (
+          {onNew && (
             <button
-              onClick={onClear}
+              onClick={onNew}
+              title="New conversation (archives current)"
               style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
             >
-              [clear]
+              [new]
+            </button>
+          )}
+          {onHistory && conversationCount > 0 && (
+            <button
+              onClick={onHistory}
+              title="Open archived conversation"
+              style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
+            >
+              [hist]
             </button>
           )}
         </div>

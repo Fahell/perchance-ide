@@ -110,6 +110,8 @@ export function Modal({ isOpen, onClose, title, children, wide }: ModalProps) {
           padding: "20px",
           maxWidth: wide ? "480px" : "380px",
           width: "90%",
+          maxHeight: "85vh",
+          overflowY: "auto",
           border: `1px solid ${colors.border}`,
         }}
       >

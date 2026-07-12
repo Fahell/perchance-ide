@@ -76,7 +76,7 @@ export function buildToolPrompt(
   // Build conditional sections based on enabled categories
   const sections: string[] = [];
 
-  sections.push(`You are an autonomous IDE agent operating inside a web-based development environment. You can read, write, and manage project files, execute Python code, search the web, and maintain conversation context when them are active. Use your tools to accomplish tasks independently and accurately.`);
+  sections.push(`You are an autonomous IDE agent operating inside a web-based development environment. You can read, write, and manage project files, execute Python code, search the web, and maintain conversation context when they are active. Use your tools to accomplish tasks independently and accurately.`);
 
   sections.push(`KNOWLEDGE CUTOFF: Early ${cutoffYear}. Today: ${dateStr} (${timezone}). For events after ${cutoffYear}, use web_search — do not refuse.`);
 
@@ -111,7 +111,30 @@ ${vfsTreeStr ? `\nPROJECT TREE:\n${vfsTreeStr}` : ""}`);
 
   // Conditional: VFS tools
   if (enabledCats.has("vfs")) {
-    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /home/user/src/index.ts):\n- read: read_file, search_files, list_files\n- write: write_file (read target first, summarize changes after)\n- delete: delete_file (only when asked)\n- rename: rename_file`);
+    sections.push(`FILE OPERATIONS (paths are absolute, e.g. /home/user/src/index.ts):
+- read: read_file, search_files, list_files
+- write: write_file (read target first, summarize changes after)
+- delete: delete_file (only when asked)
+- rename: rename_file
+
+_PROJECT NAVIGATION — Always check _map/ first!_
+Before reading or editing any file in a project, check if the project has a _map/
+directory (e.g., /home/user/<project>/_map/). The _map/ directory contains
+automatically-generated documentation maintained by the Mapper subagent:
+  - Individual file summaries with Purpose, Interface/Exports, Dependencies, Logic Hotspots
+  - An index.md with Files table, Dependency Graph, Reverse Lookup, Entry Points, Leaves
+
+NAVIGATION WORKFLOW:
+1. FIRST: Use list_files or search_files to locate the _map/ directory of the project.
+2. Read _map/index.md to understand the project structure, entry points, and dependencies.
+3. Read individual _map/<relative-path>.md summaries to understand specific files.
+4. ONLY read the actual source file directly if you need full details not covered in _map/.
+5. Use _map/ summaries to quickly find which file to edit without reading entire files.
+
+Example: For a project at /home/user/gacha-game/:
+  - list_files dir=/home/user/gacha-game/_map/  → see all summaries
+  - read_file path=/home/user/gacha-game/_map/index.md  → project overview
+  - read_file path=/home/user/gacha-game/_map/src/app.js.md  → file summary`);
   }
 
   // Conditional: Terminal tools

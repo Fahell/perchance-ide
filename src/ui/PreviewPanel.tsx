@@ -4,6 +4,12 @@
  * Shows rendered HTML when a .html file is active in the editor.
  * Shows rendered Markdown when a .md file is active.
  * Auto-updates when the file content changes (via vfsVersion counter).
+ *
+ * For HTML previews, linked CSS and JS files are inlined automatically
+ * from the VFS so the preview works even with separate files:
+ *   <link href="style.css">  →  <style>/* content * /</style>
+ *   <script src="app.js"></script>  →  <script>/* content * /</script>
+ *
  * Features: refresh button, open-in-new-tab, error handling.
  */
 
@@ -11,7 +17,7 @@ import { marked } from "marked";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
-import { vfsRead } from "../vfs.js";
+import { PROJECT_ROOT, vfsRead } from "../vfs.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Props ──────────────────────────────────────────────────
@@ -25,6 +31,60 @@ function detectType(path: string): "html" | "md" | "other" {
   if (ext === "html" || ext === "htm") return "html";
   if (ext === "md" || ext === "markdown") return "md";
   return "other";
+}
+
+/**
+ * Inline external CSS and JS files referenced in HTML into the document.
+ * Resolves paths relative to the HTML file's location in the VFS.
+ * Supports: <link href="...">, <script src="...">
+ */
+function inlineResources(html: string, htmlPath: string): string {
+  const dir = htmlPath.substring(0, htmlPath.lastIndexOf("/") + 1);
+
+  // Helper: try to read a resolved VFS path, falling back to PROJECT_ROOT prefix
+  function tryRead(resolved: string): string | null {
+    let content = vfsRead(resolved);
+    if (content === null && !resolved.startsWith(PROJECT_ROOT)) {
+      content = vfsRead(PROJECT_ROOT + resolved);
+    }
+    return content;
+  }
+
+  // Inline <link href="..."> stylesheets
+  let result = html.replace(
+    /<link\s+[^>]*href="([^"]+)"[^>]*>/gi,
+    (_match, href: string) => {
+      // Skip absolute URLs and non-stylesheet links
+      if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//")) return _match;
+      const ext = href.split(".").pop()?.toLowerCase();
+      if (ext !== "css") return _match;
+
+      const resolved = href.startsWith("/") ? href : dir + href;
+      const content = tryRead(resolved);
+      if (content !== null) {
+        return `<style>\n${content}\n</style>`;
+      }
+      return _match;
+    }
+  );
+
+  // Inline <script src="...">
+  result = result.replace(
+    /<script\s+[^>]*src="([^"]+)"[^>]*>\s*<\/script>/gi,
+    (_match, src: string) => {
+      // Skip absolute URLs
+      if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("//")) return _match;
+
+      const resolved = src.startsWith("/") ? src : dir + src;
+      const content = tryRead(resolved);
+      if (content !== null) {
+        return `<script>\n${content}\n</script>`;
+      }
+      return _match;
+    }
+  );
+
+  return result;
 }
 
 function openInNewTab(content: string, type: "html" | "md") {
@@ -60,7 +120,9 @@ export function PreviewPanel({ locale }: PreviewPanelProps) {
     setError(null);
 
     if (type === "html" && iframeRef.current) {
-      iframeRef.current.srcdoc = content;
+      // Inline linked CSS/JS from VFS so the preview works with separate files
+      const inlined = inlineResources(content, activeFile);
+      iframeRef.current.srcdoc = inlined;
     } else if (type === "md") {
       // Markdown is rendered inside a content div below
     }
@@ -117,7 +179,10 @@ export function PreviewPanel({ locale }: PreviewPanelProps) {
             <button
               onClick={() => {
                 const content = vfsRead(activeFile);
-                if (content !== null) openInNewTab(content, type);
+                if (content !== null) {
+                  const inlined = type === "html" ? inlineResources(content, activeFile) : content;
+                  openInNewTab(inlined, type);
+                }
               }}
               title="Open in new tab"
               style={{ background: "none", border: "none", color: colors.textMuted, cursor: "pointer", fontSize: "11px", padding: "0 2px", lineHeight: 1 }}

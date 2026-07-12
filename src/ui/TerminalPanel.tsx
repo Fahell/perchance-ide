@@ -73,7 +73,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       // Connect to BrowserPod interactive terminal
       if (browserPodManager.isReady()) {
         try {
-          const podTerminal = await browserPodManager.createInteractiveTerminal(containerRef.current!);
+          await browserPodManager.createInteractiveTerminal(containerRef.current!);
           if (!disposed) {
             setConnecting(false);
             console.log("[TerminalPanel] Interactive terminal connected");
@@ -98,6 +98,8 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       disposed = true;
       setConnecting(false);
       setError(null);
+      // Dispose interactive shell + terminal so the next mount starts fresh
+      browserPodManager.disposeInteractiveTerminal().catch(() => {});
       // Clear container so next mount gets a fresh element for createDefaultTerminal
       if (containerRef.current) {
         containerRef.current.innerHTML = "";

@@ -78,5 +78,76 @@ export function getAllMessages(): ChatMessage[] {
   return [...messages];
 }
 
+// ─── Conversation Archive ────────────────────────────────────
+
+export interface ArchivedConversation {
+  id: string;
+  label: string;
+  timestamp: number;
+  messageCount: number;
+}
+
+const ARCHIVE_INDEX_KEY = "conversations:index";
+
+/**
+ * Save current messages as an archived conversation and clear the working set.
+ * Archives are stored in IndexedDB KV store.
+ */
+export async function archiveConversation(): Promise<string> {
+  const currentMessages = [...messages];
+  if (currentMessages.length === 0) return "";
+
+  const id = `conv-${Date.now()}`;
+  const firstMsg = currentMessages.find((m) => m.role === "user");
+  const label = firstMsg
+    ? firstMsg.content.slice(0, 60).replace(/\n/g, " ").trim() + (firstMsg.content.length > 60 ? "…" : "")
+    : "(empty)";
+
+  // Save messages to IndexedDB
+  const { dbKvSet } = await import("./db.js");
+  await dbKvSet(`conversation:${id}`, currentMessages);
+
+  // Update index
+  const index = await getArchivedConversations();
+  index.unshift({ id, label, timestamp: Date.now(), messageCount: currentMessages.length });
+  await dbKvSet(ARCHIVE_INDEX_KEY, index);
+
+  // Clear current messages
+  messages = [];
+
+  return id;
+}
+
+/** Get list of archived conversations. */
+export async function getArchivedConversations(): Promise<ArchivedConversation[]> {
+  const { dbKvGet } = await import("./db.js");
+  const raw = await dbKvGet<ArchivedConversation[]>(ARCHIVE_INDEX_KEY);
+  if (!Array.isArray(raw)) return [];
+  return raw;
+}
+
+/**
+ * Restore an archived conversation's messages, replacing the current working set.
+ */
+export async function restoreConversation(id: string): Promise<ChatMessage[]> {
+  const { dbKvGet } = await import("./db.js");
+  const archived = await dbKvGet<ChatMessage[]>(`conversation:${id}`);
+  if (!Array.isArray(archived)) return [];
+  messages = archived;
+  return [...messages];
+}
+
+/**
+ * Delete an archived conversation and update the index.
+ */
+export async function deleteArchivedConversation(id: string): Promise<void> {
+  const { dbKvDel, dbKvSet } = await import("./db.js");
+  await dbKvDel(`conversation:${id}`);
+
+  const index = await getArchivedConversations();
+  const updated = index.filter((c) => c.id !== id);
+  await dbKvSet(ARCHIVE_INDEX_KEY, updated);
+}
+
 export { dbClearMessages, dbGetAllMessages, dbGetMessageCount };
 

@@ -1,14 +1,10 @@
-import type { Locale } from "../i18n/index.js";
-import { formatAbsoluteTime, formatRelativeTime } from "./formatRelativeTime.js";
 import { colors, fonts } from "./theme.js";
 
 interface UserMessageProps {
   content: string;
-  locale?: Locale;
-  timestamp?: number;
 }
 
-export function UserMessage({ content, locale, timestamp }: UserMessageProps) {
+export function UserMessage({ content }: UserMessageProps) {
   return (
     <div style={{
       display: "flex",
@@ -27,14 +23,6 @@ export function UserMessage({ content, locale, timestamp }: UserMessageProps) {
         wordBreak: "break-word",
       }}>
         <div style={{ fontFamily: fonts.main }}>{content}</div>
-        {timestamp && (
-          <div
-            title={formatAbsoluteTime(timestamp, locale)}
-            style={{ color: colors.textMuted, fontSize: "8px", marginTop: "2px", fontFamily: fonts.mono }}
-          >
-            {formatRelativeTime(timestamp, locale)}
-          </div>
-        )}
       </div>
     </div>
   );

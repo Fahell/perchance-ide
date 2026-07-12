@@ -15,9 +15,10 @@
  */
 
 import { getPyodideStatus } from "./terminal/pyodide.js";
-import { checkToolRateLimit, getTool, validateToolArgs } from "./tools/index.js";
+import { checkToolRateLimit, getTool, getToolCategory, validateToolArgs } from "./tools/index.js";
 import { truncateOutput } from "./utils/truncate.js";
 import { vfsGetAll, vfsTree, PROJECT_ROOT } from "./vfs.js";
+import { ideStore } from "./store.js";
 
 // ─── Extracted Modules ──────────────────────────────────────
 import { buildToolPrompt, buildVfsTreeString } from "./agent/prompt-builder.js";
@@ -214,6 +215,28 @@ export async function agentLoop(
               result: undefined as string | undefined,
               error: undefined as string | undefined,
             };
+
+          // Check if tool's category is enabled in settings
+          const cat = getToolCategory(call.name);
+          const settings = ideStore.getState().settings;
+          const isEnabled = !cat || (
+            cat === "web" ? settings.toolWebEnabled :
+            cat === "context" ? settings.toolContextEnabled :
+            cat === "vfs" ? settings.toolVfsEnabled :
+            cat === "terminal" ? settings.toolTerminalEnabled :
+            (cat === "node" || cat === "shell") ? settings.toolNodeEnabled :
+            true
+          );
+          if (!isEnabled) {
+            const disabledMsg = `Tool "${call.name}" is disabled in settings. Enable "${cat}" tools to use it.`;
+            onToolError?.(call.name, call.args, disabledMsg);
+            return {
+              call,
+              status: "rejected" as const,
+              result: undefined as string | undefined,
+              error: disabledMsg,
+            };
+          }
 
           onStatus?.(`Using ${call.name}...`);
           onToolStart?.(call.name, call.args);

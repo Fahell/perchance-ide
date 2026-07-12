@@ -1,11 +1,11 @@
 /**
- * VFS I/O — serialization and deserialization of the virtual file system.
+ * VFS I/O — serialization, deserialization, and ZIP export of the virtual file system.
  *
- * Used by Download/Upload VFS (11.4) to export/import projects as JSON.
- * Format: { files: Array<{ path: string, content: string }> }
+ * Used by Download/Upload VFS to export/import projects as JSON.
+ * ZIP export uses zero external dependencies (pure ZIP format implementation).
  */
 
-import { vfsGetAll, type VfsEntry } from "../vfs.js";
+import { PROJECT_ROOT, vfsGetAll, type VfsEntry } from "../vfs.js";
 
 // ─── Types ──────────────────────────────────────────────────
 export interface ProjectFile {
@@ -17,21 +17,186 @@ export interface ProjectManifest {
   files: ProjectFile[];
 }
 
-// ─── Serialize ──────────────────────────────────────────────
 /**
- * Serialize the entire VFS into a pretty-printed JSON string.
- * Only file entries are included (directories are implicit).
+ * Strip PROJECT_ROOT prefix from a VFS path to get a clean project-relative path.
+ * E.g., "/home/user/src/index.ts" → "src/index.ts"
  */
-export function serializeProject(): string {
+function stripProjectRoot(path: string): string {
+  if (path.startsWith(PROJECT_ROOT)) {
+    return path.slice(PROJECT_ROOT.length + 1); // +1 for the trailing /
+  }
+  return path.replace(/^\/+/, "");
+}
+
+/**
+ * Determine if a path is a project file (under PROJECT_ROOT and not a system dir).
+ */
+function isProjectFile(path: string): boolean {
+  if (path === "/" || path === "/home" || path === PROJECT_ROOT) return false;
+  if (path.startsWith(PROJECT_ROOT)) return true;
+  return false;
+}
+
+/**
+ * Collect project files from the VFS, filtered to only include user project files
+ * under PROJECT_ROOT. Returns paths relative to the project root.
+ */
+export function getProjectFiles(prefix?: string): ProjectFile[] {
   const entries = vfsGetAll();
   const files: ProjectFile[] = [];
 
   for (const entry of entries) {
-    if (entry.type === "file") {
-      files.push({ path: entry.path, content: entry.content });
-    }
+    if (entry.type !== "file") continue;
+    if (!isProjectFile(entry.path)) continue;
+    if (prefix && !entry.path.startsWith(prefix)) continue;
+
+    files.push({
+      path: stripProjectRoot(entry.path),
+      content: entry.content,
+    });
   }
 
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// ─── ZIP Export ─────────────────────────────────────────────
+
+/**
+ * CRC-32 calculation for ZIP entries.
+ * Uses a precomputed lookup table for speed.
+ */
+function crc32(data: Uint8Array): number {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+    }
+  }
+  return ~crc >>> 0;
+}
+
+/** Encode a 32-bit integer as 4 little-endian bytes. */
+function u32Le(v: number): Uint8Array {
+  return new Uint8Array([v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF]);
+}
+
+/** Encode a 16-bit integer as 2 little-endian bytes. */
+function u16Le(v: number): Uint8Array {
+  return new Uint8Array([v & 0xFF, (v >>> 8) & 0xFF]);
+}
+
+/** Encode a string as UTF-8 bytes. */
+function encodeStr(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+
+/**
+ * Create a ZIP file (stored method, no compression) from an array of files.
+ * Uses the standard ZIP format with local file headers, central directory,
+ * and end-of-central-directory record.
+ */
+export function createZipBlob(files: ProjectFile[]): Blob {
+  const chunks: Uint8Array[] = [];
+  const centralEntries: Uint8Array[] = [];
+  let offset = 0;
+
+  const SIG_LOCAL = 0x04034b50;
+  const SIG_CENTRAL = 0x02014b50;
+  const SIG_EOCD = 0x06054b50;
+  const VERSION_NEEDED = 20; // 2.0
+  const METHOD_STORED = 0;   // No compression
+  const FLAG_UTF8 = 0x0800;  // Language encoding flag (UTF-8)
+
+  for (const file of files) {
+    const nameBytes = encodeStr(file.path);
+    const dataBytes = encodeStr(file.content);
+    const crc = crc32(dataBytes);
+    const size = dataBytes.length;
+
+    // Local file header
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const lh = new DataView(localHeader.buffer);
+    let pos = 0;
+    lh.setUint32(pos, SIG_LOCAL, true); pos += 4;  // signature
+    lh.setUint16(pos, VERSION_NEEDED, true); pos += 2; // version needed
+    lh.setUint16(pos, FLAG_UTF8, true); pos += 2;      // flags
+    lh.setUint16(pos, METHOD_STORED, true); pos += 2;   // compression method
+    lh.setUint16(pos, 0, true); pos += 2;               // mod time (unset)
+    lh.setUint16(pos, 0, true); pos += 2;               // mod date (unset)
+    lh.setUint32(pos, crc, true); pos += 4;             // crc-32
+    lh.setUint32(pos, size, true); pos += 4;             // compressed size
+    lh.setUint32(pos, size, true); pos += 4;             // uncompressed size
+    lh.setUint16(pos, nameBytes.length, true); pos += 2; // filename length
+    lh.setUint16(pos, 0, true); pos += 2;                // extra field length
+    localHeader.set(nameBytes, pos);                     // filename
+
+    chunks.push(localHeader);
+    chunks.push(dataBytes);
+
+    // Central directory entry
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const ch = new DataView(centralHeader.buffer);
+    pos = 0;
+    ch.setUint32(pos, SIG_CENTRAL, true); pos += 4;     // signature
+    ch.setUint16(pos, VERSION_NEEDED, true); pos += 2;   // version made by
+    ch.setUint16(pos, VERSION_NEEDED, true); pos += 2;   // version needed
+    ch.setUint16(pos, FLAG_UTF8, true); pos += 2;        // flags
+    ch.setUint16(pos, METHOD_STORED, true); pos += 2;    // compression method
+    ch.setUint16(pos, 0, true); pos += 2;                // mod time (unset)
+    ch.setUint16(pos, 0, true); pos += 2;                // mod date (unset)
+    ch.setUint32(pos, crc, true); pos += 4;              // crc-32
+    ch.setUint32(pos, size, true); pos += 4;              // compressed size
+    ch.setUint32(pos, size, true); pos += 4;              // uncompressed size
+    ch.setUint16(pos, nameBytes.length, true); pos += 2;  // filename length
+    ch.setUint16(pos, 0, true); pos += 2;                 // extra field length
+    ch.setUint16(pos, 0, true); pos += 2;                 // file comment length
+    ch.setUint16(pos, 0, true); pos += 2;                 // disk number start
+    ch.setUint16(pos, 0, true); pos += 2;                 // internal file attributes
+    ch.setUint32(pos, 0, true); pos += 4;                 // external file attributes
+    ch.setUint32(pos, offset, true); pos += 4;            // relative offset
+    centralHeader.set(nameBytes, pos);                    // filename
+
+    centralEntries.push(centralHeader);
+    offset += 30 + nameBytes.length + size;
+  }
+
+  const totalEntries = files.length;
+  const centralOffset = offset;
+  const centralSize = centralEntries.reduce((s, e) => s + e.length, 0);
+
+  // End of central directory record
+  const eocd = new Uint8Array(22);
+  const ed = new DataView(eocd.buffer);
+  let epos = 0;
+  ed.setUint32(epos, SIG_EOCD, true); epos += 4;       // signature
+  ed.setUint16(epos, 0, true); epos += 2;               // disk number
+  ed.setUint16(epos, 0, true); epos += 2;               // disk with central dir
+  ed.setUint16(epos, totalEntries, true); epos += 2;    // entries on this disk
+  ed.setUint16(epos, totalEntries, true); epos += 2;    // total entries
+  ed.setUint32(epos, centralSize, true); epos += 4;     // central directory size
+  ed.setUint32(epos, centralOffset, true); epos += 4;   // central directory offset
+  ed.setUint16(epos, 0, true); epos += 2;               // comment length
+
+  // Concatenate all chunks into a single Uint8Array to avoid BlobPart type conflicts
+  const allParts = [...chunks, ...centralEntries, eocd];
+  const totalSize = allParts.reduce((s, c) => s + c.length, 0);
+  const combined = new Uint8Array(totalSize);
+  let combinedPos = 0;
+  for (const part of allParts) {
+    combined.set(part, combinedPos);
+    combinedPos += part.length;
+  }
+  return new Blob([combined], { type: "application/zip" });
+}
+
+// ─── JSON Serialize (for import/upload) ─────────────────────
+/**
+ * Serialize project files into a pretty-printed JSON string.
+ * Only files under PROJECT_ROOT are included.
+ */
+export function serializeProject(): string {
+  const files = getProjectFiles();
   const manifest: ProjectManifest = { files };
   return JSON.stringify(manifest, null, 2);
 }

@@ -1,11 +1,14 @@
 /**
  * RightPanel — container with tabbed panels (Files, Outline, Preview, Output).
  *
+ * Uses a vertical icon sidebar on the left instead of horizontal tabs,
+ * saving vertical space and allowing more tabs in the future.
+ *
  * The File Explorer tab has been extracted to its own FileExplorer component
  * with full keyboard navigation, confirm modal, and memoized tree.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { t, type Locale } from "../i18n/index.js";
 import { ideStore, type IdeState } from "../store.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -14,6 +17,14 @@ import { OutlinePanel } from "./OutlinePanel.js";
 import { OutputPanel } from "./OutputPanel.js";
 import { PreviewPanel } from "./PreviewPanel.js";
 import { colors, fonts } from "./theme.js";
+
+// ─── Tab Definitions ────────────────────────────────────────
+const TABS = [
+  { id: "files" as const,   icon: "📁", labelKey: "fileExplorer.title", defaultLabel: "files" },
+  { id: "outline" as const, icon: "◎",  labelKey: "outline.title",      defaultLabel: "outline" },
+  { id: "preview" as const, icon: "▶",  labelKey: "preview.title",      defaultLabel: "preview" },
+  { id: "output" as const,  icon: ">_", labelKey: "output.title",       defaultLabel: "output" },
+];
 
 // ─── Types ──────────────────────────────────────────────────
 interface RightPanelProps {
@@ -28,62 +39,126 @@ export function RightPanel({ locale }: RightPanelProps) {
   }, []);
 
   const activeTab = store.rightPanelTab;
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  function handleTabClick(tabId: string) {
+    store.setRightPanelTab(tabId as any);
+  }
+
+  function handleKeyDown(e: KeyboardEvent, tabIdx: number) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      store.setRightPanelTab(TABS[tabIdx].id);
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const dir = e.key === "ArrowUp" ? -1 : 1;
+      const nextIdx = (tabIdx + dir + TABS.length) % TABS.length;
+      store.setRightPanelTab(TABS[nextIdx].id);
+      // Focus the next tab button
+      const buttons = sidebarRef.current?.querySelectorAll('[role="tab"]');
+      (buttons?.[nextIdx] as HTMLElement)?.focus();
+    }
+  }
+
+  const SIDEBAR_W = 32;
 
   return (
     <div style={{
-      display: "flex", flexDirection: "column", height: "100%",
+      display: "flex", height: "100%",
       background: colors.bg, borderLeft: `1px solid ${colors.border}`,
       fontFamily: fonts.mono, fontSize: "11px",
       color: colors.textSecondary, userSelect: "none",
     }}>
-      {/* Tab bar: Files | Outline | Preview | Output */}
-      <div role="tablist" aria-label="Panels" style={{
-        display: "flex", borderBottom: `1px solid ${colors.border}`,
-        flexShrink: 0,
-      }}>
-        {(["files", "outline", "preview", "output"] as const).map((tab, tabIdx) => {
-          const label = tab === "files"
-            ? (t("fileExplorer.title", locale) || "files")
-            : tab === "outline"
-              ? (t("outline.title", locale) || "outline")
-              : tab === "preview"
-                ? (t("preview.title", locale) || "preview")
-                : (t("output.title", locale) || "output");
+      {/* ── Vertical Icon Sidebar ── */}
+      <div ref={sidebarRef}
+        role="tablist"
+        aria-label="Panels"
+        style={{
+          width: `${SIDEBAR_W}px`,
+          minWidth: `${SIDEBAR_W}px`,
+          display: "flex",
+          flexDirection: "column",
+          borderRight: `1px solid ${colors.border}`,
+          background: colors.surface1,
+          padding: "4px 0",
+          flexShrink: 0,
+        }}>
+        {TABS.map((tab, tabIdx) => {
+          const isActive = activeTab === tab.id;
+          const isHovered = hoveredTab === tab.id;
+          const label = t(tab.labelKey as any, locale) || tab.defaultLabel;
           return (
-            <div key={tab}
-              role="tab"
-              aria-selected={activeTab === tab}
-              tabIndex={activeTab === tab ? 0 : -1}
-              onClick={() => store.setRightPanelTab(tab)}
-              onKeyDown={(e: KeyboardEvent) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault(); store.setRightPanelTab(tab);
-                }
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                  e.preventDefault();
-                  const tabs = ["files", "outline", "preview", "output"] as const;
-                  const dir = e.key === "ArrowLeft" ? -1 : 1;
-                  const nextIdx = (tabIdx + dir + tabs.length) % tabs.length;
-                  store.setRightPanelTab(tabs[nextIdx]);
-                }
-              }}
-              style={{
-                padding: "6px 10px", fontSize: "9px", textTransform: "uppercase",
-                letterSpacing: "0.5px", cursor: "pointer", userSelect: "none",
-                color: activeTab === tab ? colors.text : colors.textMuted,
-                background: activeTab === tab ? colors.bg : "transparent",
-                borderBottom: activeTab === tab ? `1px solid ${colors.text}` : "1px solid transparent",
-                marginBottom: "-1px",
-                transition: "color 0.15s, border-color 0.15s",
-              }}
-              onMouseEnter={(e) => { if (activeTab !== tab) (e.currentTarget as HTMLElement).style.color = colors.textHighlight; }}
-              onMouseLeave={(e) => { if (activeTab !== tab) (e.currentTarget as HTMLElement).style.color = colors.textMuted; }}>
-              {label}
+            <div key={tab.id} style={{ position: "relative" }}>
+              <div
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => handleTabClick(tab.id)}
+                onKeyDown={(e: KeyboardEvent) => handleKeyDown(e, tabIdx)}
+                onMouseEnter={() => setHoveredTab(tab.id)}
+                onMouseLeave={() => setHoveredTab(null)}
+                title={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "28px",
+                  height: "28px",
+                  margin: "2px auto",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontFamily: fonts.mono,
+                  color: isActive ? colors.text : colors.textMuted,
+                  background: isActive ? colors.surface2 : "transparent",
+                  border: "none",
+                  borderRadius: "4px",
+                  transition: "background 0.12s, color 0.12s",
+                  outline: "none",
+                }}
+                onFocus={(e) => { if (!isActive) e.currentTarget.style.background = colors.surface2; }}
+                onBlur={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+              >
+                {tab.icon}
+              </div>
+              {/* Active indicator line */}
+              {isActive && (
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  top: "6px",
+                  width: "2px",
+                  height: "20px",
+                  background: colors.text,
+                  borderRadius: "0 1px 1px 0",
+                }} />
+              )}
+              {/* Tooltip on hover */}
+              {isHovered && !isActive && (
+                <div style={{
+                  position: "absolute",
+                  left: "34px",
+                  top: "4px",
+                  zIndex: 100,
+                  background: colors.surface2,
+                  border: `1px solid ${colors.borderEmphasis}`,
+                  padding: "2px 8px",
+                  fontSize: "9px",
+                  fontFamily: fonts.mono,
+                  color: colors.textSecondary,
+                  whiteSpace: "nowrap",
+                  pointerEvents: "none",
+                }}>
+                  {label}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
+      {/* ── Panel Content ── */}
       {activeTab === "files" ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <ErrorBoundary name="FileExplorer">

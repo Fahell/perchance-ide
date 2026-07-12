@@ -81,6 +81,9 @@ class BrowserPodManager {
   /** Cache of last synced files for automatic re-sync after reconnection */
   private lastSyncedFiles: Array<{ path: string; content: string }> = [];
 
+  /** Interactive terminal handle — separate from the headless terminal used by agent tools */
+  private interactiveTerminal: Terminal | null = null;
+
   getStatus(): BrowserPodStatus {
     return this.status;
   }
@@ -594,18 +597,63 @@ class BrowserPodManager {
   }
 
   /**
-   * Create an interactive terminal attached to a DOM element.
-   * Uses createDefaultTerminal(element) — the official BrowserPod 2.0 API
-   * for interactive sessions with full stdin/stdout support via xterm.js.
+   * Create an interactive terminal attached to a DOM element AND start a shell.
+   *
+   * Uses createDefaultTerminal(element) for the xterm.js UI, then immediately
+   * starts /bin/bash connected to that terminal via pod.run().
+   *
+   * IMPORTANT: createDefaultTerminal ONLY creates the visual xterm.js instance.
+   * Without an explicit pod.run() with a shell binary, no shell process exists
+   * — typing just echoes to the terminal and Enter produces a newline.
    *
    * This is separate from the headless createCustomTerminal used by agent tools.
    * Both can coexist within the same Pod instance.
+   *
+   * Call disposeInteractiveTerminal() when the panel is hidden to clean up.
    */
-  async createInteractiveTerminal(element: HTMLElement): Promise<Terminal> {
+  async createInteractiveTerminal(element: HTMLElement): Promise<void> {
     if (!this.pod) {
       throw new Error("BrowserPod not initialized");
     }
-    return await this.pod.createDefaultTerminal(element);
+
+    // Dispose any previous interactive session
+    await this.disposeInteractiveTerminal();
+
+    // Step 1: Create the xterm.js UI (visual terminal)
+    this.interactiveTerminal = await this.pod.createDefaultTerminal(element);
+
+    // Step 2: Start a bash shell connected to that terminal
+    // pod.run() with the interactive terminal as the terminal option connects
+    // stdin/stdout of the process to the xterm.js instance.
+    // We use .catch() to avoid unhandled rejections since the shell process
+    // runs indefinitely until the pod is disposed or the user closes the terminal.
+    const runPromise = this.pod.run("/bin/bash", [], {
+      terminal: this.interactiveTerminal,
+      cwd: "/home/user",
+    });
+
+    // Fire-and-forget: the shell runs until the xterm is destroyed or pod is disposed.
+    // Errors (e.g., bash binary not found) are logged for debugging.
+    runPromise.then(() => {
+      console.log("[BrowserPod] Interactive shell exited");
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[BrowserPod] Interactive shell failed:", msg);
+      this.interactiveTerminal = null;
+    });
+  }
+
+  /**
+   * Dispose the interactive terminal and its shell process.
+   *
+   * The shell lifecycle is tied to the xterm instance created by
+   * createDefaultTerminal(). When the parent element's innerHTML is
+   * cleared (by TerminalPanel cleanup), the xterm is destroyed, which
+   * sends SIGHUP to the shell process, causing it to exit naturally.
+   * Safe to call even if no interactive terminal is active.
+   */
+  async disposeInteractiveTerminal(): Promise<void> {
+    this.interactiveTerminal = null;
   }
 
   /**
@@ -653,6 +701,7 @@ class BrowserPodManager {
     this.portalCallbacks.clear();
     this.setStatus("idle");
     this.config = null;
+    this.interactiveTerminal = null;
     console.log("[BrowserPod] Disposed");
   }
 
