@@ -60,8 +60,8 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
     colors.borderEmphasis;
 
   const badgeText =
-    toolCall.status === "success" ? "[ok]" :
-    toolCall.status === "error" ? "[!!]" : "";
+    toolCall.status === "success" ? "✓" :
+    toolCall.status === "error" ? "✗" : "";
 
   const query = toolCall.args.query ?? toolCall.args.url ?? "";
   const queryPreview = typeof query === "string"

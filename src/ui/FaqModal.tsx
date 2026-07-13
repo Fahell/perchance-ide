@@ -42,7 +42,7 @@ Agent Loop
 Tool Calls
   Multiple independent tool calls in one response run in parallel.
   Dependent tools must be called sequentially (wait for result, then call next).
-  The agent has timeout (5min) and cancellation (click [Cancel]) support.
+  The agent has timeout (5min) and cancellation (click Cancel) support.
 
 Context & Memory
   Last 5 messages always kept in full. Older ones summarized when >6K tokens.
@@ -137,15 +137,15 @@ Shell Tools
 
 Left Panel (Chat)
   Conversation with the agent. Messages, tool call cards, thinking indicator.
-  [new] archives current conversation and starts fresh.
-  [hist] opens archived conversations — reopen or delete old chats.
-  [=] opens Settings. [ctx] opens Context Viewer (token budget visualization).
+  new archives current conversation and starts fresh.
+  hist opens archived conversations — reopen or delete old chats.
+  = opens Settings. ctx opens Context Viewer (token budget visualization).
   Resizable width — drag the edge between chat and editor.
   Collapsible with the ◀ button.
 
 Middle (Editor)
   Tabbed CodeMirror editor. Status bar with line/column, dirty count.
-  [terminal] button toggles the interactive terminal panel.
+  terminal button toggles the interactive terminal panel.
   Auto-save status indicator.
 
 Right Panel
@@ -161,7 +161,7 @@ Modals
   {
     id: "settings",
     title: "Settings & Customization",
-    content: `Access via [=] button in chat footer or Ctrl+, shortcut.
+    content: `Access via the = button in chat footer or Ctrl+, shortcut.
 
 Language
   Choose from 5 locales: English, Português, Español, 日本語, 中文.
@@ -211,7 +211,7 @@ Best Practices
 
   Be specific in requests. The agent has tool-calling loop with 8 max iterations.
   Let the agent navigate first — it reads _map/ docs before touching files.
-  Use [new] to archive conversations when switching topics.
+  Use new to archive conversations when switching topics.
   Check the Context Viewer (Ctrl+I) to see token usage and memories.
   Download your project as ZIP (⬇ button) regularly as backup.`,
   },

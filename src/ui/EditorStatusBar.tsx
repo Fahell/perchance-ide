@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "preact/hooks";
 import { getLanguageLabel } from "../editor/langs.js";
+import { t, type Locale } from "../i18n/index.js";
 import { colors, fonts } from "./theme.js";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -33,7 +34,7 @@ export function dispatchStatusUpdate(info: StatusBarInfo, filename: string): voi
 }
 
 // ─── Component ──────────────────────────────────────────────
-export function EditorStatusBar() {
+export function EditorStatusBar({ locale }: { locale?: Locale }) {
   const [info, setInfo] = useState<StatusBarInfo>({
     line: 1,
     column: 1,
@@ -77,11 +78,11 @@ export function EditorStatusBar() {
       <div style={{ display: "flex", gap: "12px" }}>
         {info.selectionLength > 0 && (
           <span>
-            Sel {info.selectionLength}
+            {t("editorStatusBar.sel", locale)} {info.selectionLength}
           </span>
         )}
         <span>
-          Ln {info.line}, Col {info.column}
+          {t("editorStatusBar.ln", locale)} {info.line}, {t("editorStatusBar.col", locale)} {info.column}
         </span>
       </div>
     </div>

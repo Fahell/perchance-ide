@@ -570,7 +570,7 @@ export function CodeEditor({ locale }: CodeEditorProps) {
         )}
       </div>
       {/* Status bar — outside containerRef to avoid layout conflict with CM6 100% height */}
-      {activeFile && <EditorStatusBar />}
+      {activeFile && <EditorStatusBar locale={locale} />}
     </div>
   );
 }
@@ -716,7 +716,7 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
                 </span>
               )}
               <span onClick={(e: MouseEvent) => onClose(tab.path, e)}
-                title="Close tab (Ctrl+W)"
+                title={t("editor.closeTabTooltip", locale)}
                 style={{
                   color: colors.textMuted, fontSize: "12px",
                   padding: "2px 6px", cursor: "pointer", lineHeight: 1,
@@ -749,7 +749,7 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
             setCtxPath(null); setCtxPos(null);
             onClose(path, new MouseEvent("click"));
           }}>
-            close
+            {t("editor.closeTab", locale)}
           </CtxMenuItem>
           <CtxMenuItem onClick={() => {
             const path = ctxPath;
@@ -761,18 +761,18 @@ function TabBar({ tabs, activeFile, onSelect, onClose, onAdd, locale }: {
               }
             });
           }}>
-            close others
+            {t("editor.closeOthers", locale)}
           </CtxMenuItem>
           <CtxMenuItem onClick={() => {
             navigator.clipboard.writeText(ctxPath).catch(() => {});
             setCtxPath(null); setCtxPos(null);
           }}>
-            copy path
+            {t("editor.copyPath", locale)}
           </CtxMenuItem>
         </div>
       )}
 
-      <button onClick={onAdd} title="New file"
+      <button onClick={onAdd} title={t("editor.newFile", locale)}
         style={{
           background: "none", border: "none", color: colors.textMuted,
           padding: "4px 10px", fontSize: "14px", cursor: "pointer",

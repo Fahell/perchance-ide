@@ -158,7 +158,7 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
       boxSizing: "border-box",
       overflow: "hidden",
     }}>
-      <Header version={version} commit={commit} agentStatus={agentStatus} onFaq={() => setFaqOpen(true)} />
+      <Header version={version} commit={commit} agentStatus={agentStatus} locale={locale} onFaq={() => setFaqOpen(true)} />
 
       {/* ─── 3-Column Layout ──────────────────────────────── */}
       <div style={{
@@ -357,10 +357,10 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
       />
 
       {/* ── Conversation History Modal ── */}
-      <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title="Conversations">
+      <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={t("history.title", locale)}>
         {archivedConversations.length === 0 ? (
           <div style={{ color: colors.textMuted, fontSize: "10px", fontFamily: fonts.mono, textAlign: "center", padding: "20px" }}>
-            No archived conversations.
+            {t("history.empty", locale)}
           </div>
         ) : (
           <div style={{ maxHeight: "300px", overflowY: "auto" }}>
@@ -399,12 +399,12 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
                     fontFamily: fonts.mono,
                     marginTop: "2px",
                   }}>
-                    {conv.messageCount} messages · {new Date(conv.timestamp).toLocaleDateString()}
+                    {t("history.messages", locale).replace("{n}", String(conv.messageCount))} · {new Date(conv.timestamp).toLocaleDateString()}
                   </div>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
-                  title="Delete conversation"
+                  title={t("history.delete", locale)}
                   style={{
                     background: "none",
                     border: "none",
@@ -420,7 +420,7 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
                 >
-                  [del]
+                  del
                 </button>
               </div>
             ))}
@@ -440,7 +440,7 @@ export function AgentPanel({ version, commit, currentApiKey, locale: initialLoca
             cursor: "pointer",
           }}
         >
-          Close
+          {t("history.close", locale)}
         </button>
       </Modal>
     </div>

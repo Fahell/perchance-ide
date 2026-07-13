@@ -273,28 +273,50 @@ async function startAgent() {
   console.log("💡 [Agent] Type in the sidebar panel to start.");
 }
 
+// ─── Onboarding flag ────────────────────────────────────────
+const ONBOARDING_FLAG = "agent:onboarding_done";
+
+function isOnboardingDone(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_FLAG) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingDone(): void {
+  try {
+    localStorage.setItem(ONBOARDING_FLAG, "true");
+  } catch {
+    // Storage unavailable — ignore
+  }
+}
+
 // ─── Bootstrap ──────────────────────────────────────────────
 function bootstrap() {
   printBanner();
 
   if (!validateEnvironment()) return;
 
+  // Load saved Jina API key if exists (optional)
   const savedKey = loadApiKey();
   if (savedKey) {
     setApiKey(savedKey);
     console.log("🔑 [Agent] API key loaded from localStorage");
+  }
+
+  const done = isOnboardingDone();
+  if (done) {
+    // Onboarding already completed — go straight to IDE
     startAgent();
   } else {
-    console.log("🔑 [Agent] No API key found — showing setup screen");
+    console.log("👋 [Agent] First launch — showing onboarding guide");
     renderSetup(document.body, {
       version: __VERSION__ + "+" + __COMMIT__,
       locale: loadLocale(),
-      onSetupComplete: startAgent,
-      validateApiKey,
-      saveApiKey: (key: string) => {
-        saveApiKey(key);
-        setApiKey(key);
-        console.log("🔑 [Agent] API key saved to localStorage");
+      onSetupComplete: () => {
+        markOnboardingDone();
+        startAgent();
       },
     });
   }

@@ -1,6 +1,15 @@
+/**
+ * SettingsModal — IDE settings with tool toggles and inline API key configuration.
+ *
+ * API key inputs are placed directly next to their corresponding tool toggles,
+ * with a "test connection" button that validates the key before activation.
+ */
+
 import { useEffect, useState } from "preact/hooks";
 import { LOCALES, LOCALE_LABELS, t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
+import { validateApiKey } from "../tools/web-search.js";
+import { validateBrowserPodKey } from "../browserpod/manager.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 
@@ -77,48 +86,104 @@ function ToggleRow({ label, description, value, onChange, locale }: ToggleRowPro
   );
 }
 
-interface InputRowProps {
+interface KeyRowProps {
   label: string;
-  description: string;
   value: string;
   placeholder: string;
   maskedPreview: string;
-  onInput: (v: string) => void;
+  onValueChange: (v: string) => void;
+  onTest: (key: string) => Promise<boolean>;
+  locale: Locale;
 }
 
-function InputRow({ label, description, value, placeholder, maskedPreview, onInput }: InputRowProps) {
+function KeyRow({ label, value, placeholder, maskedPreview, onValueChange, onTest, locale }: KeyRowProps) {
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+
+  async function handleTest() {
+    if (!value.trim()) {
+      setTestStatus("error");
+      return;
+    }
+    setTestStatus("testing");
+    const ok = await onTest(value.trim());
+    setTestStatus(ok ? "success" : "error");
+  }
+
+  const statusColor = testStatus === "success" ? colors.statusDone
+    : testStatus === "error" ? "#e8a84c"
+    : colors.textMuted;
+
   return (
-    <div style={{ marginBottom: "10px" }}>
-      <label style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
+    <div style={{
+      padding: "8px 12px 10px",
+      marginTop: "-6px",
+      marginBottom: "10px",
+      background: colors.surface2,
+      border: `1px solid ${colors.border}`,
+      borderTop: "none",
+    }}>
+      <label style={{
+        color: colors.textMuted, fontSize: "9px", display: "block",
+        marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase",
+      }}>
         {label}
       </label>
-      <input
-        type="password"
-        value={value}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-        placeholder={placeholder}
-        aria-label={label}
-        style={{
-          width: "100%",
-          padding: "8px 10px",
-          border: `1px solid ${colors.border}`,
-          background: colors.surface1,
-          color: colors.text,
-          fontSize: "11px",
-          fontFamily: fonts.mono,
-          boxSizing: "border-box",
-          outline: "none",
-          transition: "border-color 0.15s",
-        }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
-        onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
-      />
-      <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
-        {description}
+      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <input
+          type="password"
+          value={value}
+          onInput={(e) => { onValueChange((e.target as HTMLInputElement).value); setTestStatus("idle"); }}
+          placeholder={placeholder}
+          aria-label={label}
+          style={{
+            flex: 1,
+            padding: "6px 8px",
+            border: `1px solid ${colors.border}`,
+            background: colors.inputBg,
+            color: colors.text,
+            fontSize: "10px",
+            fontFamily: fonts.mono,
+            outline: "none",
+            transition: "border-color 0.15s",
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+          onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+        />
+        <button
+          onClick={handleTest}
+          disabled={testStatus === "testing"}
+          style={{
+            padding: "6px 10px",
+            border: `1px solid ${testStatus === "success" ? colors.textSecondary : colors.text}`,
+            background: "transparent",
+            color: testStatus === "testing" ? colors.textMuted : colors.text,
+            fontSize: "10px",
+            fontFamily: fonts.mono,
+            cursor: testStatus === "testing" ? "default" : "pointer",
+            whiteSpace: "nowrap",
+            transition: "opacity 0.15s",
+            opacity: testStatus === "testing" ? 0.6 : 1,
+          }}
+        >
+          {testStatus === "testing" ? t("settings.validating", locale)
+            : testStatus === "success" ? t("settings.validate.success", locale)
+            : t("settings.validate", locale)}
+        </button>
       </div>
       {maskedPreview && (
-        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "2px", fontFamily: fonts.mono, opacity: 0.7 }}>
-          current: {maskedPreview}
+        <div style={{
+          color: colors.textMuted, fontSize: "9px", marginTop: "4px",
+          fontFamily: fonts.mono, opacity: 0.7,
+        }}>
+          {t("settings.apiKey.current", locale).replace("{key}", maskedPreview)}
+        </div>
+      )}
+      {testStatus === "error" && (
+        <div style={{
+          color: statusColor, fontSize: "9px", marginTop: "4px",
+          fontFamily: fonts.mono,
+        }}>
+          {t("settings.validate.error", locale)}
         </div>
       )}
     </div>
@@ -149,9 +214,7 @@ function SectionHeader({ label }: { label: string }) {
 // ─── Main Component ────────────────────────────────────────
 
 export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onLocaleChange }: SettingsModalProps) {
-  const [key, setKey] = useState(currentKey);
-  const [msg, setMsg] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [jinaKey, setJinaKey] = useState(currentKey);
 
   // Sync local state from store on open
   const settings = ideStore.getState().settings;
@@ -184,12 +247,10 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
     });
   }, [isOpen]);
 
-  // Reset API key state when modal opens
+  // Reset Jina key state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setKey(currentKey);
-      setMsg("");
-      setSaved(false);
+      setJinaKey(currentKey);
     }
   }, [isOpen, currentKey]);
 
@@ -197,25 +258,28 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
     ideStore.getState().updateSettings({ [field]: value } as any);
   }
 
-  async function handleSave() {
-    if (!key.trim()) {
-      setMsg(t("settings.apiKey.error.empty", locale));
-      setSaved(false);
-      return;
-    }
-    setMsg(t("settings.apiKey.validating", locale));
-    setSaved(false);
-    const ok = await onSave(key.trim());
+  /** Test Jina key — validate and persist only on success */
+  async function testJinaKey(key: string): Promise<boolean> {
+    const ok = await validateApiKey(key);
+    // If valid, also persist it so web tools work immediately
     if (ok) {
-      setMsg(t("settings.apiKey.saved", locale));
-      setSaved(true);
-    } else {
-      setMsg(t("settings.apiKey.error.invalid", locale));
-      setSaved(false);
+      await onSave(key);
+      setJinaKey(key);
     }
+    return ok;
   }
 
-  const maskedKey = currentKey
+  /** Test BrowserPod key — validate and persist only on success */
+  async function testBrowserPodKey(key: string): Promise<boolean> {
+    const ok = await validateBrowserPodKey(key);
+    if (ok) {
+      setBpKey(key);
+      updateSetting("browserPodApiKey", key);
+    }
+    return ok;
+  }
+
+  const maskedJinaKey = currentKey
     ? currentKey.slice(0, 8) + "..." + currentKey.slice(-4)
     : "";
 
@@ -387,6 +451,7 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
       {/* ── AGENT TOOLS ────────────────────────────────── */}
       <SectionHeader label={t("settings.section.tools", locale)} />
 
+      {/* ── Web Tools + Jina Key ── */}
       <ToggleRow
         label={t("settings.tools.web", locale)}
         description={t("settings.tools.web.desc", locale)}
@@ -394,6 +459,18 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         onChange={(v) => { setToolWeb(v); updateSetting("toolWebEnabled", v); }}
         locale={locale}
       />
+      {toolWeb && (
+        <KeyRow
+          label={t("settings.apiKey", locale)}
+          value={jinaKey}
+          placeholder={t("settings.apiKey.placeholder", locale)}
+          maskedPreview={maskedJinaKey}
+          onValueChange={(v) => { setJinaKey(v); }}
+          onTest={testJinaKey}
+          locale={locale}
+        />
+      )}
+
       <ToggleRow
         label={t("settings.tools.context", locale)}
         description={t("settings.tools.context.desc", locale)}
@@ -415,6 +492,8 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         onChange={(v) => { setToolTerm(v); updateSetting("toolTerminalEnabled", v); }}
         locale={locale}
       />
+
+      {/* ── Node.js Tools + BrowserPod Key ── */}
       <ToggleRow
         label={t("settings.tools.node", locale)}
         description={t("settings.tools.node.desc", locale)}
@@ -422,93 +501,17 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         onChange={(v) => { setToolNode(v); updateSetting("toolNodeEnabled", v); }}
         locale={locale}
       />
-
-      {/* ── API KEYS ───────────────────────────────────── */}
-      <SectionHeader label={t("settings.section.keys", locale)} />
-
-      <InputRow
-        label={t("settings.browserPodApiKey", locale)}
-        description={t("settings.browserPodApiKey.current", locale).replace("{key}", maskedBpKey || "none")}
-        value={bpKey}
-        placeholder={t("settings.browserPodApiKey.placeholder", locale)}
-        maskedPreview=""
-        onInput={(v) => { setBpKey(v); updateSetting("browserPodApiKey", v); }}
-      />
-
-      <div
-        style={{
-          padding: "10px 12px",
-          marginBottom: "10px",
-          background: colors.surface2,
-          border: `1px solid ${colors.border}`,
-          transition: "border-color 0.15s",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
-      >
-        <label htmlFor="settings-api-key" style={{ color: colors.textMuted, fontSize: "9px", display: "block", marginBottom: "4px", fontFamily: fonts.mono, letterSpacing: "1px", textTransform: "uppercase" }}>
-          {t("settings.apiKey", locale)}
-        </label>
-        <input
-          id="settings-api-key"
-          type="password"
-          value={key}
-          onInput={(e) => { setKey((e.target as HTMLInputElement).value); setSaved(false); setMsg(""); }}
-          placeholder={t("settings.apiKey.placeholder", locale)}
-          aria-label={t("settings.apiKey", locale)}
-          style={{
-            width: "100%",
-            padding: "8px 10px",
-            border: `1px solid ${colors.border}`,
-            background: colors.surface1,
-            color: colors.text,
-            fontSize: "11px",
-            fontFamily: fonts.mono,
-            boxSizing: "border-box",
-            outline: "none",
-            transition: "border-color 0.15s",
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
-          onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      {toolNode && (
+        <KeyRow
+          label={t("settings.browserPodApiKey", locale)}
+          value={bpKey}
+          placeholder={t("settings.browserPodApiKey.placeholder", locale)}
+          maskedPreview={maskedBpKey}
+          onValueChange={(v) => { setBpKey(v); updateSetting("browserPodApiKey", v); }}
+          onTest={testBrowserPodKey}
+          locale={locale}
         />
-        {maskedKey && (
-          <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono, opacity: 0.7 }}>
-            {t("settings.apiKey.current", locale).replace("{key}", maskedKey)}
-          </div>
-        )}
-
-        {/* Save button + message inline */}
-        <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "center" }}>
-          <button
-            onClick={handleSave}
-            style={{
-              padding: "6px 12px",
-              border: `1px solid ${saved ? colors.textSecondary : colors.text}`,
-              background: "transparent",
-              color: saved ? colors.textSecondary : colors.text,
-              fontSize: "10px",
-              fontFamily: fonts.mono,
-              cursor: "pointer",
-              letterSpacing: "0.5px",
-              transition: "opacity 0.15s",
-              opacity: 1,
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.7")}
-            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
-          >
-            {saved ? t("settings.apiKey.saved", locale) : t("settings.save", locale)}
-          </button>
-          {msg && !saved && (
-            <span style={{
-              fontSize: "10px",
-              color: msg.includes("[ok]") ? colors.textSecondary : msg.includes("[!!]") ? colors.statusError : colors.textMuted,
-              fontFamily: fonts.mono,
-            }}>
-              {msg}
-            </span>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Close button */}
       <button
@@ -516,6 +519,7 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         style={{
           width: "100%",
           padding: "8px",
+          marginTop: "8px",
           border: `1px solid ${colors.border}`,
           background: "transparent",
           color: colors.textMuted,

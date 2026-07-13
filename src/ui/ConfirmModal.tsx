@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef } from "preact/hooks";
+import { t, type Locale } from "../i18n/index.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 
@@ -17,6 +18,7 @@ interface ConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  locale?: Locale;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -25,9 +27,10 @@ export function ConfirmModal({
   isOpen,
   title,
   message,
-  confirmLabel = "confirm",
-  cancelLabel = "cancel",
+  confirmLabel,
+  cancelLabel,
   danger = false,
+  locale,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -66,7 +69,7 @@ export function ConfirmModal({
             cursor: "pointer",
           }}
         >
-          {cancelLabel}
+          {cancelLabel ?? t("confirmModal.cancel", locale)}
         </button>
         <button
           ref={confirmRef}
@@ -81,7 +84,7 @@ export function ConfirmModal({
             cursor: "pointer",
           }}
         >
-          {confirmLabel}
+          {confirmLabel ?? t("confirmModal.confirm", locale)}
         </button>
       </div>
     </Modal>

@@ -20,6 +20,29 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 type Translations = Record<string, string>;
 
 const en: Translations = {
+  // Context menu
+  "editor.closeTab": "close",
+  "editor.closeOthers": "close others",
+  "editor.copyPath": "copy path",
+  "editor.closeTabTooltip": "Close tab (Ctrl+W)",
+  "editor.newFile": "New file",
+
+  // Editor status bar
+  "editorStatusBar.sel": "Sel",
+  "editorStatusBar.ln": "Ln",
+  "editorStatusBar.col": "Col",
+
+  // Confirm modal
+  "confirmModal.confirm": "confirm",
+  "confirmModal.cancel": "cancel",
+
+  // History (conversations)
+  "history.title": "Conversations",
+  "history.empty": "No archived conversations.",
+  "history.messages": "{n} messages",
+  "history.delete": "Delete conversation",
+  "history.close": "Close",
+
   // Settings
   "settings.title": "settings",
   "settings.section.editor": "editor",
@@ -28,10 +51,10 @@ const en: Translations = {
   "settings.apiKey": "jina api key",
   "settings.apiKey.placeholder": "jina_xxx...",
   "settings.apiKey.current": "current: {key}",
-  "settings.apiKey.error.empty": "[!!] insert a key",
-  "settings.apiKey.validating": "[...] validating",
-  "settings.apiKey.saved": "[ok] saved",
-  "settings.apiKey.error.invalid": "[!!] invalid key",
+  "settings.apiKey.error.empty": "insert a key",
+  "settings.apiKey.validating": "validating...",
+  "settings.apiKey.saved": "saved",
+  "settings.apiKey.error.invalid": "invalid key",
   "settings.language": "language",
   "settings.toggle.on": "on",
   "settings.toggle.off": "off",
@@ -57,7 +80,14 @@ const en: Translations = {
   "settings.browserPodApiKey.placeholder": "bp_xxx...",
   "settings.browserPodApiKey.current": "current: {key}",
   "settings.save": "save",
+  "settings.validate": "test connection",
+  "settings.validating": "testing...",
+  "settings.validate.success": "connection ok",
+  "settings.validate.error": "connection failed",
   "settings.close": "close",
+
+  // Header
+  "header.title": "agent",
 
   // Panel
   "panel.ready": "ready",
@@ -72,6 +102,19 @@ const en: Translations = {
 
   // Tool cards
   "tool.args": "args:",
+
+  // Onboarding
+  "onboarding.title": "welcome",
+  "onboarding.greeting": "Welcome to Agent Perchance",
+  "onboarding.description": "An AI-powered IDE that runs entirely in your browser. Code with the help of an autonomous agent — create, edit, and manage projects through natural conversation.",
+  "onboarding.whatIs": "what is this?",
+  "onboarding.features.editor": "Full code editor with syntax highlighting for 10+ languages, file management, and live preview",
+  "onboarding.features.agent": "AI agent that can read, write, edit files, run Python, search the web, and execute shell commands",
+  "onboarding.features.python": "Python execution in-browser via Pyodide (numpy, pandas, and more)",
+  "onboarding.keys": "optional api keys",
+  "onboarding.keys.desc": "Web search requires a free Jina AI API key. Node.js tools require a BrowserPod API key. Both can be configured later in Settings.",
+  "onboarding.start": "get started",
+  "onboarding.versionInfo": "v{version} — everything runs client-side. Your files are saved in your browser.",
 
   // Setup
   "setup.title": "agent",
@@ -97,6 +140,7 @@ const en: Translations = {
 
   // Footer
   "footer.waiting": "waiting...",
+  "footer.processing": "Processing...",
   "footer.placeholder": "> _",
   "suggests.0": "try: create a new file",
   "suggests.1": "try: write some code",
@@ -186,6 +230,48 @@ const en: Translations = {
 };
 
 const ptBR: Translations = {
+  // Onboarding
+  "onboarding.title": "boas-vindas",
+  "onboarding.greeting": "Bem-vindo ao Agent Perchance",
+  "onboarding.description": "Um IDE com IA que roda inteiramente no seu navegador. Programe com a ajuda de um agente autônomo — crie, edite e gerencie projetos através de conversa natural.",
+  "onboarding.whatIs": "o que é isto?",
+  "onboarding.features.editor": "Editor de código completo com syntax highlighting para 10+ linguagens, gerenciamento de arquivos e preview ao vivo",
+  "onboarding.features.agent": "Agente de IA que pode ler, escrever, editar arquivos, executar Python, buscar na web e executar comandos shell",
+  "onboarding.features.python": "Execução Python no navegador via Pyodide (numpy, pandas e mais)",
+  "onboarding.keys": "chaves api opcionais",
+  "onboarding.keys.desc": "Busca web requer uma chave Jina AI gratuita. Ferramentas Node.js requerem uma chave BrowserPod. Ambas podem ser configuradas depois nas Configurações.",
+  "onboarding.start": "começar",
+  "onboarding.versionInfo": "v{version} — tudo roda no cliente. Seus arquivos são salvos no seu navegador.",
+
+  // Header
+  "header.title": "agente",
+
+  // Context menu
+  "editor.closeTab": "fechar",
+  "editor.closeOthers": "fechar outros",
+  "editor.copyPath": "copiar caminho",
+  "editor.closeTabTooltip": "Fechar aba (Ctrl+W)",
+  "editor.newFile": "Novo arquivo",
+
+  // Editor status bar
+  "editorStatusBar.sel": "Sel",
+  "editorStatusBar.ln": "Ln",
+  "editorStatusBar.col": "Col",
+
+  // Confirm modal
+  "confirmModal.confirm": "confirmar",
+  "confirmModal.cancel": "cancelar",
+
+  // History (conversations)
+  "history.title": "Conversas",
+  "history.empty": "Nenhuma conversa arquivada.",
+  "history.messages": "{n} mensagens",
+  "history.delete": "Excluir conversa",
+  "history.close": "Fechar",
+
+  // Footer
+  "footer.processing": "Processando...",
+
   // Settings
   "settings.title": "configurações",
   "settings.section.editor": "editor",
@@ -194,10 +280,10 @@ const ptBR: Translations = {
   "settings.apiKey": "chave api jina",
   "settings.apiKey.placeholder": "jina_xxx...",
   "settings.apiKey.current": "atual: {key}",
-  "settings.apiKey.error.empty": "[!!] insira uma chave",
-  "settings.apiKey.validating": "[...] validando",
-  "settings.apiKey.saved": "[ok] salva",
-  "settings.apiKey.error.invalid": "[!!] chave inválida",
+  "settings.apiKey.error.empty": "insira uma chave",
+  "settings.apiKey.validating": "validando...",
+  "settings.apiKey.saved": "salva",
+  "settings.apiKey.error.invalid": "chave inválida",
   "settings.language": "idioma",
   "settings.toggle.on": "ligado",
   "settings.toggle.off": "desligado",
@@ -223,6 +309,10 @@ const ptBR: Translations = {
   "settings.browserPodApiKey.placeholder": "bp_xxx...",
   "settings.browserPodApiKey.current": "atual: {key}",
   "settings.save": "salvar",
+  "settings.validate": "testar conexão",
+  "settings.validating": "testando...",
+  "settings.validate.success": "conexão ok",
+  "settings.validate.error": "conexão falhou",
   "settings.close": "fechar",
 
   // Panel
@@ -351,6 +441,49 @@ const ptBR: Translations = {
 };
 
 const es: Translations = {
+  // Onboarding
+  "onboarding.title": "bienvenido",
+  "onboarding.greeting": "Bienvenido a Agent Perchance",
+  "onboarding.description": "Un IDE con IA que funciona completamente en tu navegador. Programa con la ayuda de un agente autónomo — crea, edita y gestiona proyectos mediante conversación natural.",
+  "onboarding.whatIs": "¿qué es esto?",
+  "onboarding.features.editor": "Editor de código completo con resaltado de sintaxis para 10+ lenguajes, gestión de archivos y vista previa en vivo",
+  "onboarding.features.agent": "Agente de IA que puede leer, escribir, editar archivos, ejecutar Python, buscar en la web y ejecutar comandos shell",
+  "onboarding.features.python": "Ejecución de Python en el navegador via Pyodide (numpy, pandas y más)",
+  "onboarding.keys": "claves api opcionales",
+  "onboarding.keys.desc": "La búsqueda web requiere una clave Jina AI gratuita. Las herramientas Node.js requieren una clave BrowserPod. Ambas se pueden configurar más tarde en Ajustes.",
+  "onboarding.start": "comenzar",
+  "onboarding.versionInfo": "v{version} — todo funciona del lado del cliente. Tus archivos se guardan en tu navegador.",
+
+  // Header
+  "header.title": "agente",
+
+  // Context menu
+  "editor.closeTab": "cerrar",
+  "editor.closeOthers": "cerrar otros",
+  "editor.copyPath": "copiar ruta",
+  "editor.closeTabTooltip": "Cerrar pestaña (Ctrl+W)",
+  "editor.newFile": "Nuevo archivo",
+
+  // Editor status bar
+  "editorStatusBar.sel": "Sel",
+  "editorStatusBar.ln": "Ln",
+  "editorStatusBar.col": "Col",
+
+  // Confirm modal
+  "confirmModal.confirm": "confirmar",
+  "confirmModal.cancel": "cancelar",
+
+  // History (conversations)
+  "history.title": "Conversaciones",
+  "history.empty": "No hay conversaciones archivadas.",
+  "history.messages": "{n} mensajes",
+  "history.delete": "Eliminar conversación",
+  "history.close": "Cerrar",
+
+  // Footer
+  "footer.processing": "Procesando...",
+
+  // Settings
   "settings.title": "configuración",
   "settings.section.editor": "editor",
   "settings.section.tools": "herramientas del agente",
@@ -358,10 +491,10 @@ const es: Translations = {
   "settings.apiKey": "clave api jina",
   "settings.apiKey.placeholder": "jina_xxx...",
   "settings.apiKey.current": "actual: {key}",
-  "settings.apiKey.error.empty": "[!!] ingrese una clave",
-  "settings.apiKey.validating": "[...] validando",
-  "settings.apiKey.saved": "[ok] guardada",
-  "settings.apiKey.error.invalid": "[!!] clave inválida",
+  "settings.apiKey.error.empty": "ingrese una clave",
+  "settings.apiKey.validating": "validando...",
+  "settings.apiKey.saved": "guardada",
+  "settings.apiKey.error.invalid": "clave inválida",
   "settings.language": "idioma",
   "settings.toggle.on": "sí",
   "settings.toggle.off": "no",
@@ -387,6 +520,10 @@ const es: Translations = {
   "settings.browserPodApiKey.placeholder": "bp_xxx...",
   "settings.browserPodApiKey.current": "actual: {key}",
   "settings.save": "guardar",
+  "settings.validate": "probar conexión",
+  "settings.validating": "probando...",
+  "settings.validate.success": "conexión ok",
+  "settings.validate.error": "conexión fallida",
   "settings.close": "cerrar",
   "panel.ready": "listo",
   "response.label": "agente",
@@ -502,6 +639,49 @@ const es: Translations = {
 };
 
 const ja: Translations = {
+  // Onboarding
+  "onboarding.title": "ようこそ",
+  "onboarding.greeting": "Agent Perchanceへようこそ",
+  "onboarding.description": "ブラウザ上で完全に動作するAI搭載IDEです。自律エージェントの助けを借りて、自然な会話を通じてプロジェクトを作成、編集、管理できます。",
+  "onboarding.whatIs": "これは何ですか？",
+  "onboarding.features.editor": "10以上の言語に対応したコードエディタ、ファイル管理、ライブプレビュー",
+  "onboarding.features.agent": "ファイルの読み書き・編集、Python実行、Web検索、シェルコマンド実行が可能なAIエージェント",
+  "onboarding.features.python": "Pyodide経由でブラウザ内でPython実行（numpy、pandasなど）",
+  "onboarding.keys": "オプションのAPIキー",
+  "onboarding.keys.desc": "Web検索には無料のJina AI APIキーが必要です。Node.jsツールにはBrowserPod APIキーが必要です。どちらも後で設定から構成できます。",
+  "onboarding.start": "はじめる",
+  "onboarding.versionInfo": "v{version} — すべてクライアントサイドで動作。ファイルはブラウザに保存されます。",
+
+  // Header
+  "header.title": "エージェント",
+
+  // Context menu
+  "editor.closeTab": "閉じる",
+  "editor.closeOthers": "他を閉じる",
+  "editor.copyPath": "パスをコピー",
+  "editor.closeTabTooltip": "タブを閉じる (Ctrl+W)",
+  "editor.newFile": "新規ファイル",
+
+  // Editor status bar
+  "editorStatusBar.sel": "Sel",
+  "editorStatusBar.ln": "行",
+  "editorStatusBar.col": "列",
+
+  // Confirm modal
+  "confirmModal.confirm": "確認",
+  "confirmModal.cancel": "キャンセル",
+
+  // History (conversations)
+  "history.title": "会話",
+  "history.empty": "アーカイブされた会話はありません。",
+  "history.messages": "{n} メッセージ",
+  "history.delete": "会話を削除",
+  "history.close": "閉じる",
+
+  // Footer
+  "footer.processing": "処理中...",
+
+  // Settings
   "settings.title": "設定",
   "settings.section.editor": "エディタ",
   "settings.section.tools": "エージェントツール",
@@ -509,10 +689,10 @@ const ja: Translations = {
   "settings.apiKey": "Jina APIキー",
   "settings.apiKey.placeholder": "jina_xxx...",
   "settings.apiKey.current": "現在: {key}",
-  "settings.apiKey.error.empty": "[!!] キーを入力してください",
-  "settings.apiKey.validating": "[...] 検証中",
-  "settings.apiKey.saved": "[ok] 保存済み",
-  "settings.apiKey.error.invalid": "[!!] 無効なキー",
+  "settings.apiKey.error.empty": "キーを入力してください",
+  "settings.apiKey.validating": "検証中...",
+  "settings.apiKey.saved": "保存済み",
+  "settings.apiKey.error.invalid": "無効なキー",
   "settings.language": "言語",
   "settings.toggle.on": "オン",
   "settings.toggle.off": "オフ",
@@ -538,6 +718,10 @@ const ja: Translations = {
   "settings.browserPodApiKey.placeholder": "bp_xxx...",
   "settings.browserPodApiKey.current": "現在: {key}",
   "settings.save": "保存",
+  "settings.validate": "接続テスト",
+  "settings.validating": "テスト中...",
+  "settings.validate.success": "接続OK",
+  "settings.validate.error": "接続失敗",
   "settings.close": "閉じる",
   "panel.ready": "準備完了",
   "response.label": "エージェント",
@@ -654,6 +838,49 @@ const ja: Translations = {
 };
 
 const zh: Translations = {
+  // Onboarding
+  "onboarding.title": "欢迎",
+  "onboarding.greeting": "欢迎使用 Agent Perchance",
+  "onboarding.description": "一个完全在浏览器中运行的AI驱动IDE。在自主Agent的帮助下，通过自然对话创建、编辑和管理项目。",
+  "onboarding.whatIs": "这是什么？",
+  "onboarding.features.editor": "支持10+语言的代码编辑器、文件管理和实时预览",
+  "onboarding.features.agent": "可以读写编辑文件、运行Python、搜索网络和执行Shell命令的AI Agent",
+  "onboarding.features.python": "通过Pyodide在浏览器中运行Python（支持numpy、pandas等）",
+  "onboarding.keys": "可选的API密钥",
+  "onboarding.keys.desc": "网络搜索需要免费的Jina AI API密钥。Node.js工具需要BrowserPod API密钥。两者都可以稍后在设置中配置。",
+  "onboarding.start": "开始",
+  "onboarding.versionInfo": "v{version} — 一切在客户端运行。您的文件保存在浏览器中。",
+
+  // Header
+  "header.title": "代理",
+
+  // Context menu
+  "editor.closeTab": "关闭",
+  "editor.closeOthers": "关闭其他",
+  "editor.copyPath": "复制路径",
+  "editor.closeTabTooltip": "关闭标签页 (Ctrl+W)",
+  "editor.newFile": "新建文件",
+
+  // Editor status bar
+  "editorStatusBar.sel": "选",
+  "editorStatusBar.ln": "行",
+  "editorStatusBar.col": "列",
+
+  // Confirm modal
+  "confirmModal.confirm": "确认",
+  "confirmModal.cancel": "取消",
+
+  // History (conversations)
+  "history.title": "对话",
+  "history.empty": "没有已归档的对话。",
+  "history.messages": "{n} 条消息",
+  "history.delete": "删除对话",
+  "history.close": "关闭",
+
+  // Footer
+  "footer.processing": "处理中...",
+
+  // Settings
   "settings.title": "设置",
   "settings.section.editor": "编辑器",
   "settings.section.tools": "代理工具",
@@ -661,10 +888,10 @@ const zh: Translations = {
   "settings.apiKey": "Jina API 密钥",
   "settings.apiKey.placeholder": "jina_xxx...",
   "settings.apiKey.current": "当前: {key}",
-  "settings.apiKey.error.empty": "[!!] 请输入密钥",
-  "settings.apiKey.validating": "[...] 验证中",
-  "settings.apiKey.saved": "[ok] 已保存",
-  "settings.apiKey.error.invalid": "[!!] 无效密钥",
+  "settings.apiKey.error.empty": "请输入密钥",
+  "settings.apiKey.validating": "验证中...",
+  "settings.apiKey.saved": "已保存",
+  "settings.apiKey.error.invalid": "无效密钥",
   "settings.language": "语言",
   "settings.toggle.on": "开",
   "settings.toggle.off": "关",
@@ -690,6 +917,10 @@ const zh: Translations = {
   "settings.browserPodApiKey.placeholder": "bp_xxx...",
   "settings.browserPodApiKey.current": "当前: {key}",
   "settings.save": "保存",
+  "settings.validate": "测试连接",
+  "settings.validating": "测试中...",
+  "settings.validate.success": "连接成功",
+  "settings.validate.error": "连接失败",
   "settings.close": "关闭",
   "panel.ready": "就绪",
   "response.label": "代理",

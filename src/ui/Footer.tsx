@@ -132,7 +132,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
             color: colors.textMuted,
             fontFamily: fonts.mono,
           }}>
-            Processing...
+            {t("footer.processing", locale)}
           </span>
           <button
             onClick={onCancel}
@@ -147,7 +147,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
               flexShrink: "0",
             }}
           >
-            [Cancel]
+            Cancel
           </button>
         </div>
       )}
@@ -165,7 +165,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
               title="New conversation (archives current)"
               style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
             >
-              [new]
+              new
             </button>
           )}
           {onHistory && conversationCount > 0 && (
@@ -174,7 +174,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
               title="Open archived conversation"
               style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
             >
-              [hist]
+              hist
             </button>
           )}
         </div>
@@ -191,7 +191,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
               fontFamily: fonts.mono,
             }}
           >
-            [=]
+            =
           </button>
           <span style={{ color: colors.border, margin: "0 4px" }}>/</span>
           <button
@@ -206,7 +206,7 @@ export function Footer({ onSettings, onContext, onNew, onHistory, inputEnabled, 
               fontFamily: fonts.mono,
             }}
           >
-            [ctx]
+            ctx
           </button>
         </div>
       </div>

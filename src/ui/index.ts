@@ -44,8 +44,6 @@ export function renderSetup(container: HTMLElement, props: {
   version: string;
   locale?: Locale;
   onSetupComplete: () => void;
-  validateApiKey: (key: string) => Promise<boolean>;
-  saveApiKey: (key: string) => void;
 }): void {
   injectAnimations();
   render(h(ErrorBoundary, { name: "SetupScreen" }, h(SetupScreen, props)), container);

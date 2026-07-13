@@ -1,7 +1,7 @@
 /**
  * RightPanel — container with tabbed panels (Files, Outline, Preview, Output).
  *
- * Uses a vertical icon sidebar on the left instead of horizontal tabs,
+ * Uses a vertical icon sidebar on the right instead of horizontal tabs,
  * saving vertical space and allowing more tabs in the future.
  *
  * The File Explorer tab has been extracted to its own FileExplorer component
@@ -71,7 +71,36 @@ export function RightPanel({ locale }: RightPanelProps) {
       fontFamily: fonts.mono, fontSize: "11px",
       color: colors.textSecondary, userSelect: "none",
     }}>
-      {/* ── Vertical Icon Sidebar ── */}
+      {/* ── Panel Content ── */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {activeTab === "files" ? (
+          <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+            <ErrorBoundary name="FileExplorer">
+              <FileExplorer locale={locale} />
+            </ErrorBoundary>
+          </div>
+        ) : activeTab === "outline" ? (
+          <div style={{ height: "100%", overflow: "auto" }}>
+            <ErrorBoundary name="OutlinePanel">
+              <OutlinePanel locale={locale} />
+            </ErrorBoundary>
+          </div>
+        ) : activeTab === "preview" ? (
+          <div style={{ height: "100%", overflow: "auto" }}>
+            <ErrorBoundary name="PreviewPanel">
+              <PreviewPanel locale={locale} />
+            </ErrorBoundary>
+          </div>
+        ) : (
+          <div style={{ height: "100%", overflow: "auto" }}>
+            <ErrorBoundary name="OutputPanel">
+              <OutputPanel locale={locale} />
+            </ErrorBoundary>
+          </div>
+        )}
+      </div>
+
+      {/* ── Vertical Icon Sidebar (right side) ── */}
       <div ref={sidebarRef}
         role="tablist"
         aria-label="Panels"
@@ -80,7 +109,7 @@ export function RightPanel({ locale }: RightPanelProps) {
           minWidth: `${SIDEBAR_W}px`,
           display: "flex",
           flexDirection: "column",
-          borderRight: `1px solid ${colors.border}`,
+          borderLeft: `1px solid ${colors.border}`,
           background: colors.surface1,
           padding: "4px 0",
           flexShrink: 0,
@@ -122,23 +151,23 @@ export function RightPanel({ locale }: RightPanelProps) {
               >
                 {tab.icon}
               </div>
-              {/* Active indicator line */}
+              {/* Active indicator line (right side) */}
               {isActive && (
                 <div style={{
                   position: "absolute",
-                  left: 0,
+                  right: 0,
                   top: "6px",
                   width: "2px",
                   height: "20px",
                   background: colors.text,
-                  borderRadius: "0 1px 1px 0",
+                  borderRadius: "1px 0 0 1px",
                 }} />
               )}
-              {/* Tooltip on hover */}
+              {/* Tooltip on hover (left side of sidebar) */}
               {isHovered && !isActive && (
                 <div style={{
                   position: "absolute",
-                  left: "34px",
+                  right: "34px",
                   top: "4px",
                   zIndex: 100,
                   background: colors.surface2,
@@ -157,33 +186,6 @@ export function RightPanel({ locale }: RightPanelProps) {
           );
         })}
       </div>
-
-      {/* ── Panel Content ── */}
-      {activeTab === "files" ? (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <ErrorBoundary name="FileExplorer">
-            <FileExplorer locale={locale} />
-          </ErrorBoundary>
-        </div>
-      ) : activeTab === "outline" ? (
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <ErrorBoundary name="OutlinePanel">
-            <OutlinePanel locale={locale} />
-          </ErrorBoundary>
-        </div>
-      ) : activeTab === "preview" ? (
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <ErrorBoundary name="PreviewPanel">
-            <PreviewPanel locale={locale} />
-          </ErrorBoundary>
-        </div>
-      ) : (
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <ErrorBoundary name="OutputPanel">
-            <OutputPanel locale={locale} />
-          </ErrorBoundary>
-        </div>
-      )}
     </div>
   );
 }

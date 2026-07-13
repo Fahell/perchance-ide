@@ -784,5 +784,37 @@ class BrowserPodManager {
   }
 }
 
+// ─── Standalone Key Validation ─────────────────────────────
+
+/**
+ * Validate a BrowserPod API key by attempting to boot and immediately disposing.
+ * This function does NOT use the singleton manager — it creates a fresh boot
+ * attempt so the key can be tested before being stored or activated.
+ * Returns true if the key is valid (boot succeeded), false otherwise.
+ */
+export async function validateBrowserPodKey(apiKey: string): Promise<boolean> {
+  try {
+    const { BrowserPod } = await import(
+      "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@2.12.1/+esm"
+    );
+
+    if (typeof BrowserPod.boot !== "function") {
+      return false;
+    }
+
+    const pod = await BrowserPod.boot({
+      apiKey,
+      storageKey: "agent-perchance-validate",
+      nodeVersion: "22",
+    });
+
+    // Dispose immediately after successful boot
+    await pod.dispose();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Singleton Export ───────────────────────────────────────
 export const browserPodManager = new BrowserPodManager();

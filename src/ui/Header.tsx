@@ -1,3 +1,4 @@
+import { t, type Locale } from "../i18n/index.js";
 import { colors, fonts } from "./theme.js";
 import type { AgentStatus } from "./types.js";
 
@@ -5,10 +6,11 @@ interface HeaderProps {
   version: string;
   commit: string;
   agentStatus: AgentStatus;
+  locale?: Locale;
   onFaq?: () => void;
 }
 
-export function Header({ version, commit, agentStatus, onFaq }: HeaderProps) {
+export function Header({ version, commit, agentStatus, locale, onFaq }: HeaderProps) {
   const isActive = agentStatus !== "idle";
 
   return (
@@ -32,7 +34,7 @@ export function Header({ version, commit, agentStatus, onFaq }: HeaderProps) {
           animation: isActive ? "status-dot-pulse 1.5s ease-in-out infinite" : "none",
         }} />
         <span style={{ color: colors.textSecondary, fontSize: "12px", fontWeight: "600", fontFamily: fonts.mono, letterSpacing: "0.5px" }}>
-          agent
+          {t("header.title", locale)}
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -41,7 +43,7 @@ export function Header({ version, commit, agentStatus, onFaq }: HeaderProps) {
             onClick={onFaq}
             style={{ color: colors.textSecondary, cursor: "pointer", fontSize: "11px", fontFamily: fonts.mono, padding: "2px 4px", background: "none", border: "none", display: "inline" }}
           >
-            [?]
+            ?
           </button>
         )}
         <span style={{ fontSize: "10px", color: colors.textSecondary, fontFamily: fonts.mono }}>
