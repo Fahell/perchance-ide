@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import { LOCALES, LOCALE_LABELS, t, type Locale } from "../i18n/index.js";
 import { ideStore } from "../store.js";
 import { validateApiKey } from "../tools/web-search.js";
-import { validateBrowserPodKey } from "../browserpod/manager.js";
+import { validateBrowserPodKey, isCrossOriginIsolated } from "../browserpod/manager.js";
 import { Modal } from "./Modal.js";
 import { colors, fonts } from "./theme.js";
 
@@ -92,21 +92,34 @@ interface KeyRowProps {
   placeholder: string;
   maskedPreview: string;
   onValueChange: (v: string) => void;
-  onTest: (key: string) => Promise<boolean>;
+  onTest: (key: string) => Promise<boolean | string>;
   locale: Locale;
 }
 
 function KeyRow({ label, value, placeholder, maskedPreview, onValueChange, onTest, locale }: KeyRowProps) {
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testError, setTestError] = useState<string | null>(null);
 
   async function handleTest() {
     if (!value.trim()) {
       setTestStatus("error");
+      setTestError(null);
       return;
     }
     setTestStatus("testing");
-    const ok = await onTest(value.trim());
-    setTestStatus(ok ? "success" : "error");
+    setTestError(null);
+    const result = await onTest(value.trim());
+    if (result === true) {
+      setTestStatus("success");
+      setTestError(null);
+    } else if (result === false) {
+      setTestStatus("error");
+      setTestError(null);
+    } else {
+      // result is a string error message
+      setTestStatus("error");
+      setTestError(result);
+    }
   }
 
   const statusColor = testStatus === "success" ? colors.statusDone
@@ -183,7 +196,7 @@ function KeyRow({ label, value, placeholder, maskedPreview, onValueChange, onTes
           color: statusColor, fontSize: "9px", marginTop: "4px",
           fontFamily: fonts.mono,
         }}>
-          {t("settings.validate.error", locale)}
+          {testError || t("settings.validate.error", locale)}
         </div>
       )}
     </div>
@@ -259,24 +272,31 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
   }
 
   /** Test Jina key — validate and persist only on success */
-  async function testJinaKey(key: string): Promise<boolean> {
+  async function testJinaKey(key: string): Promise<boolean | string> {
     const ok = await validateApiKey(key);
-    // If valid, also persist it so web tools work immediately
     if (ok) {
       await onSave(key);
       setJinaKey(key);
+      return true;
     }
-    return ok;
+    // Key is invalid or API unreachable; return generic failure
+    return false;
   }
 
   /** Test BrowserPod key — validate and persist only on success */
-  async function testBrowserPodKey(key: string): Promise<boolean> {
-    const ok = await validateBrowserPodKey(key);
-    if (ok) {
+  async function testBrowserPodKey(key: string): Promise<boolean | string> {
+    // Check cross-origin isolation first — BrowserPod requires it for SharedArrayBuffer
+    if (!isCrossOriginIsolated()) {
+      console.warn("[SettingsModal] Cannot test BrowserPod key: page is not cross-origin isolated");
+      return "Page is not cross-origin isolated — requires COOP & COEP headers";
+    }
+    const result = await validateBrowserPodKey(key);
+    if (result.ok) {
       setBpKey(key);
       updateSetting("browserPodApiKey", key);
+      return true;
     }
-    return ok;
+    return result.error || false;
   }
 
   const maskedJinaKey = currentKey

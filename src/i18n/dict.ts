@@ -105,8 +105,8 @@ const en: Translations = {
 
   // Onboarding
   "onboarding.title": "welcome",
-  "onboarding.greeting": "Welcome to Agent Perchance",
-  "onboarding.description": "An AI-powered IDE that runs entirely in your browser. Code with the help of an autonomous agent — create, edit, and manage projects through natural conversation.",
+  "onboarding.greeting": "Welcome to Perchance IDE",
+  "onboarding.description": "An AI-powered IDE that runs entirely in your browser. Code with the help of an autonomous AI Agent — create, edit, and manage projects through natural conversation.",
   "onboarding.whatIs": "what is this?",
   "onboarding.features.editor": "Full code editor with syntax highlighting for 10+ languages, file management, and live preview",
   "onboarding.features.agent": "AI agent that can read, write, edit files, run Python, search the web, and execute shell commands",
@@ -232,11 +232,11 @@ const en: Translations = {
 const ptBR: Translations = {
   // Onboarding
   "onboarding.title": "boas-vindas",
-  "onboarding.greeting": "Bem-vindo ao Agent Perchance",
-  "onboarding.description": "Um IDE com IA que roda inteiramente no seu navegador. Programe com a ajuda de um agente autônomo — crie, edite e gerencie projetos através de conversa natural.",
+  "onboarding.greeting": "Bem-vindo ao Perchance IDE",
+  "onboarding.description": "Um IDE com IA que roda inteiramente no seu navegador. Programe com a ajuda de um AI Agent autônomo — crie, edite e gerencie projetos através de conversa natural.",
   "onboarding.whatIs": "o que é isto?",
   "onboarding.features.editor": "Editor de código completo com syntax highlighting para 10+ linguagens, gerenciamento de arquivos e preview ao vivo",
-  "onboarding.features.agent": "Agente de IA que pode ler, escrever, editar arquivos, executar Python, buscar na web e executar comandos shell",
+  "onboarding.features.agent": "AI Agent que pode ler, escrever, editar arquivos, executar Python, buscar na web e executar comandos shell",
   "onboarding.features.python": "Execução Python no navegador via Pyodide (numpy, pandas e mais)",
   "onboarding.keys": "chaves api opcionais",
   "onboarding.keys.desc": "Busca web requer uma chave Jina AI gratuita. Ferramentas Node.js requerem uma chave BrowserPod. Ambas podem ser configuradas depois nas Configurações.",
@@ -443,11 +443,11 @@ const ptBR: Translations = {
 const es: Translations = {
   // Onboarding
   "onboarding.title": "bienvenido",
-  "onboarding.greeting": "Bienvenido a Agent Perchance",
-  "onboarding.description": "Un IDE con IA que funciona completamente en tu navegador. Programa con la ayuda de un agente autónomo — crea, edita y gestiona proyectos mediante conversación natural.",
+  "onboarding.greeting": "Bienvenido a Perchance IDE",
+  "onboarding.description": "Un IDE con IA que funciona completamente en tu navegador. Programa con la ayuda de un AI Agent autónomo — crea, edita y gestiona proyectos mediante conversación natural.",
   "onboarding.whatIs": "¿qué es esto?",
   "onboarding.features.editor": "Editor de código completo con resaltado de sintaxis para 10+ lenguajes, gestión de archivos y vista previa en vivo",
-  "onboarding.features.agent": "Agente de IA que puede leer, escribir, editar archivos, ejecutar Python, buscar en la web y ejecutar comandos shell",
+  "onboarding.features.agent": "AI Agent que puede leer, escribir, editar archivos, ejecutar Python, buscar en la web y ejecutar comandos shell",
   "onboarding.features.python": "Ejecución de Python en el navegador via Pyodide (numpy, pandas y más)",
   "onboarding.keys": "claves api opcionales",
   "onboarding.keys.desc": "La búsqueda web requiere una clave Jina AI gratuita. Las herramientas Node.js requieren una clave BrowserPod. Ambas se pueden configurar más tarde en Ajustes.",
@@ -641,11 +641,11 @@ const es: Translations = {
 const ja: Translations = {
   // Onboarding
   "onboarding.title": "ようこそ",
-  "onboarding.greeting": "Agent Perchanceへようこそ",
-  "onboarding.description": "ブラウザ上で完全に動作するAI搭載IDEです。自律エージェントの助けを借りて、自然な会話を通じてプロジェクトを作成、編集、管理できます。",
+  "onboarding.greeting": "Perchance IDEへようこそ",
+  "onboarding.description": "ブラウザ上で完全に動作するAI搭載IDEです。自律AI Agentの助けを借りて、自然な会話を通じてプロジェクトを作成、編集、管理できます。",
   "onboarding.whatIs": "これは何ですか？",
   "onboarding.features.editor": "10以上の言語に対応したコードエディタ、ファイル管理、ライブプレビュー",
-  "onboarding.features.agent": "ファイルの読み書き・編集、Python実行、Web検索、シェルコマンド実行が可能なAIエージェント",
+  "onboarding.features.agent": "ファイルの読み書き・編集、Python実行、Web検索、シェルコマンド実行が可能なAI Agent",
   "onboarding.features.python": "Pyodide経由でブラウザ内でPython実行（numpy、pandasなど）",
   "onboarding.keys": "オプションのAPIキー",
   "onboarding.keys.desc": "Web検索には無料のJina AI APIキーが必要です。Node.jsツールにはBrowserPod APIキーが必要です。どちらも後で設定から構成できます。",
@@ -840,8 +840,8 @@ const ja: Translations = {
 const zh: Translations = {
   // Onboarding
   "onboarding.title": "欢迎",
-  "onboarding.greeting": "欢迎使用 Agent Perchance",
-  "onboarding.description": "一个完全在浏览器中运行的AI驱动IDE。在自主Agent的帮助下，通过自然对话创建、编辑和管理项目。",
+  "onboarding.greeting": "欢迎使用 Perchance IDE",
+  "onboarding.description": "一个完全在浏览器中运行的AI驱动IDE。在自主AI Agent的帮助下，通过自然对话创建、编辑和管理项目。",
   "onboarding.whatIs": "这是什么？",
   "onboarding.features.editor": "支持10+语言的代码编辑器、文件管理和实时预览",
   "onboarding.features.agent": "可以读写编辑文件、运行Python、搜索网络和执行Shell命令的AI Agent",

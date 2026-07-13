@@ -612,6 +612,7 @@ class BrowserPodManager {
    * Call disposeInteractiveTerminal() when the panel is hidden to clean up.
    */
   async createInteractiveTerminal(element: HTMLElement): Promise<void> {
+    // Initial guard: pod must be ready
     if (!this.pod) {
       throw new Error("BrowserPod not initialized");
     }
@@ -619,8 +620,31 @@ class BrowserPodManager {
     // Dispose any previous interactive session
     await this.disposeInteractiveTerminal();
 
+    // ── Re-check after await ──
+    // The pod may have been disposed while we were awaiting disposeInteractiveTerminal.
+    // This can happen if the panel was closed during the async operation.
+    if (!this.pod) {
+      throw new Error("BrowserPod was disposed while initializing the interactive terminal");
+    }
+
     // Step 1: Create the xterm.js UI (visual terminal)
+    // Per BrowserPod docs, createDefaultTerminal() always returns Promise<Terminal>.
+    // But if the DOM element was cleared (by cleanup running concurrently), it may
+    // return undefined or throw.
     this.interactiveTerminal = await this.pod.createDefaultTerminal(element);
+
+    // ── Re-check after await ──
+    // Pod could have been disposed while createDefaultTerminal was in-flight.
+    if (!this.pod) {
+      this.interactiveTerminal = null;
+      throw new Error("BrowserPod was disposed while creating the terminal UI");
+    }
+
+    // Guard: ensure createDefaultTerminal returned a valid terminal.
+    // An invalid/null DOM element (cleared by concurrent cleanup) can cause this.
+    if (!this.interactiveTerminal) {
+      throw new Error("createDefaultTerminal returned no terminal — the DOM element may have been cleared");
+    }
 
     // Step 2: Start a bash shell connected to that terminal
     // pod.run() with the interactive terminal as the terminal option connects
@@ -632,9 +656,19 @@ class BrowserPodManager {
       cwd: "/home/user",
     });
 
+    // Guard: ensure pod.run() returned a valid Promise/thenable before chaining.
+    // Per BrowserPod types, run() always returns Promise<Process>. But if the pod
+    // is in a partially-disposed state (this.pod truthy but underlying runtime gone),
+    // the Proxy may return undefined or a non-thenable instead of a proper Promise.
+    if (!runPromise || typeof (runPromise as any).then !== "function") {
+      console.warn("[BrowserPod] Interactive shell run() did not return a thenable");
+      this.interactiveTerminal = null;
+      throw new Error("Interactive shell could not be started — pod.run() returned no promise");
+    }
+
     // Fire-and-forget: the shell runs until the xterm is destroyed or pod is disposed.
     // Errors (e.g., bash binary not found) are logged for debugging.
-    runPromise.then(() => {
+    (runPromise as Promise<unknown>).then(() => {
       console.log("[BrowserPod] Interactive shell exited");
     }).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -787,33 +821,102 @@ class BrowserPodManager {
 // ─── Standalone Key Validation ─────────────────────────────
 
 /**
+ * Result of a key validation attempt.
+ * `ok` is true when the key is valid, false otherwise.
+ * `error` contains a human-readable error message when validation fails.
+ */
+export interface ValidationResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
  * Validate a BrowserPod API key by attempting to boot and immediately disposing.
+ *
+ * ⚠ NOTE: Each BrowserPod.boot() call costs 10 tokens from your account.
+ * Validation will deduct tokens even though the pod is disposed immediately.
+ *
  * This function does NOT use the singleton manager — it creates a fresh boot
  * attempt so the key can be tested before being stored or activated.
- * Returns true if the key is valid (boot succeeded), false otherwise.
+ * Returns { ok: true } if the key is valid,
+ * or { ok: false, error: "description" } on failure.
+ *
+ * Checks cross-origin isolation first — required for SharedArrayBuffer.
+ * Without it, BrowserPod boot will always fail.
  */
-export async function validateBrowserPodKey(apiKey: string): Promise<boolean> {
-  try {
-    const { BrowserPod } = await import(
-      "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@2.12.1/+esm"
-    );
+export async function validateBrowserPodKey(apiKey: string): Promise<ValidationResult> {
+  // Check 1: Cross-origin isolation (required for SharedArrayBuffer)
+  if (typeof crossOriginIsolated !== "undefined" && !crossOriginIsolated) {
+    return {
+      ok: false,
+      error: "Page is not cross-origin isolated. Server must send headers: Cross-Origin-Opener-Policy: same-origin & Cross-Origin-Embedder-Policy: require-corp",
+    };
+  }
 
-    if (typeof BrowserPod.boot !== "function") {
-      return false;
+  try {
+    // Check 2: Dynamic import of BrowserPod CDN module
+    let BrowserPodModule: any;
+    try {
+      BrowserPodModule = await import(
+        "https://cdn.jsdelivr.net/npm/@leaningtech/browserpod@2.12.1/+esm"
+      );
+    } catch (importErr) {
+      const msg = importErr instanceof Error ? importErr.message : String(importErr);
+      return {
+        ok: false,
+        error: `Failed to load BrowserPod from CDN: ${msg}`,
+      };
     }
 
-    const pod = await BrowserPod.boot({
-      apiKey,
-      storageKey: "agent-perchance-validate",
-      nodeVersion: "22",
-    });
+    if (typeof BrowserPodModule.BrowserPod?.boot !== "function") {
+      return {
+        ok: false,
+        error: "BrowserPod module loaded but boot() function not found — version mismatch",
+      };
+    }
 
-    // Dispose immediately after successful boot
-    await pod.dispose();
-    return true;
-  } catch {
-    return false;
+    // Check 3: Attempt to boot (validates the API key)
+    let pod: any;
+    try {
+      pod = await BrowserPodModule.BrowserPod.boot({
+        apiKey,
+        storageKey: "agent-perchance-validate",
+        nodeVersion: "22",
+      });
+    } catch (bootErr) {
+      const msg = bootErr instanceof Error ? bootErr.message : String(bootErr);
+      return {
+        ok: false,
+        error: `BrowserPod boot failed: ${msg}`,
+      };
+    }
+
+    // Cleanup: dispose immediately
+    try {
+      await pod.dispose();
+    } catch {
+      // dispose failure is non-critical, ignore
+    }
+
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error: `Unexpected error: ${message}`,
+    };
   }
+}
+
+/**
+ * Check if the current page meets BrowserPod's cross-origin isolation requirement.
+ * BrowserPod needs SharedArrayBuffer, which requires both COOP and COEP headers.
+ * Returns true if isolated (or if running on localhost which is exempt), false otherwise.
+ *
+ * Per official docs: https://browserpod.io/docs/understanding-browserpod/cross-origin-isolation
+ */
+export function isCrossOriginIsolated(): boolean {
+  return typeof crossOriginIsolated === "undefined" || crossOriginIsolated === true;
 }
 
 // ─── Singleton Export ───────────────────────────────────────
