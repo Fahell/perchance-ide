@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches-ignore:
+      - dist  # Auto-update dist on every push to any branch except dist itself
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -19,11 +20,13 @@ on:
         description: "Run esbuild bundle -> dist/agent.js artifact"
         type: boolean
         default: false
-      run_deploy:
-        description: "Bump version, build dist/agent.js, generate IMPORT.md, amend commit, force-push to main (Destructive!)"
+      run_update_cdn:
+        description: "Build dist/agent.js and publish to `dist` branch on remote (force-push, replaces last deploy)."
         type: boolean
         default: false
 
+# Workflow-level concurrency: cancel stale typecheck/test/build runs on the same ref
+# (the `update-cdn` job overrides this with its own job-level concurrency group)
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -117,22 +120,26 @@ jobs:
           path: dist/agent.js
           if-no-files-found: error
 
-  deploy:
-    name: Deploy
+  update-cdn:
+    name: Update CDN (dist branch)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [typecheck, test]
-    environment:
-      name: production
-      url: https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${{ github.sha }}
     permissions:
       contents: write
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_deploy == 'true'
+    # Triggers:
+    #  - on push to any branch (workflow-level `branches-ignore: [dist]` filters out dist itself)
+    #  - on manual workflow_dispatch with run_update_cdn=true
+    #  - NOT on pull_request (forks can't push; PRs that merge will trigger a push event anyway)
+    if: "${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_update_cdn == 'true') }}"
+    # Job-level concurrency overrides workflow-level: serializes ALL writes to dist
+    # across all branches into a single global queue (last-write-wins safe).
+    concurrency:
+      group: update-cdn-dist
+      cancel-in-progress: false
     steps:
-      - name: Checkout (full history needed by amend)
+      - name: Checkout (source branch)
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -148,20 +155,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure git bot identity
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Build and Commit Artifacts
+      - name: Build dist/agent.js
         run: |
           set -e -o pipefail
           VERSION=$(node -e "console.log(require('./package.json').version)")
           : "${VERSION:?required: package.json version is empty}"
           echo "📦 Version: ${VERSION}"
 
+          SRC_SHA=$(git rev-parse --short HEAD)
+          echo "📦 Source SHA: ${SRC_SHA}"
+
           echo "🔨 Building..."
-          COMMIT=$(git rev-parse --short HEAD) node ./esbuild.config.mjs
+          COMMIT=${SRC_SHA} node ./esbuild.config.mjs
 
           if [ ! -f dist/agent.js ]; then
             echo "❌ dist/agent.js missing — build failed"
@@ -169,21 +174,45 @@ jobs:
           fi
           echo "📦 Built dist/agent.js ($(stat -c %s dist/agent.js) bytes)"
 
-          echo "📦 Committing..."
-          git add dist/agent.js
-          if git diff --cached --quiet; then
-            echo "Nothing to commit (working tree clean)"
-          else
-            git commit -m "deploy: v${VERSION}"
-            echo "🚀 Pushing initial commit..."
-            git push --set-upstream origin HEAD
-          fi
+      - name: Configure git bot identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Generate IMPORT.md and force-push amend
+      - name: Publish to dist branch (two-commit, never amend)
         run: |
           set -e -o pipefail
-          COMMIT=$(git rev-parse --short HEAD)
-          IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${COMMIT}/dist/agent.js"
+          SRC_SHA=$(git rev-parse --short HEAD)
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "📦 Source: ${SRC_SHA}, Version: ${VERSION}"
+
+          # Create an orphan branch: HEAD points at unborn dist-temp with no commits.
+          # Working tree is preserved (so dist/agent.js stays); index is reset to empty.
+          git checkout --orphan dist-temp
+
+          # Defensive: some git versions may keep tracked-source files in the index
+          # from before the orphan switch. Force-remove them from the index only.
+          git rm -rf --cached --ignore-unmatch . 2>/dev/null || true
+
+          # Commit 1 (H1): dist/agent.js only.
+          # Use -f to bypass .gitignore (dist/ is normally git-ignored on source branches).
+          git add -f dist/agent.js
+          if git diff --cached --quiet; then
+            echo "❌ dist/agent.js not staged — bug"
+            exit 1
+          fi
+          git commit -m "cdn: deploy v${VERSION} (source: ${SRC_SHA})"
+
+          HASH_FULL=$(git rev-parse HEAD)
+          HASH_SHORT=$(git rev-parse --short HEAD)
+          echo "📦 H1 (dist/agent.js commit): ${HASH_SHORT}"
+
+          # Generate IMPORT.md pointing to H1.
+          # Two-commit design: H2 below adds IMPORT.md as a CHILD of H1.
+          # That keeps H1 permanently reachable as an ancestor of dist's HEAD,
+          # so it's immune to GitHub GC (which would otherwise orphan-and-purge
+          # a pre-amend hash and break jsDelivr caching forever).
+          IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${HASH_FULL}/dist/agent.js"
 
           {
             echo "# Import URL"
@@ -203,10 +232,18 @@ jobs:
             echo "❌ IMPORT.md not generated"
             exit 1
           fi
-          echo "📄 Generated IMPORT.md"
+          echo "📄 Generated IMPORT.md (refs @${HASH_SHORT})"
 
+          # Commit 2 (H2): IMPORT.md only.
           git add IMPORT.md
-          git commit --amend --no-edit
+          git commit -m "docs: sync IMPORT.md → ${HASH_SHORT}"
 
-          echo "🚀 Pushing amended commit..."
-          git push --force-with-lease
+          echo "✅ dist branch ready. Last 2 commits:"
+          git --no-pager log --oneline -2
+
+          echo "🚀 Pushing to dist..."
+          # Force-overwrite dist on remote. The update-cdn-dist concurrency group
+          # guarantees no two runs race on this command.
+          git push --force origin HEAD:dist
+
+          echo "✅ Done. New dist HEAD: $(git rev-parse --short HEAD)"
