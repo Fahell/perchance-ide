@@ -23,7 +23,7 @@ Add the ai-text-plugin to your list panel:
 agentAi = {import:ai-text-plugin}
 ```
 
-Replace `<COMMIT>` with the latest commit hash (auto-generated in `IMPORT.md` after each deployment). See the [generator templates](generator/) for reference implementations and explore the other generator examples in `ai-text-plugin/`, `continue-generator/`, `super-fetch-plugin/`, and `other-coder-perchance-generator/`.
+Replace `<COMMIT>` with the latest commit hash (auto-published to the `dist` branch's `IMPORT.md` on every push via the CI pipeline). See the [generator templates](generator/) for reference implementations and explore the other generator examples in `ai-text-plugin/`, `continue-generator/`, `super-fetch-plugin/`, and `other-coder-perchance-generator/`.
 
 ### 3. Web Search Setup (Optional)
 
@@ -35,23 +35,20 @@ On first launch, you'll be prompted to enter a [Jina AI API key](https://jina.ai
 # Install dependencies
 pnpm install
 
-# Build production bundle (minified)
-pnpm build
-
-# Development mode with source maps and watch
+# Development mode (esbuild watch + source maps)
 pnpm dev
 
-# Deploy — build + commit + push + generate IMPORT.md
-pnpm deploy
+# Single-shot production build → dist/agent.js (CI normally does this)
+node ./esbuild.config.mjs
 
-# Run test suite
-pnpm test
+# Run test suite (Vitest)
+pnpm exec vitest run
 
-# Type check without emitting
-pnpm typecheck
+# Type check (strict)
+tsc --noEmit
 
-# Watch mode for tests
-pnpm test:watch
+# Vitest watch mode
+pnpm exec vitest --watch
 ```
 
 ## Features
@@ -574,8 +571,8 @@ Translation dictionaries are stored in `src/i18n/dict.ts` with the `t(key, local
 Test suite uses [Vitest](https://vitest.dev/) v4 with jsdom environment:
 
 ```bash
-pnpm test        # Run all tests
-pnpm test:watch  # Watch mode for development
+pnpm exec vitest run          # Single test run
+pnpm exec vitest --watch      # Vitest watch mode
 ```
 
 ### Test Coverage
@@ -665,9 +662,9 @@ The manager logs a diagnostic warning at boot time if `crossOriginIsolated` is `
 Built with esbuild (v0.28) into a single minified ESM file:
 
 ```bash
-pnpm build        # Production build → dist/agent.js (minified, no sourcemaps)
-pnpm dev          # Development build with source maps + watch mode
-pnpm typecheck    # TypeScript strict type checking without emitting
+pnpm dev                       # Development build: source maps + watch mode (only local npm script)
+node ./esbuild.config.mjs      # Single-shot production build → dist/agent.js
+tsc --noEmit                   # TypeScript strict type check without emitting
 ```
 
 Build-time constants injected via esbuild `define`:
@@ -676,18 +673,38 @@ Build-time constants injected via esbuild `define`:
 - `__COMMIT__` — from `$COMMIT` env var or `"dev"`
 - `__BUILD_TIME__` — ISO timestamp of build
 
-### Deployment
+### CI/CD Pipeline
 
-`pnpm deploy` (via `deploy.sh`) automates:
+Deployment is **fully automated** through GitHub Actions (`.github/workflows/ci.yml`). There is no local `pnpm deploy` step — release workflows are CI-exclusive. The legacy `deploy.sh` was deleted; all heavy operations (build, typecheck, test, publish) moved to a single workflow with per-stage jobs and job-level concurrency.
 
-1. Read version from `package.json`
-2. Build with `COMMIT=$(git rev-parse --short HEAD) pnpm build`
-3. Commit all changes with message `deploy: v<VERSION>`
-4. Push to GitHub
-5. Generate `IMPORT.md` with jsDelivr URL using post-push commit hash
-6. Amend the commit to include `IMPORT.md`
+**Trigger conditions**:
 
-The CDN URL follows the pattern `https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@<COMMIT>/dist/agent.js`
+- Every push to any branch (except `dist` itself) auto-runs the full pipeline — typecheck + test + `update-cdn`.
+- Pull requests on `main` run typecheck + test only.
+- `workflow_dispatch` provides UI toggles for any combination of jobs.
+
+**`update-cdn` job** (auto-runs on every push):
+
+1. Checkout the source branch.
+2. `pnpm install --frozen-lockfile`.
+3. Build with `COMMIT=<src-short-sha> node ./esbuild.config.mjs`; guard `dist/agent.js` exists.
+4. On an orphan branch `dist-temp`, commit `dist/agent.js` (H1).
+5. Generate `IMPORT.md` pointing to the immutable `@HASH_FULL/dist/agent.js` URL (full SHA, not short, for maximum jsDelivr caching durability).
+6. Add a second commit on top of H1 with `IMPORT.md` (H2 — child of H1).
+7. Force-push `HEAD:dist` to origin.
+
+**Why two commits instead of amend?** H1 is an ancestor of `dist`'s HEAD (via H2), which means H1 is **permanently** retained in `dist`'s history. The legacy `deploy.sh` instead used `git commit --amend` + force-push, creating H1 as an orphan relative to the final amended commit — GitHub's GC could eventually purge it, permanently breaking the jsDelivr `@H1/dist/agent.js` URL referenced by every Perchance generator.
+
+**Branches**:
+
+| Branch | Purpose                                          | Lifecycle                              |
+| ------ | ------------------------------------------------ | -------------------------------------- |
+| `main` | Source code history (clean, no deploy artifacts) | Updated by merged PRs + direct pushes  |
+| `dist` | CDN snapshots: `dist/agent.js` + `IMPORT.md`     | Force-replaced on every push to source |
+
+**CDN URL**: `https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@<COMMIT>/dist/agent.js`
+
+Latest committed value lives in `dist`'s `IMPORT.md` (auto-updated by CI on every push).
 
 ## Generator Templates
 
