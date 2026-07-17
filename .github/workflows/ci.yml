@@ -5,13 +5,40 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_typecheck:
+        description: "Run `tsc --noEmit` type check"
+        type: boolean
+        default: true
+      run_test:
+        description: "Run vitest test suite"
+        type: boolean
+        default: true
+      run_build:
+        description: "Run esbuild bundle -> dist/agent.js artifact"
+        type: boolean
+        default: false
+      run_deploy:
+        description: "Bump version, build dist/agent.js, generate IMPORT.md, amend commit, force-push to main (Destructive!)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  ci:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-24.04
-
+    timeout-minutes: 10
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.run_typecheck == 'true'
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup pnpm
@@ -29,10 +56,157 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Type check
-        run: pnpm typecheck
+        run: tsc --noEmit
+
+  test:
+    name: Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.run_test == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: pnpm test
+        run: vitest run
 
-      - name: Build
-        run: pnpm build
+  build:
+    name: Build (artifact)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_build == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bundle
+        run: node ./esbuild.config.mjs
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent.js
+          path: dist/agent.js
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [typecheck, test]
+    environment:
+      name: production
+      url: https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${{ github.sha }}
+    permissions:
+      contents: write
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_deploy == 'true'
+    steps:
+      - name: Checkout (full history needed by amend)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure git bot identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Build and Commit Artifacts
+        run: |
+          set -e -o pipefail
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          : "${VERSION:?required: package.json version is empty}"
+          echo "📦 Version: ${VERSION}"
+
+          echo "🔨 Building..."
+          COMMIT=$(git rev-parse --short HEAD) node ./esbuild.config.mjs
+
+          if [ ! -f dist/agent.js ]; then
+            echo "❌ dist/agent.js missing — build failed"
+            exit 1
+          fi
+          echo "📦 Built dist/agent.js ($(stat -c %s dist/agent.js) bytes)"
+
+          echo "📦 Committing..."
+          git add dist/agent.js
+          if git diff --cached --quiet; then
+            echo "Nothing to commit (working tree clean)"
+          else
+            git commit -m "deploy: v${VERSION}"
+            echo "🚀 Pushing initial commit..."
+            git push --set-upstream origin HEAD
+          fi
+
+      - name: Generate IMPORT.md and force-push amend
+        run: |
+          set -e -o pipefail
+          COMMIT=$(git rev-parse --short HEAD)
+          IMPORT_URL="https://cdn.jsdelivr.net/gh/Fahell/perchance-ide@${COMMIT}/dist/agent.js"
+
+          {
+            echo "# Import URL"
+            echo ""
+            echo "Add an HTML panel to your generator with:"
+            echo ""
+            echo '```html'
+            echo '<script>'
+            echo "  import(\"${IMPORT_URL}\");"
+            echo '</script>'
+            echo '```'
+            echo ""
+            echo "Also add \`agentAi = {import:ai-text-plugin}\` to your list panel."
+          } > IMPORT.md
+
+          if [ ! -f IMPORT.md ]; then
+            echo "❌ IMPORT.md not generated"
+            exit 1
+          fi
+          echo "📄 Generated IMPORT.md"
+
+          git add IMPORT.md
+          git commit --amend --no-edit
+
+          echo "🚀 Pushing amended commit..."
+          git push --force-with-lease
