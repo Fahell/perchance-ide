@@ -208,7 +208,7 @@ describe("SettingsModal — Jina (web search) test flow", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "jina_test_key_abcdef");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     expect(mockValidateApiKey).toHaveBeenCalledWith("jina_test_key_abcdef");
@@ -224,7 +224,7 @@ describe("SettingsModal — Jina (web search) test flow", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "bad_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     expect(mockValidateApiKey).toHaveBeenCalledWith("bad_key");
@@ -239,7 +239,7 @@ describe("SettingsModal — Jina (web search) test flow", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "bad_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     // Invalid-key code maps to settings.validate.invalidKey via i18n proxy
@@ -263,7 +263,7 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "bad_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     const rowText = row.textContent || "";
@@ -283,7 +283,7 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "exhausted_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     const rowText = row.textContent || "";
@@ -302,7 +302,7 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "rate_limited_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     const rowText = row.textContent || "";
@@ -321,7 +321,7 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
     const button = row.querySelector("button") as HTMLButtonElement;
 
     await typeInto(input, "any_key");
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     const rowText = row.textContent || "";
@@ -346,7 +346,7 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
     const row = findRowByLabel(container, "settings.browserPodApiKey")!;
     const button = row.querySelector("button") as HTMLButtonElement;
 
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     expect(mockValidateBrowserPodKey).toHaveBeenCalledWith(BP_TEST_KEY);
@@ -363,7 +363,7 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
     const row = findRowByLabel(container, "settings.browserPodApiKey")!;
     const button = row.querySelector("button") as HTMLButtonElement;
 
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     expect(mockValidateBrowserPodKey).toHaveBeenCalledWith(BP_TEST_KEY);
@@ -381,7 +381,7 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
     const row = findRowByLabel(container, "settings.browserPodApiKey")!;
     const button = row.querySelector("button") as HTMLButtonElement;
 
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     const rowText = row.textContent || "";
@@ -395,7 +395,7 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
     const row = findRowByLabel(container, "settings.browserPodApiKey")!;
     const button = row.querySelector("button") as HTMLButtonElement;
 
-    button.click();
+    act(() => button.click());
     await flushPromises();
 
     expect(mockIsCrossOriginIsolated).toHaveBeenCalled();
