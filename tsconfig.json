@@ -15,7 +15,7 @@
     "sourceMap": false,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": []
+    "types": ["@testing-library/jest-dom", "vitest/globals"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

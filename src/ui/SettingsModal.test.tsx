@@ -1,19 +1,34 @@
 /**
  * UI tests for SettingsModal — KeyRow visibility + onTest success/failure paths.
  *
- * PR-2 audit fix: KeyRow input fields must always be visible, not gated behind
- * their corresponding tool toggle. The previous UX required the user to enable
- * "Web search" or "Node.js tools" first before the API key field would appear,
- * forcing an awkward two-step setup.
+ * History:
+ * - PR-2: KeyRow always visible regardless of tool toggle state.
+ * - PR-3: Jina HTTP error code classification surfaces in SettingsModal copy.
+ * - Preact act() audit: empirical fixes (microtask loops, 50ms rAF wait, native
+ *   `act()` from preact/test-utils) all left 8 of the 17 tests failing with
+ *   the same root cause — Preact's render queue closing over the stale
+ *   `value=""` from the initial render before state updates committed.
  *
- * Setup pattern: vi.hoisted to define mock factories, vi.mock to swap modules,
- * then preact render() directly into a jsdom container. No testing-library
- * dependency required.
+ *   Root cause was diagnosed as a CJS/ESM Preact dual-package hazard under
+ *   Vitest v4 + jsdom: the components import the ESM Preact hooks, but the
+ *   manual flushPromises and preact/test-utils `act()` only patched the
+ *   CommonJS Preact instance, leaving async rerenders queued on the ESM
+ *   instance and never drained before assertions.
+ *
+ * - This file rewrites all 18 tests on top of @testing-library/preact +
+ *   @testing-library/user-event + @testing-library/jest-dom. Together these
+ *   resolve the ESM Preact instance, drain Preact's scheduler between
+ *   `user.type` and `user.click`, and register `toBeInTheDocument` /
+ *   `toHaveTextContent` matchers (registered globally via
+ *   `vitest.setup.ts: import "@testing-library/jest-dom/vitest"`).
+ *
+ *   Manual `flushPromises`, `typeInto`, `clickAct`, `findRowByLabel` helpers
+ *   are no longer needed and have been removed.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "preact";
-import { act } from "preact/test-utils";
+import { cleanup, render, screen, waitFor } from "@testing-library/preact";
+import userEvent from "@testing-library/user-event";
 
 // ─── Hoisted mock factories (referenced inside vi.mock which is hoisted) ───
 //
@@ -23,10 +38,7 @@ import { act } from "preact/test-utils";
 //
 // For BrowserPod tests we initialize the key via mockSettings.browserPodApiKey
 // (instead of dispatching input events) to bypass the keystroke-driven
-// updateSetting call, so test assertions about post-click persist behavior
-// are isolated to the test-validation path. For Jina tests we DO dispatch
-// input events because Jina has no keystroke side effect.
-
+// updateSetting call, so test assertions are isolated to the test path.
 const {
   mockSettings,
   mockUpdateSettings,
@@ -74,20 +86,27 @@ vi.mock("../browserpod/manager.js", () => ({
   isCrossOriginIsolated: mockIsCrossOriginIsolated,
 }));
 
-// Minimal i18n proxy — return key as-is so we can assert on labels
+// Minimal i18n proxy — return key as-is so we can assert on labels.
+// Exception: settings.apiKey.current must contain a "{key}" placeholder so that
+// the .replace("{key}", maskedPreview) call in SettingsModal.tsx (line ~127)
+// actually substitutes the masked value. Without this the masked-preview div
+// renders the literal key string and the reactive-sync test cannot observe
+// the change.
 vi.mock("../i18n/index.js", () => ({
   LOCALES: ["en"],
   LOCALE_LABELS: { en: "EN" },
-  t: (k: string) => k,
+  t: (k: string) =>
+    k === "settings.apiKey.current" ? "current: {key}" : k,
 }));
 
 import { SettingsModal } from "./SettingsModal.js";
 
 // ─── Helpers ────────────────────────────────────────────────
 
+const JINA_LABEL = "settings.apiKey";
+const BP_LABEL = "settings.browserPodApiKey";
+
 function renderModal(initialKey = "") {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
   const onClose = vi.fn();
   const onSave = vi.fn();
   const onLocaleChange = vi.fn();
@@ -100,46 +119,27 @@ function renderModal(initialKey = "") {
       onSave={onSave}
       onLocaleChange={onLocaleChange}
     />,
-    container,
   );
-  return { container, onClose, onSave, onLocaleChange };
+  return { onClose, onSave, onLocaleChange };
 }
 
-function findRowByLabel(container: HTMLElement, labelText: string): HTMLElement | null {
-  // The KeyRow renders an uppercased label with the i18n key as text.
-  // Walk up to the KeyRow container that wraps the input + button.
-  const labels = container.querySelectorAll("label");
-  for (const lbl of Array.from(labels)) {
-    if (lbl.textContent === labelText) {
-      return lbl.parentElement;
-    }
-  }
-  return null;
+/**
+ * Locate the test button inside a KeyRow given its input aria-label.
+ * KeyRow structure: outer container > [label, flex row > input+button].
+ * To stay robust to nested DOM changes, walk up from the input until we
+ * find a sibling button.
+ */
+function getKeyRowButton(labelText: string): HTMLButtonElement {
+  const input = screen.getByLabelText(labelText) as HTMLInputElement;
+  // The flex row containing input+button is a direct parent.
+  return input.parentElement!.querySelector("button") as HTMLButtonElement;
 }
 
-async function flushPromises(): Promise<void> {
-  // Preact in jsdom uses `requestAnimationFrame` (rAF, ~16.6ms) for its
-  // deferred re-render queue — not microtasks. A loop of setTimeout(0) drains
-  // microtasks faster than rAF can fire, leaving the DOM/closure stale with
-  // the previous render's `value`. A single 50ms wait reliably outpaces rAF
-  // and gives Preact room to commit the new render before assertions run.
-  await new Promise((r) => setTimeout(r, 50));
-}
-
-async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
-  // Wrap dispatch in Preact's test-utils `act`. Canonical way to ensure
-  // setJinaKey (via onValueChange on Input) and the subsequent Preact
-  // re-render commit synchronously BEFORE the click below. Without `act`,
-  // the button's onClick handler closure captures stale `value = ""` from
-  // the initial render → handleTest returns early via `if (!value.trim())`
-  // → mockValidateApiKey is never called → CI fails with "Number of calls: 0".
-  //
-  // `act` is shipped with preact (subpath `preact/test-utils`), no extra dep.
-  act(() => {
-    input.value = value;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await flushPromises(); // safety net for downstream microtasks
+/** Get the outer KeyRow container (the one with the masked preview). */
+function getKeyRowContainer(labelText: string): HTMLElement {
+  const input = screen.getByLabelText(labelText) as HTMLInputElement;
+  // input.parentElement === flex row, .parentElement === outer KeyRow container
+  return input.parentElement!.parentElement as HTMLElement;
 }
 
 // ─── Test lifecycle ─────────────────────────────────────────
@@ -156,7 +156,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  document.body.innerHTML = "";
+  cleanup();
 });
 
 // ─── Gate removal regression (PR-2 primary change) ──────────
@@ -164,36 +164,30 @@ afterEach(() => {
 describe("PR-2: KeyRow visibility (always visible regardless of toggle)", () => {
   it("shows Jina KeyRow even when toolWebEnabled = false", () => {
     mockSettings.toolWebEnabled = false;
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey");
-    expect(row).not.toBeNull();
-    const input = row?.querySelector("input[type='password']") as HTMLInputElement | null;
-    expect(input).not.toBeNull();
+    renderModal();
+    expect(screen.getByLabelText(JINA_LABEL)).toBeInTheDocument();
   });
 
   it("shows BrowserPod KeyRow even when toolNodeEnabled = false", () => {
     mockSettings.toolNodeEnabled = false;
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.browserPodApiKey");
-    expect(row).not.toBeNull();
-    const input = row?.querySelector("input[type='password']") as HTMLInputElement | null;
-    expect(input).not.toBeNull();
+    renderModal();
+    expect(screen.getByLabelText(BP_LABEL)).toBeInTheDocument();
   });
 
   it("shows both KeyRows when both toggles are OFF", () => {
     mockSettings.toolWebEnabled = false;
     mockSettings.toolNodeEnabled = false;
-    const { container } = renderModal();
-    expect(findRowByLabel(container, "settings.apiKey")).not.toBeNull();
-    expect(findRowByLabel(container, "settings.browserPodApiKey")).not.toBeNull();
+    renderModal();
+    expect(screen.getByLabelText(JINA_LABEL)).toBeInTheDocument();
+    expect(screen.getByLabelText(BP_LABEL)).toBeInTheDocument();
   });
 
   it("shows both KeyRows when both toggles are ON", () => {
     mockSettings.toolWebEnabled = true;
     mockSettings.toolNodeEnabled = true;
-    const { container } = renderModal();
-    expect(findRowByLabel(container, "settings.apiKey")).not.toBeNull();
-    expect(findRowByLabel(container, "settings.browserPodApiKey")).not.toBeNull();
+    renderModal();
+    expect(screen.getByLabelText(JINA_LABEL)).toBeInTheDocument();
+    expect(screen.getByLabelText(BP_LABEL)).toBeInTheDocument();
   });
 });
 
@@ -201,207 +195,185 @@ describe("PR-2: KeyRow visibility (always visible regardless of toggle)", () => 
 
 describe("SettingsModal — Jina (web search) test flow", () => {
   it("calls validateApiKey on test click and persists via onSave on success", async () => {
+    const user = userEvent.setup();
     mockValidateApiKey.mockResolvedValue({ ok: true });
-    const { container, onSave } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    const { onSave } = renderModal();
+    const input = screen.getByLabelText(JINA_LABEL);
+    const button = getKeyRowButton(JINA_LABEL);
 
-    await typeInto(input, "jina_test_key_abcdef");
-    act(() => button.click());
-    await flushPromises();
+    // userEvent.type fires input events one char at a time AND drains Preact's
+    // render queue between them. The final input state is committed before
+    // user.click() runs, so the button's onClick closure captures value=, not "".
+    await user.type(input, "jina_test_key_abcdef");
+    await user.click(button);
 
+    expect(mockValidateApiKey).toHaveBeenCalledTimes(1);
     expect(mockValidateApiKey).toHaveBeenCalledWith("jina_test_key_abcdef");
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith("jina_test_key_abcdef");
   });
 
   it("does NOT call onSave when validateApiKey returns false", async () => {
-    mockValidateApiKey.mockResolvedValue({ ok: false, code: "invalid_key", message: "HTTP 401 Unauthorized" });
-    const { container, onSave } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    const user = userEvent.setup();
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "invalid_key",
+      message: "HTTP 401 Unauthorized",
+    });
+    const { onSave } = renderModal();
+    const input = screen.getByLabelText(JINA_LABEL);
+    const button = getKeyRowButton(JINA_LABEL);
 
-    await typeInto(input, "bad_key");
-    act(() => button.click());
-    await flushPromises();
+    await user.type(input, "bad_key");
+    await user.click(button);
 
-    expect(mockValidateApiKey).toHaveBeenCalledWith("bad_key");
+    await waitFor(() => {
+      // Asserting on the mock gives Preact's async rerender time to commit
+      // the error state into the DOM.
+      expect(mockValidateApiKey).toHaveBeenCalledWith("bad_key");
+    });
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("shows generic error label when validateApiKey fails", async () => {
-    mockValidateApiKey.mockResolvedValue({ ok: false, code: "invalid_key", message: "HTTP 401 Unauthorized" });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
+  it("shows settings.validate.invalidKey label when validateApiKey fails", async () => {
+    const user = userEvent.setup();
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "invalid_key",
+      message: "HTTP 401 Unauthorized",
+    });
+    renderModal();
+    const input = screen.getByLabelText(JINA_LABEL);
+    const button = getKeyRowButton(JINA_LABEL);
 
-    await typeInto(input, "bad_key");
-    act(() => button.click());
-    await flushPromises();
+    await user.type(input, "bad_key");
+    await user.click(button);
 
-    // Invalid-key code maps to settings.validate.invalidKey via i18n proxy
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.invalidKey");
+    await waitFor(() => {
+      expect(screen.getByText("settings.validate.invalidKey")).toBeInTheDocument();
+    });
   });
 });
 
 // ─── PR-3 — Jina error code rendering ──────────────────────
 
 describe("SettingsModal — PR-3 Jina error code rendering", () => {
-  it("renders settings.validate.invalidKey when code is 'invalid_key'", async () => {
+  const cases: Array<[string, string, string]> = [
+    ["invalid_key", "settings.validate.invalidKey", "bad_key"],
+    ["no_credit", "settings.validate.noCredit", "exhausted_key"],
+    ["rate_limited", "settings.validate.rateLimited", "rate_limited_key"],
+    ["network", "settings.validate.network", "any_key"],
+  ];
+
+  for (const [code, expectedLabel, typeValue] of cases) {
+    it(`renders ${expectedLabel} when code is '${code}'`, async () => {
+      const user = userEvent.setup();
+      mockValidateApiKey.mockResolvedValue({
+        ok: false,
+        code,
+        message: "synthetic error message",
+      });
+      renderModal();
+      const input = screen.getByLabelText(JINA_LABEL);
+      const button = getKeyRowButton(JINA_LABEL);
+
+      await user.type(input, typeValue);
+      await user.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText(expectedLabel)).toBeInTheDocument();
+      });
+    });
+  }
+
+  it("does NOT show the generic settings.validate.error label when code-specific key is present", async () => {
+    const user = userEvent.setup();
     mockValidateApiKey.mockResolvedValue({
       ok: false,
       code: "invalid_key",
       message: "HTTP 401 Unauthorized",
     });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    renderModal();
+    const input = screen.getByLabelText(JINA_LABEL);
+    const button = getKeyRowButton(JINA_LABEL);
 
-    await typeInto(input, "bad_key");
-    act(() => button.click());
-    await flushPromises();
+    await user.type(input, "bad_key");
+    await user.click(button);
 
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.invalidKey");
-    expect(rowText).not.toContain("settings.validate.error"); // generic fallback gone
-  });
-
-  it("renders settings.validate.noCredit when code is 'no_credit'", async () => {
-    mockValidateApiKey.mockResolvedValue({
-      ok: false,
-      code: "no_credit",
-      message: "HTTP 402 Payment Required",
+    await waitFor(() => {
+      expect(screen.getByText("settings.validate.invalidKey")).toBeInTheDocument();
     });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
-
-    await typeInto(input, "exhausted_key");
-    act(() => button.click());
-    await flushPromises();
-
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.noCredit");
-  });
-
-  it("renders settings.validate.rateLimited when code is 'rate_limited'", async () => {
-    mockValidateApiKey.mockResolvedValue({
-      ok: false,
-      code: "rate_limited",
-      message: "HTTP 429 Too Many Requests",
-    });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
-
-    await typeInto(input, "rate_limited_key");
-    act(() => button.click());
-    await flushPromises();
-
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.rateLimited");
-  });
-
-  it("renders settings.validate.network when code is 'network'", async () => {
-    mockValidateApiKey.mockResolvedValue({
-      ok: false,
-      code: "network",
-      message: "Failed to fetch",
-    });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.apiKey")!;
-    const input = row.querySelector("input[type='password']") as HTMLInputElement;
-    const button = row.querySelector("button") as HTMLButtonElement;
-
-    await typeInto(input, "any_key");
-    act(() => button.click());
-    await flushPromises();
-
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.network");
+    // The generic settings.validate.error should NOT also appear
+    expect(screen.queryByText("settings.validate.error")).toBeNull();
   });
 });
 
 // ─── BrowserPod test-connection flow ────────────────────────
-//
-// The BrowserPod input's onValueChange ALREADY auto-persists via
-// updateSetting("browserPodApiKey", v) on every keystroke. To isolate the
-// "test-validation persistence" semantics from the "keystroke persistence" we
-// initialize the key via mockSettings and trigger clicks only — no input events.
 
 describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
   const BP_TEST_KEY = "bp_test_key_abcdef1234";
 
   it("calls validateBrowserPodKey on test click and persists via updateSetting on success", async () => {
+    const user = userEvent.setup();
     mockSettings.browserPodApiKey = BP_TEST_KEY;
     mockValidateBrowserPodKey.mockResolvedValue({ ok: true });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.browserPodApiKey")!;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    renderModal();
+    const button = getKeyRowButton(BP_LABEL);
 
-    act(() => button.click());
-    await flushPromises();
+    await user.click(button);
 
+    expect(mockValidateBrowserPodKey).toHaveBeenCalledTimes(1);
     expect(mockValidateBrowserPodKey).toHaveBeenCalledWith(BP_TEST_KEY);
-    // Exactly one updateSetting call — driven solely by the test-success path,
-    // not by keystroke events (we did not dispatch input events).
     expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
     expect(mockUpdateSettings).toHaveBeenCalledWith({ browserPodApiKey: BP_TEST_KEY });
   });
 
   it("does NOT call updateSetting when validateBrowserPodKey returns ok: false", async () => {
+    const user = userEvent.setup();
     mockSettings.browserPodApiKey = BP_TEST_KEY;
     mockValidateBrowserPodKey.mockResolvedValue({ ok: false, error: "Bad key" });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.browserPodApiKey")!;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    renderModal();
+    const button = getKeyRowButton(BP_LABEL);
 
-    act(() => button.click());
-    await flushPromises();
+    await user.click(button);
 
-    expect(mockValidateBrowserPodKey).toHaveBeenCalledWith(BP_TEST_KEY);
-    // Zero calls: no keystroke events + no success path
+    await waitFor(() => {
+      expect(mockValidateBrowserPodKey).toHaveBeenCalledWith(BP_TEST_KEY);
+    });
     expect(mockUpdateSettings).not.toHaveBeenCalled();
   });
 
   it("shows the validation error string when validateBrowserPodKey returns ok: false", async () => {
+    const user = userEvent.setup();
     mockSettings.browserPodApiKey = BP_TEST_KEY;
     mockValidateBrowserPodKey.mockResolvedValue({
       ok: false,
       error: "BrowserPod boot failed: 401 Unauthorized",
     });
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.browserPodApiKey")!;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    renderModal();
+    const button = getKeyRowButton(BP_LABEL);
 
-    act(() => button.click());
-    await flushPromises();
+    await user.click(button);
 
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("BrowserPod boot failed: 401 Unauthorized");
+    await waitFor(() => {
+      expect(screen.getByText(/BrowserPod boot failed: 401 Unauthorized/)).toBeInTheDocument();
+    });
   });
 
   it("shows cross-origin isolation error WITHOUT calling validateBrowserPodKey", async () => {
+    const user = userEvent.setup();
     mockIsCrossOriginIsolated.mockReturnValue(false);
     mockSettings.browserPodApiKey = BP_TEST_KEY;
-    const { container } = renderModal();
-    const row = findRowByLabel(container, "settings.browserPodApiKey")!;
-    const button = row.querySelector("button") as HTMLButtonElement;
+    renderModal();
+    const button = getKeyRowButton(BP_LABEL);
 
-    act(() => button.click());
-    await flushPromises();
+    await user.click(button);
 
-    expect(mockIsCrossOriginIsolated).toHaveBeenCalled();
-    expect(mockValidateBrowserPodKey).not.toHaveBeenCalled();
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("cross-origin isolated");
+    await waitFor(() => {
+      expect(mockIsCrossOriginIsolated).toHaveBeenCalled();
+      expect(mockValidateBrowserPodKey).not.toHaveBeenCalled();
+    });
+    expect(screen.getByText(/cross-origin isolated/i)).toBeInTheDocument();
   });
 });
 
@@ -410,44 +382,37 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
 describe("SettingsModal — store subscription", () => {
   it("subscribes to store changes when modal is open", async () => {
     renderModal();
-    // useEffect is deferred; flushPreact's render queue before asserting.
-    await flushPromises();
-    expect(mockSubscribe).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockSubscribe).toHaveBeenCalled();
+    });
   });
 
   it("propagates settings.browserPodApiKey changes from store into masked preview", async () => {
     mockSettings.browserPodApiKey = "initial_key_xyz";
-    const { container } = renderModal();
-    await flushPromises();
-    const row = findRowByLabel(container, "settings.browserPodApiKey")!;
-    expect(row).not.toBeNull();
+    renderModal();
+    await waitFor(() => {
+      expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    });
 
-    expect(mockSubscribe).toHaveBeenCalledTimes(1);
-    // Cast through any[] because vi.fn() without an explicit generic infers
-    // mock.calls as a length-0 tuple, indexing into which fails typecheck.
-    const firstCallArgs = mockSubscribe.mock.calls[0] as unknown as Array<(s: { settings: typeof mockSettings }) => void> | undefined;
+    const firstCallArgs = mockSubscribe.mock.calls[0] as unknown as
+      | Array<(s: { settings: typeof mockSettings }) => void>
+      | undefined;
     expect(firstCallArgs).toBeDefined();
     const subscriberCb = firstCallArgs![0];
 
-    // Simulate external settings update (e.g., from PR-1 reactive lifecycle persist)
-    // Wrap in Preact `act` so setBpKey (via the subscriber) commits the rerender
-    // synchronously, updating the masked preview to "update...cdef".
-    act(() => {
-      subscriberCb({
-        settings: {
-          ...mockSettings,
-          browserPodApiKey: "updated_key_abcdef",
-        },
-      });
+    // Simulate external settings update (PR-1 reactive lifecycle persist)
+    subscriberCb({
+      settings: {
+        ...mockSettings,
+        browserPodApiKey: "updated_key_abcdef",
+      },
     });
 
-    await flushPromises(); // safety net
-
-    // Mask: bpKey.slice(0, 6) + "..." + bpKey.slice(-4) = "update" + "..." + "cdef"
-    // Assert the masked prefix chunk "update" and suffix chunk "cdef" — NOT
-    // the full unmasked key, which never appears in the DOM.
-    const rowText = row.textContent || "";
-    expect(rowText).toContain("update");
-    expect(rowText).toContain("cdef");
+    // Masked preview = slice(0, 6) + "..." + slice(-4) = "update" + "..." + "cdef".
+    // Scope to the BP KeyRow container so we don't accidentally match Jina labels.
+    const rowContainer = getKeyRowContainer(BP_LABEL);
+    await waitFor(() => {
+      expect(rowContainer).toHaveTextContent(/update.*cdef/);
+    });
   });
 });

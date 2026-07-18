@@ -18,6 +18,9 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/preact": "^3.2.4",
+    "@testing-library/user-event": "^14.6.1",
     "esbuild": "^0.28.1",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^27.2.0",
