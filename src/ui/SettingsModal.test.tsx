@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "preact";
+import { act } from "preact/test-utils";
 
 // ─── Hoisted mock factories (referenced inside vi.mock which is hoisted) ───
 //
@@ -126,11 +127,19 @@ async function flushPromises(): Promise<void> {
 }
 
 async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
-  input.value = value;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  // Wait for Preact to re-render with the new value before any subsequent
-  // click handler runs (handles closed-over useState reads).
-  await flushPromises();
+  // Wrap dispatch in Preact's test-utils `act`. Canonical way to ensure
+  // setJinaKey (via onValueChange on Input) and the subsequent Preact
+  // re-render commit synchronously BEFORE the click below. Without `act`,
+  // the button's onClick handler closure captures stale `value = ""` from
+  // the initial render → handleTest returns early via `if (!value.trim())`
+  // → mockValidateApiKey is never called → CI fails with "Number of calls: 0".
+  //
+  // `act` is shipped with preact (subpath `preact/test-utils`), no extra dep.
+  act(() => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await flushPromises(); // safety net for downstream microtasks
 }
 
 // ─── Test lifecycle ─────────────────────────────────────────
@@ -421,17 +430,18 @@ describe("SettingsModal — store subscription", () => {
     const subscriberCb = firstCallArgs![0];
 
     // Simulate external settings update (e.g., from PR-1 reactive lifecycle persist)
-    subscriberCb({
-      settings: {
-        ...mockSettings,
-        browserPodApiKey: "updated_key_abcdef",
-      },
+    // Wrap in Preact `act` so setBpKey (via the subscriber) commits the rerender
+    // synchronously, updating the masked preview to "update...cdef".
+    act(() => {
+      subscriberCb({
+        settings: {
+          ...mockSettings,
+          browserPodApiKey: "updated_key_abcdef",
+        },
+      });
     });
 
-    // Subscriber-driven setBpKey schedules a Preact rerender via rAF (~16ms).
-    // Without this drain, row.textContent would still reflect the original
-    // "initial_key_xyz" mask ("initia..._xyz") instead of the new mask.
-    await flushPromises();
+    await flushPromises(); // safety net
 
     // Mask: bpKey.slice(0, 6) + "..." + bpKey.slice(-4) = "update" + "..." + "cdef"
     // Assert the masked prefix chunk "update" and suffix chunk "cdef" — NOT
