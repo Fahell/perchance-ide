@@ -727,7 +727,30 @@ class BrowserPodManager {
       }
     }
 
-    // Step 3: Start a bash shell connected to the custom terminal.
+    // Step 3: Verify the interactive terminal is healthy BEFORE starting bash.
+    // The initial health check uses the headless terminal; this one validates
+    // the newly created interactive terminal's WebSocket channel specifically.
+    // Without this, pod.run("/bin/bash") may fail with BrowserPod's internal
+    // "Cannot read properties of undefined (reading 'catch')" if the
+    // interactive terminal's WebSocket is dead.
+    try {
+      await this.pod.run("/bin/true", [], {
+        terminal: this.interactiveTerminal,
+        cwd: "/home/user",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[BrowserPod] Interactive terminal health check failed:", msg);
+      this.interactiveTerminal = null;
+      throw new Error(
+        "Interactive terminal WebSocket is broken: " + msg + ". " +
+        "The runtime connection may have timed out. " +
+        "Close the terminal panel and reopen it, or disable/re-enable " +
+        "Node.js tools in Settings to force a fresh connection."
+      );
+    }
+
+    // Step 4: Start a bash shell connected to the custom terminal.
     let runPromise: Promise<unknown> | undefined;
     try {
       runPromise = this.pod.run("/bin/bash", [], {
