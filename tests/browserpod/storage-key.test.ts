@@ -33,18 +33,20 @@ describe("makeValidationStorageKey", () => {
     expect(seen.size).toBe(N);
   });
 
-  it("should not collide with the production storageKey", () => {
+  it("namespaces under the production storageKey prefix with -validate- suffix", () => {
     // The production singleton uses "agent-perchance" without the "-validate-" suffix.
-    // Validation keys should never collide with that bucket.
+    // Validation keys intentionally share the production prefix and add "-validate-<uuid>"
+    // (e.g. "agent-perchance-validate-<random>") to scope them to a parallel bucket.
     const productionKey = "agent-perchance";
     for (let i = 0; i < 50; i++) {
       const key = makeValidationStorageKey();
-      // Exact-collision check: never identical to the production bucket name.
+      // Exact-collision check: the validation key must NOT be identical to the
+      // production bucket name (which would otherwise shadow its IndexedDB slot).
       expect(key).not.toBe(productionKey);
-      // The validation bucket IS intentionally namespaced under the production
-      // prefix (e.g. "agent-perchance-validate-<uuid>"). IndexedDB keys are
-      // exact-match (no prefix-shadowing), so prefix-sharing is allowed and
-      // expected — verify the namespacing is present.
+      // Positive namespacing check: validation key DOES start with the validated
+      // suffix pattern. IndexedDB keys are exact-match (no hierarchical prefix
+      // resolution), so prefix-sharing with an extra suffix is the safe pattern
+      // — verify it is preserved across randomized calls.
       expect(key.startsWith(`${productionKey}-validate-`)).toBe(true);
     }
   });
