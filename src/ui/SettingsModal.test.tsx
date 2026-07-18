@@ -117,14 +117,12 @@ function findRowByLabel(container: HTMLElement, labelText: string): HTMLElement 
 }
 
 async function flushPromises(): Promise<void> {
-  // Preact + jsdom pipeline: state updates flow through `Promise.resolve().then(...)`
-  // microtasks, and KeyRow's `handleTest` closure relies on a re-render having
-  // committed the new `value` from useState before the click. Two ticks is not
-  // enough — observed in CI 29626308307. Ten iterations draining both
-  // microtasks and macrotasks is reliably sufficient (and still fast).
-  for (let i = 0; i < 10; i++) {
-    await new Promise((r) => setTimeout(r, 0));
-  }
+  // Preact in jsdom uses `requestAnimationFrame` (rAF, ~16.6ms) for its
+  // deferred re-render queue — not microtasks. A loop of setTimeout(0) drains
+  // microtasks faster than rAF can fire, leaving the DOM/closure stale with
+  // the previous render's `value`. A single 50ms wait reliably outpaces rAF
+  // and gives Preact room to commit the new render before assertions run.
+  await new Promise((r) => setTimeout(r, 50));
 }
 
 async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
@@ -429,6 +427,11 @@ describe("SettingsModal — store subscription", () => {
         browserPodApiKey: "updated_key_abcdef",
       },
     });
+
+    // Subscriber-driven setBpKey schedules a Preact rerender via rAF (~16ms).
+    // Without this drain, row.textContent would still reflect the original
+    // "initial_key_xyz" mask ("initia..._xyz") instead of the new mask.
+    await flushPromises();
 
     // Mask: bpKey.slice(0, 6) + "..." + bpKey.slice(-4) = "update" + "..." + "cdef"
     // Assert the masked prefix chunk "update" and suffix chunk "cdef" — NOT
