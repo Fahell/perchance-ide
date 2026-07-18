@@ -28,6 +28,11 @@ import { storageGet, storageSet } from "../storage.js";
 import { ResizeHandle } from "./ResizeHandle.js";
 import { colors, fonts } from "./theme.js";
 
+// Build-time constant injected by esbuild — `dist-branch` only ever publishes
+// `@<sha>`, never the literal `dev` suffix, so `showStack` evaluates false in
+// production deployments while staying on for `pnpm dev` local builds.
+declare const __COMMIT__: string;
+
 interface TerminalPanelProps {
   visible: boolean;
 }
@@ -73,6 +78,15 @@ async function loadBashHistory(): Promise<void> {
   }
 }
 
+/** Pretty-print the first 8 lines of an error for the dev-only stack block. */
+function formatStack(err: unknown): string {
+  if (err instanceof Error) {
+    const raw = err.stack ?? `${err.name}: ${err.message}`;
+    return raw.split("\n").slice(0, 8).join("\n").trim();
+  }
+  return String(err);
+}
+
 /** GitHub Dark-inspired xterm.js theme matching the IDE palette. */
 const XTERM_THEME = {
   background: "#0d1117",
@@ -109,8 +123,12 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [resetting, setResetting] = useState(false);
+  const [lastError, setLastError] = useState<unknown>(null);
   const podReady = browserPodManager.isReady();
   const terminalFontSize = ideStore.getState().settings.terminalFontSize ?? 13;
+  // Dev-only stack trace in the error UI; production builds never carry this.
+  const showStack = typeof __COMMIT__ !== "undefined" && __COMMIT__.endsWith("dev");
 
   // Persist height when it changes
   useEffect(() => {
@@ -218,6 +236,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       } catch (err) {
         if (!disposed) {
           setConnecting(false);
+          setLastError(err);
           setError(`Failed to connect: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
@@ -278,6 +297,74 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   function handleRestart() {
     saveBashHistory();
     setRetryKey((k) => k + 1);
+  }
+
+  /**
+   * "Reset BP" state machine: dispose the live pod, re-boot using the API
+   * key from settings, re-attach VFS → Pod sync, then bump retryKey so the
+   * useEffect re-runs init(). Idempotent — additional clicks while running
+   *   the await chain are ignored via `resetting` flag.
+   *
+   * The bash history is flushed BEFORE dispose() so the user's history is
+   * not lost on rebuild. After dispose, _bashrcWritten resets to false and
+   * the next createInteractiveTerminal writes a fresh .bashrc.
+   */
+  async function handleResetBrowserPod() {
+    if (resetting) return;
+    setResetting(true);
+    // Reflect the in-flight state in the store immediately so the footer
+    // badge doesn't keep showing the previous "error" / "idle" value.
+    ideStore.getState().setBrowserPodStatus("loading");
+    setLastError(null);
+    setError(null);
+    try {
+      // Save history while Pod is still alive and connected.
+      try { await saveBashHistory(); } catch { /* best-effort */ }
+      // Dispose silently — any in-flight agent tools using the Pod will lose
+      // their context; we trade off that to recover the interactive terminal.
+      await browserPodManager.dispose().catch(() => undefined);
+      const apiKey = ideStore.getState().settings.browserPodApiKey;
+      if (!apiKey) {
+        throw new Error("No BrowserPod API key in settings.");
+      }
+      const ok = await browserPodManager.boot({
+        apiKey,
+        storageKey: "agent-perchance",
+        nodeVersion: "22",
+      });
+      if (!ok) {
+        throw new Error(browserPodManager.getError() ?? "Boot failed after reset.");
+      }
+      // boot() leaves VFS subscriptions intact only via the reactive
+      // subscriber in store.ts; the singleton manager needs explicit re-attach.
+      browserPodManager.subscribeToVfsChanges();
+      // Mirror startAgent(): re-attempt bulk VFS → Pod sync. Persistent disk
+      // (storageKey="agent-perchance") usually retains files, but anything
+      // VFS-only since the last pod boot won't be in the fresh pod otherwise.
+      // Best-effort: a sync failure is non-fatal — see index.ts's pattern.
+      try {
+        const { syncVfsToPod } = await import("../tools/sync-utils.js");
+        await syncVfsToPod(false);
+      } catch (err) {
+        console.warn("[TerminalPanel] Reset BP: VFS → Pod bulk sync failed (non-fatal):", err);
+      }
+      // The reactive subscriber in store.ts only fires on settings change, so
+      // without this explicit call store.browserPodStatus would stay at
+      // "loading". Only promote to "ready" if the user still has Node tools
+      // enabled — otherwise respect their explicit opt-out (toggle off).
+      const enabled = ideStore.getState().settings.toolNodeEnabled;
+      ideStore.getState().setBrowserPodStatus(enabled ? "ready" : "idle");
+      // Bumping retryKey cleans up the old xterm and re-runs init().
+      setRetryKey((k) => k + 1);
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setError(`Failed to reset BrowserPod: ${errMsg}`);
+      setLastError(e);
+      // Mirror the failure into the store so the footer badge reflects truth.
+      ideStore.getState().setBrowserPodStatus("error", errMsg);
+    } finally {
+      setResetting(false);
+    }
   }
 
   const displayHeight = maximized ? MAX_HEIGHT : height;
@@ -406,28 +493,65 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
             fontFamily: fonts.mono, display: "flex", flexDirection: "column", gap: "10px",
           }}>
             <span>⚠ {error}</span>
-            <div style={{ display: "flex", gap: "8px" }}>
+            {showStack && lastError != null && (
+              <details style={{ marginTop: "2px" }}>
+                <summary
+                  aria-label="Show error details"
+                  style={{
+                    fontSize: "9px", color: colors.textMuted, cursor: "pointer",
+                    fontFamily: fonts.mono, padding: "2px 0",
+                  }}
+                >Show details</summary>
+                <pre style={{
+                  fontSize: "9px", color: colors.textMuted,
+                  background: colors.surface2, padding: "8px",
+                  margin: "6px 0 0", overflow: "auto",
+                  maxHeight: "120px", whiteSpace: "pre-wrap",
+                  wordBreak: "break-word", borderRadius: "3px",
+                  fontFamily: fonts.mono, lineHeight: 1.4,
+                }}>{formatStack(lastError)}</pre>
+              </details>
+            )}
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
                 onClick={() => setRetryKey((k) => k + 1)}
+                disabled={resetting}
                 style={{
                   padding: "5px 14px", border: `1px solid ${colors.border}`,
                   borderRadius: "3px", background: colors.surface1, color: colors.text,
-                  fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
-                  transition: "background 0.15s",
+                  fontSize: "10px", fontFamily: fonts.mono,
+                  cursor: resetting ? "default" : "pointer",
+                  transition: "background 0.15s", opacity: resetting ? 0.5 : 1,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
-                onMouseLeave={(e) => (e.currentTarget.style.background = colors.surface1)}
+                onMouseEnter={(e) => { if (!resetting) (e.currentTarget.style.background = colors.surface2); }}
+                onMouseLeave={(e) => { if (!resetting) (e.currentTarget.style.background = colors.surface1); }}
               >Retry</button>
               <button
+                onClick={handleResetBrowserPod}
+                disabled={resetting}
+                title="Dispose + reboot BrowserPod using the API key from settings"
+                style={{
+                  padding: "5px 14px", border: `1px solid ${colors.border}`,
+                  borderRadius: "3px", background: "transparent", color: colors.textSecondary,
+                  fontSize: "10px", fontFamily: fonts.mono,
+                  cursor: resetting ? "default" : "pointer",
+                  transition: "background 0.15s", opacity: resetting ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => { if (!resetting) (e.currentTarget.style.background = colors.surface2); }}
+                onMouseLeave={(e) => { if (!resetting) (e.currentTarget.style.background = "transparent"); }}
+              >{resetting ? "Rebooting…" : "⚙ Reset BP"}</button>
+              <button
                 onClick={() => ideStore.getState().setTerminalOpen(false)}
+                disabled={resetting}
                 style={{
                   padding: "5px 14px", border: `1px solid ${colors.border}`,
                   borderRadius: "3px", background: "transparent", color: colors.textMuted,
-                  fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
-                  transition: "background 0.15s",
+                  fontSize: "10px", fontFamily: fonts.mono,
+                  cursor: resetting ? "default" : "pointer",
+                  transition: "background 0.15s", opacity: resetting ? 0.5 : 1,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface1)}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                onMouseEnter={(e) => { if (!resetting) (e.currentTarget.style.background = colors.surface1); }}
+                onMouseLeave={(e) => { if (!resetting) (e.currentTarget.style.background = "transparent"); }}
               >Close</button>
             </div>
           </div>

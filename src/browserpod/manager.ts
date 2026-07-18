@@ -701,56 +701,20 @@ class BrowserPodManager {
     }
 
     // Step 2: Write a custom .bashrc for a colorful, informative prompt.
-    if (!this._bashrcWritten) {
-      try {
-        const bashrc = [
-          "# perchance-ide terminal config",
-          "export PS1='\\[\\e[1;32m\\]\\u@perchance\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '",
-          "export TERM=xterm-256color",
-          "export HISTFILE=/home/user/.bash_history",
-          "export HISTSIZE=1000",
-          "export HISTFILESIZE=2000",
-          "shopt -s histappend 2>/dev/null",
-          "alias ll='ls -la --color=auto'",
-          "alias ls='ls --color=auto'",
-          "alias grep='grep --color=auto'",
-        ].join("\n");
+    await this._ensureBashrc();
 
-        await this.ensureDirectory("/home/user/.bashrc");
-        const file = await this.pod.createFile("/home/user/.bashrc", "utf-8");
-        await file.write(bashrc);
-        await file.close();
-        this._bashrcWritten = true;
-        console.log("[BrowserPod] Custom .bashrc written to /home/user/.bashrc");
-      } catch (err) {
-        console.warn("[BrowserPod] Failed to write .bashrc:", err);
-      }
-    }
-
-    // Step 3: Verify the interactive terminal is healthy BEFORE starting bash.
-    // The initial health check uses the headless terminal; this one validates
-    // the newly created interactive terminal's WebSocket channel specifically.
-    // Without this, pod.run("/bin/bash") may fail with BrowserPod's internal
-    // "Cannot read properties of undefined (reading 'catch')" if the
-    // interactive terminal's WebSocket is dead.
-    try {
-      await this.pod.run("/bin/true", [], {
-        terminal: this.interactiveTerminal,
-        cwd: "/home/user",
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn("[BrowserPod] Interactive terminal health check failed:", msg);
-      this.interactiveTerminal = null;
-      throw new Error(
-        "Interactive terminal WebSocket is broken: " + msg + ". " +
-        "The runtime connection may have timed out. " +
-        "Close the terminal panel and reopen it, or disable/re-enable " +
-        "Node.js tools in Settings to force a fresh connection."
-      );
-    }
-
-    // Step 4: Start a bash shell connected to the custom terminal.
+    // Step 3: Start a bash shell connected to the custom terminal directly.
+    //
+    // NOTE: An earlier revision ran `pod.run("/bin/true")` on the freshly
+    // created interactive terminal here as a pre-flight health check (commit
+    // 2e3101f). That consistently raised a hard-to-diagnose
+    // "Cannot read properties of undefined (reading 'catch')" because /bin/true
+    // exits immediately and finalizes the terminal's internal stream/queued-
+    // output promise before bash starts. BrowserPod's internals then call
+    // `.catch()` on the now-undefined promise. Removing the pre-flight is the
+    // correct fix; the real failure class (actual WebSocket death) is already
+    // covered by the headless `_healthCheck()` at the top of this function.
+    console.log("[BrowserPod] Interactive terminal ready — starting bash");
     let runPromise: Promise<unknown> | undefined;
     try {
       runPromise = this.pod.run("/bin/bash", [], {
@@ -804,6 +768,40 @@ class BrowserPodManager {
         }
       },
     };
+  }
+
+  /**
+   * Write a custom .bashrc (colorful prompt + history config) idempotently.
+   * Best-effort: a failed write is logged but does not abort terminal open —
+   * bash will simply fall back to defaults. The flag `_bashrcWritten` short-
+   * circuits on subsequent createInteractiveTerminal() calls within the same
+   * pod lifetime, so we don't redo createFile() on every panel toggle.
+   */
+  private async _ensureBashrc(): Promise<void> {
+    if (!this.pod || this._bashrcWritten) return;
+    try {
+      const bashrc = [
+        "# perchance-ide terminal config",
+        "export PS1='\\[\\e[1;32m\\]\\u@perchance\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '",
+        "export TERM=xterm-256color",
+        "export HISTFILE=/home/user/.bash_history",
+        "export HISTSIZE=1000",
+        "export HISTFILESIZE=2000",
+        "shopt -s histappend 2>/dev/null",
+        "alias ll='ls -la --color=auto'",
+        "alias ls='ls --color=auto'",
+        "alias grep='grep --color=auto'",
+      ].join("\n");
+
+      await this.ensureDirectory("/home/user/.bashrc");
+      const file = await this.pod.createFile("/home/user/.bashrc", "utf-8");
+      await file.write(bashrc);
+      await file.close();
+      this._bashrcWritten = true;
+      console.log("[BrowserPod] Custom .bashrc written to /home/user/.bashrc");
+    } catch (err) {
+      console.warn("[BrowserPod] Failed to write .bashrc:", err);
+    }
   }
 
   /**
