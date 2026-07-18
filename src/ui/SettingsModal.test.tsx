@@ -24,10 +24,16 @@
  *
  *   Manual `flushPromises`, `typeInto`, `clickAct`, `findRowByLabel` helpers
  *   are no longer needed and have been removed.
+ *
+ * - `vitest.config.ts` carries `testTimeout: 10000` because the Jina success-
+ *   path test ("calls validateApiKey on test click and persists via onSave
+ *   on success") consistently takes ~5.7s in JSDOM due to 20+ keystroke
+ *   re-renders. Bumping beyond 10s should require first investigating why
+ *   the chain is so slow, not just raising the ceiling.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/preact";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 
 // ─── Hoisted mock factories (referenced inside vi.mock which is hoisted) ───
@@ -106,6 +112,37 @@ import { SettingsModal } from "./SettingsModal.js";
 const JINA_LABEL = "settings.apiKey";
 const BP_LABEL = "settings.browserPodApiKey";
 
+/**
+ * Render the SettingsModal and return a `typeAndClick` helper that
+ * pre-flights a Preact flush between `user.type` and `user.click`.
+ *
+ * ## Why the act-flush is non-optional
+ *
+ * `KeyRow.handleTest` is an `async` function whose first synchronous step is
+ * `if (!value.trim()) { setTestStatus("error"); setTestError(null); return; }`.
+ * That `value` comes from the closure created when `KeyRow` last rendered.
+ *
+ * The flow of one of these tests is:
+ *   1. `user.type(input, "bad_key")`  →  onInput → `setJinaKey(v)`
+ *   2. `user.click(button)`           →  handleTest → reads `value`
+ *
+ * Between (1) and (2) Preact needs to:
+ *   - commit the parent's setJinaKey(v) update,
+ *   - re-render KeyRow with the new `value` prop,
+ *   - capture a fresh `value` in handleTest's closure.
+ *
+ * Without the explicit `await act(async () => {})` flush, the click handler
+ * can fire against the PRE-update closure, see `value === ""`, take the
+ * early-return branch, and render `settings.validate.error` (the generic
+ * fallback) instead of `settings.validate.invalidKey` (the code-specific
+ * label). The test then fails with `Unable to find an element with the
+ * text: settings.validate.invalidKey`.
+ *
+ * `userEvent` v14 wraps click handlers in `act()` internally, but it does
+ * NOT bridge the gap between the parent's setState (from `user.type`) and
+ * the next render — that bridge is exactly what this `act(async () => {})`
+ * provides.
+ */
 function renderModal(initialKey = "") {
   const onClose = vi.fn();
   const onSave = vi.fn();
@@ -120,7 +157,22 @@ function renderModal(initialKey = "") {
       onLocaleChange={onLocaleChange}
     />,
   );
-  return { onClose, onSave, onLocaleChange };
+
+  async function typeAndClick(
+    user: ReturnType<typeof userEvent.setup>,
+    input: HTMLElement,
+    button: HTMLElement,
+    value: string,
+  ) {
+    await user.type(input, value);
+    // Flush pending Preact updates so the click handler's closure captures
+    // the freshly typed value. Without this, handleTest may take the
+    // `value.trim() === ""` early-return branch on slow CI runners.
+    await act(async () => {});
+    await user.click(button);
+  }
+
+  return { onClose, onSave, onLocaleChange, typeAndClick };
 }
 
 /**
@@ -197,19 +249,20 @@ describe("SettingsModal — Jina (web search) test flow", () => {
   it("calls validateApiKey on test click and persists via onSave on success", async () => {
     const user = userEvent.setup();
     mockValidateApiKey.mockResolvedValue({ ok: true });
-    const { onSave } = renderModal();
+    const { onSave, typeAndClick } = renderModal();
     const input = screen.getByLabelText(JINA_LABEL);
     const button = getKeyRowButton(JINA_LABEL);
 
     // userEvent.type fires input events one char at a time AND drains Preact's
     // render queue between them. The final input state is committed before
     // user.click() runs, so the button's onClick closure captures value=, not "".
-    await user.type(input, "jina_test_key_abcdef");
-    await user.click(button);
+    await typeAndClick(user, input, button, "jina_test_key_abcdef");
 
     expect(mockValidateApiKey).toHaveBeenCalledTimes(1);
     expect(mockValidateApiKey).toHaveBeenCalledWith("jina_test_key_abcdef");
-    expect(onSave).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
     expect(onSave).toHaveBeenCalledWith("jina_test_key_abcdef");
   });
 
@@ -220,12 +273,11 @@ describe("SettingsModal — Jina (web search) test flow", () => {
       code: "invalid_key",
       message: "HTTP 401 Unauthorized",
     });
-    const { onSave } = renderModal();
+    const { onSave, typeAndClick } = renderModal();
     const input = screen.getByLabelText(JINA_LABEL);
     const button = getKeyRowButton(JINA_LABEL);
 
-    await user.type(input, "bad_key");
-    await user.click(button);
+    await typeAndClick(user, input, button, "bad_key");
 
     await waitFor(() => {
       // Asserting on the mock gives Preact's async rerender time to commit
@@ -242,16 +294,13 @@ describe("SettingsModal — Jina (web search) test flow", () => {
       code: "invalid_key",
       message: "HTTP 401 Unauthorized",
     });
-    renderModal();
+    const { typeAndClick } = renderModal();
     const input = screen.getByLabelText(JINA_LABEL);
     const button = getKeyRowButton(JINA_LABEL);
 
-    await user.type(input, "bad_key");
-    await user.click(button);
+    await typeAndClick(user, input, button, "bad_key");
 
-    await waitFor(() => {
-      expect(screen.getByText("settings.validate.invalidKey")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("settings.validate.invalidKey")).toBeInTheDocument();
   });
 });
 
@@ -273,16 +322,13 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
         code,
         message: "synthetic error message",
       });
-      renderModal();
+      const { typeAndClick } = renderModal();
       const input = screen.getByLabelText(JINA_LABEL);
       const button = getKeyRowButton(JINA_LABEL);
 
-      await user.type(input, typeValue);
-      await user.click(button);
+      await typeAndClick(user, input, button, typeValue);
 
-      await waitFor(() => {
-        expect(screen.getByText(expectedLabel)).toBeInTheDocument();
-      });
+      expect(await screen.findByText(expectedLabel)).toBeInTheDocument();
     });
   }
 
@@ -293,16 +339,13 @@ describe("SettingsModal — PR-3 Jina error code rendering", () => {
       code: "invalid_key",
       message: "HTTP 401 Unauthorized",
     });
-    renderModal();
+    const { typeAndClick } = renderModal();
     const input = screen.getByLabelText(JINA_LABEL);
     const button = getKeyRowButton(JINA_LABEL);
 
-    await user.type(input, "bad_key");
-    await user.click(button);
+    await typeAndClick(user, input, button, "bad_key");
 
-    await waitFor(() => {
-      expect(screen.getByText("settings.validate.invalidKey")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("settings.validate.invalidKey")).toBeInTheDocument();
     // The generic settings.validate.error should NOT also appear
     expect(screen.queryByText("settings.validate.error")).toBeNull();
   });
