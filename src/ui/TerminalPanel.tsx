@@ -1,22 +1,26 @@
 /**
- * TerminalPanel — Interactive terminal UI component using BrowserPod's
- * built-in xterm.js via createDefaultTerminal(element).
+ * TerminalPanel — Interactive terminal UI component.
  *
- * IMPORTANT: We do NOT create our own xterm.Terminal instance.
- * BrowserPod.createDefaultTerminal(element) creates and manages its own
- * xterm instance internally. Creating a separate one causes conflicts
- * (cursor blinks but no shell connected).
+ * Owns its own xterm.js Terminal instance (v6.0.0) styled with the IDE's
+ * dark theme.  Bridges I/O to BrowserPod via the manager's
+ * createInteractiveTerminal() which uses createCustomTerminal under the hood.
+ *
+ * This replaces the old createDefaultTerminal(element) black-box approach.
+ * We now control fontSize, theme, cursor, and fontFamily directly.
  *
  * Features:
- * - Resize handle on top edge for vertical resizing
- * - Close button in header
- * - Pod→VFS sync when panel is hidden
- * - Loading state while connecting
- * - Error state using Preact instead of innerHTML
- * - Persisted height across sessions
+ * - xterm.js + FitAddon with ResizeObserver for responsive sizing
+ * - Custom GitHub Dark-inspired color theme
+ * - Bridge: xterm.onData → BP terminal stdin (.write/.input)
+ * - Bridge: BP terminal onOutput → xterm.write(bytes)
+ * - Resize: xterm.onResize → BP terminal resize(cols, rows)
+ * - Bash history persistence (save on close, restore on open)
+ * - Maximize / Restart / Close header buttons
  */
 
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 import { browserPodManager } from "../browserpod/manager.js";
 import { pullProjectFilesFromPod } from "../tools/shell-tools.js";
 import { ideStore } from "../store.js";
@@ -50,7 +54,7 @@ async function saveBashHistory(): Promise<void> {
       storageSet(BASH_HISTORY_KEY, history);
       console.log("[TerminalPanel] Bash history saved:", history.split("\n").length, "lines");
     }
-  } catch (err) {
+  } catch {
     // Non-critical — history is best-effort
   }
 }
@@ -69,9 +73,37 @@ async function loadBashHistory(): Promise<void> {
   }
 }
 
+/** GitHub Dark-inspired xterm.js theme matching the IDE palette. */
+const XTERM_THEME = {
+  background: "#0d1117",
+  foreground: "#c9d1d9",
+  cursor: "#58a6ff",
+  cursorAccent: "#0d1117",
+  selectionBackground: "#264f78",
+  black: "#484f58",
+  red: "#ff7b72",
+  green: "#3fb950",
+  yellow: "#d29922",
+  blue: "#58a6ff",
+  magenta: "#bc8cff",
+  cyan: "#39c5cf",
+  white: "#b1bac4",
+  brightBlack: "#6e7681",
+  brightRed: "#ffa198",
+  brightGreen: "#56d364",
+  brightYellow: "#e3b341",
+  brightBlue: "#79c0ff",
+  brightMagenta: "#d2a8ff",
+  brightCyan: "#56d4dd",
+  brightWhite: "#f0f6fc",
+};
+
 export function TerminalPanel({ visible }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wasVisibleRef = useRef(false);
+  const termRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const bridgeRef = useRef<{ write: (d: string) => void; resize: (c: number, r: number) => void } | null>(null);
   const [height, setHeight] = useState(loadSavedHeight);
   const [maximized, setMaximized] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -85,7 +117,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
     storageSet(STORAGE_KEY, height);
   }, [height]);
 
-  // Initialize BrowserPod interactive terminal when panel becomes visible
+  // Initialize xterm.js + BrowserPod shell when panel becomes visible
   useEffect(() => {
     if (!visible || !containerRef.current) return;
 
@@ -94,7 +126,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
     setError(null);
 
     async function init() {
-      // Import xterm CSS dynamically (BrowserPod's createDefaultTerminal needs it)
+      // Import xterm CSS dynamically
       const link = document.createElement("link");
       link.rel = "stylesheet";
       link.href = "https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css";
@@ -104,38 +136,89 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
 
       if (disposed || !containerRef.current) return;
 
-      // Connect to BrowserPod interactive terminal
-      if (browserPodManager.isReady()) {
-        try {
-          // Restore bash history before starting the shell (P10)
-          await loadBashHistory();
-
-          await browserPodManager.createInteractiveTerminal(containerRef.current!);
-          if (!disposed) {
-            setConnecting(false);
-            console.log("[TerminalPanel] Interactive terminal connected");
-
-            // Auto-focus the xterm textarea so the user can start typing immediately
-            setTimeout(() => {
-              if (!disposed && containerRef.current) {
-                const textarea = containerRef.current.querySelector("textarea");
-                if (textarea) {
-                  textarea.focus();
-                  console.log("[TerminalPanel] Auto-focused terminal");
-                }
-              }
-            }, 150); // Small delay to let xterm.js finish DOM setup
-          }
-        } catch (err) {
-          if (!disposed) {
-            setConnecting(false);
-            setError(`Failed to connect: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      } else {
+      if (!browserPodManager.isReady()) {
         if (!disposed) {
           setConnecting(false);
           setError("BrowserPod not ready. Enable Node.js tools in Settings.");
+        }
+        return;
+      }
+
+      try {
+        // Restore bash history before starting the shell
+        await loadBashHistory();
+
+        // ── Create xterm.js instance ──────────────────────
+        const term = new Terminal({
+          fontSize: terminalFontSize,
+          fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
+          theme: XTERM_THEME,
+          cursorBlink: true,
+          allowProposedApi: true,
+          cols: 80,
+          rows: 24,
+        });
+
+        const fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+
+        // Mount into the container div
+        term.open(containerRef.current!);
+
+        // Fit to container size
+        try { fitAddon.fit(); } catch { /* container may not be sized yet */ }
+
+        if (disposed) { term.dispose(); fitAddon.dispose(); return; }
+
+        // ── Create the Pod shell via BrowserPod ────────────
+        const bridge = await browserPodManager.createInteractiveTerminal({
+          cols: term.cols,
+          rows: term.rows,
+          onOutput: (data: Uint8Array) => {
+            if (!disposed) term.write(data);
+          },
+        });
+
+        if (disposed) { term.dispose(); fitAddon.dispose(); return; }
+
+        // ── Bridge stdin: keyboard → Pod process ──────────
+        term.onData((data: string) => {
+          bridge.write(data);
+        });
+
+        // ── Bridge resize: FitAddon → Pod ─────────────────
+        term.onResize(({ cols, rows }) => {
+          bridge.resize(cols, rows);
+        });
+
+        // ── Responsive: ResizeObserver re-fits on container size changes ──
+        const resizeObserver = new ResizeObserver(() => {
+          try { fitAddon.fit(); } catch { /* ignore */ }
+        });
+        resizeObserver.observe(containerRef.current!);
+
+        // Store refs for cleanup
+        termRef.current = term;
+        fitAddonRef.current = fitAddon;
+        bridgeRef.current = bridge;
+
+        if (!disposed) {
+          setConnecting(false);
+          console.log("[TerminalPanel] Interactive terminal connected");
+
+          // Dispose the ResizeObserver on next cleanup (we keep it alive here)
+          // Attach to the termRef scope for cleanup
+          (termRef as any)._resizeObserver = resizeObserver;
+
+          // Auto-focus
+          setTimeout(() => {
+            if (!disposed) term.focus();
+          }, 100);
+        }
+      } catch (err) {
+        if (!disposed) {
+          setConnecting(false);
+          setError(`Failed to connect: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
@@ -146,12 +229,18 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       disposed = true;
       setConnecting(false);
       setError(null);
-      // Dispose interactive shell + terminal so the next mount starts fresh
+      // Save bash history before tearing down
+      saveBashHistory();
+      // Dispose xterm.js (cleans up DOM, event listeners, addons)
+      const resizeObserver = (termRef as any)._resizeObserver as ResizeObserver | undefined;
+      resizeObserver?.disconnect();
+      termRef.current?.dispose();
+      fitAddonRef.current?.dispose();
+      termRef.current = null;
+      fitAddonRef.current = null;
+      bridgeRef.current = null;
+      // Tell manager to clear its reference
       browserPodManager.disposeInteractiveTerminal().catch(() => {});
-      // Clear container so next mount gets a fresh element for createDefaultTerminal
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
     };
   }, [visible, retryKey]);
 
@@ -170,7 +259,6 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   }, []);
 
   function handleClose() {
-    // Save history before closing (P10)
     saveBashHistory();
     ideStore.getState().setTerminalOpen(false);
   }
@@ -178,10 +266,8 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   function handleMaximize() {
     setMaximized((m) => {
       if (m) {
-        // Restore: go back to saved height
         setHeight(loadSavedHeight());
       } else {
-        // Maximize: save current height, then go to max
         storageSet(STORAGE_KEY, height);
         setHeight(MAX_HEIGHT);
       }
@@ -190,15 +276,11 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   }
 
   function handleRestart() {
-    // Save history, then force re-initialization
     saveBashHistory();
     setRetryKey((k) => k + 1);
   }
 
-  // Compute the effective display height
   const displayHeight = maximized ? MAX_HEIGHT : height;
-  // CSS zoom for terminal font scaling (P8)
-  const zoom = Math.max(0.6, Math.min(2.0, terminalFontSize / 13));
 
   if (!visible) return null;
 
@@ -214,7 +296,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       display: "flex",
       flexDirection: "column",
     }}>
-      {/* Shared ResizeHandle */}
+      {/* Resize handle */}
       <ResizeHandle direction="vertical" onResize={handleResize} />
 
       {/* Header bar */}
@@ -235,133 +317,82 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
           TERMINAL (Node.js / Bash)
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          {/* Restart button (P9) */}
+          {/* Restart button */}
           {!connecting && !error && (
             <button
               onClick={handleRestart}
               title="Restart shell"
               style={{
-                background: "none",
-                border: "none",
-                color: colors.textMuted,
-                fontSize: "10px",
-                cursor: "pointer",
-                padding: "1px 5px",
-                fontFamily: fonts.mono,
-                borderRadius: "2px",
+                background: "none", border: "none", color: colors.textMuted,
+                fontSize: "10px", cursor: "pointer", padding: "1px 5px",
+                fontFamily: fonts.mono, borderRadius: "2px",
                 transition: "background 0.1s, color 0.1s",
               }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface2; (e.currentTarget as HTMLElement).style.color = colors.text; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = colors.textMuted; }}
-            >
-              ↻
-            </button>
+            >↻</button>
           )}
-          {/* Maximize button (P7) */}
+          {/* Maximize button */}
           <button
             onClick={handleMaximize}
             title={maximized ? "Restore height" : "Maximize"}
             style={{
-              background: "none",
-              border: "none",
-              color: colors.textMuted,
-              fontSize: "10px",
-              cursor: "pointer",
-              padding: "1px 5px",
-              fontFamily: fonts.mono,
-              borderRadius: "2px",
+              background: "none", border: "none", color: colors.textMuted,
+              fontSize: "10px", cursor: "pointer", padding: "1px 5px",
+              fontFamily: fonts.mono, borderRadius: "2px",
               transition: "background 0.1s, color 0.1s",
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface2; (e.currentTarget as HTMLElement).style.color = colors.text; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = colors.textMuted; }}
-          >
-            {maximized ? "⊟" : "⊞"}
-          </button>
-          {/* Status indicator with colored dot */}
+          >{maximized ? "⊟" : "⊞"}</button>
+          {/* Status indicator */}
           <span style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            fontSize: "9px",
-            fontFamily: fonts.mono,
-            color: colors.textMuted,
+            display: "flex", alignItems: "center", gap: "4px",
+            fontSize: "9px", fontFamily: fonts.mono, color: colors.textMuted,
           }}>
             <span style={{
-              width: "6px",
-              height: "6px",
-              borderRadius: "50%",
-              background: connecting
-                ? "none"
-                : error
-                  ? "#f87171"
-                  : podReady
-                    ? "#4ade80"
-                    : colors.textMuted,
+              width: "6px", height: "6px", borderRadius: "50%",
+              background: connecting ? "none" : error ? "#f87171" : podReady ? "#4ade80" : colors.textMuted,
               animation: connecting ? "status-dot-pulse 1s ease-in-out infinite" : "none",
               border: connecting ? "1px solid #666" : "none",
               flexShrink: 0,
             }} />
             {connecting ? "connecting..." : error ? "error" : podReady ? "connected" : "disconnected"}
           </span>
+          {/* Close button */}
           <button
             onClick={handleClose}
             title="Close terminal"
             style={{
-              background: "none",
-              border: "none",
-              color: colors.textMuted,
-              fontSize: "14px",
-              cursor: "pointer",
-              padding: "2px 6px",
-              lineHeight: 1,
-              fontFamily: fonts.mono,
-              borderRadius: "2px",
+              background: "none", border: "none", color: colors.textMuted,
+              fontSize: "14px", cursor: "pointer", padding: "2px 6px",
+              lineHeight: 1, fontFamily: fonts.mono, borderRadius: "2px",
               transition: "background 0.1s",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-          >
-            ×
-          </button>
+          >×</button>
         </div>
       </div>
 
       {/* Content area */}
       <div style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
+        flex: 1, display: "flex", flexDirection: "column", position: "relative",
       }}>
         {/* Loading state */}
         {connecting && (
           <div style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: colors.bg,
-            zIndex: 5,
+            position: "absolute", inset: 0, display: "flex",
+            alignItems: "center", justifyContent: "center",
+            background: colors.bg, zIndex: 5,
           }}>
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "8px",
-            }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
               <span style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
+                width: "6px", height: "6px", borderRadius: "50%",
                 background: colors.textSecondary,
                 animation: "status-dot-pulse 1s ease-in-out infinite",
               }} />
-              <span style={{
-                fontSize: "10px",
-                fontFamily: fonts.mono,
-                color: colors.textMuted,
-              }}>
+              <span style={{ fontSize: "10px", fontFamily: fonts.mono, color: colors.textMuted }}>
                 connecting to terminal...
               </span>
             </div>
@@ -371,67 +402,45 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         {/* Error state */}
         {error && (
           <div style={{
-            padding: "16px 12px",
-            color: "#e74c3c",
-            fontSize: "11px",
-            fontFamily: fonts.mono,
-            display: "flex",
-            flexDirection: "column",
-            gap: "10px",
+            padding: "16px 12px", color: "#e74c3c", fontSize: "11px",
+            fontFamily: fonts.mono, display: "flex", flexDirection: "column", gap: "10px",
           }}>
             <span>⚠ {error}</span>
             <div style={{ display: "flex", gap: "8px" }}>
               <button
                 onClick={() => setRetryKey((k) => k + 1)}
                 style={{
-                  padding: "5px 14px",
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: "3px",
-                  background: colors.surface1,
-                  color: colors.text,
-                  fontSize: "10px",
-                  fontFamily: fonts.mono,
-                  cursor: "pointer",
+                  padding: "5px 14px", border: `1px solid ${colors.border}`,
+                  borderRadius: "3px", background: colors.surface1, color: colors.text,
+                  fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
                   transition: "background 0.15s",
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = colors.surface1)}
-              >
-                Retry
-              </button>
+              >Retry</button>
               <button
                 onClick={() => ideStore.getState().setTerminalOpen(false)}
                 style={{
-                  padding: "5px 14px",
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: "3px",
-                  background: "transparent",
-                  color: colors.textMuted,
-                  fontSize: "10px",
-                  fontFamily: fonts.mono,
-                  cursor: "pointer",
+                  padding: "5px 14px", border: `1px solid ${colors.border}`,
+                  borderRadius: "3px", background: "transparent", color: colors.textMuted,
+                  fontSize: "10px", fontFamily: fonts.mono, cursor: "pointer",
                   transition: "background 0.15s",
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface1)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-              >
-                Close
-              </button>
+              >Close</button>
             </div>
           </div>
         )}
 
-        {/* xterm container — BrowserPod's createDefaultTerminal mounts here */}
+        {/* xterm mount point */}
         <div
           ref={containerRef}
           style={{
-            flex: 1,
-            width: "100%",
-            padding: "4px",
-            boxSizing: "border-box",
+            flex: 1, width: "100%",
+            padding: "4px", boxSizing: "border-box",
             overflow: "hidden",
             display: error || connecting ? "none" : "block",
-            zoom: zoom,
           }}
         />
       </div>

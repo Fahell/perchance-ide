@@ -633,21 +633,30 @@ class BrowserPodManager {
   }
 
   /**
-   * Create an interactive terminal attached to a DOM element AND start a shell.
+   * Create an interactive terminal using our own xterm.js instance (managed by
+   * TerminalPanel) bridged to a BrowserPod custom terminal + bash shell.
    *
-   * Uses createDefaultTerminal(element) for the xterm.js UI, then immediately
-   * starts /bin/bash connected to that terminal via pod.run().
+   * Architecture: TerminalPanel owns the xterm.js UI; the manager creates a
+   * headless BrowserPod terminal via createCustomTerminal, bridges stdout →
+   * xterm.write(), and returns { write, resize } for stdin bridging.
    *
-   * IMPORTANT: createDefaultTerminal ONLY creates the visual xterm.js instance.
-   * Without an explicit pod.run() with a shell binary, no shell process exists
-   * — typing just echoes to the terminal and Enter produces a newline.
+   * This replaces the old createDefaultTerminal(element) approach which was a
+   * black box — we now control fontSize, theme, cursor, fontFamily directly.
    *
-   * This is separate from the headless createCustomTerminal used by agent tools.
-   * Both can coexist within the same Pod instance.
-   *
-   * Call disposeInteractiveTerminal() when the panel is hidden to clean up.
+   * @param options.cols  Terminal columns for the initial custom terminal.
+   * @param options.rows  Terminal rows for the initial custom terminal.
+   * @param options.onOutput  Callback receiving raw terminal output (ArrayBuffer
+   *   slices) — TerminalPanel feeds this to xterm.write().
+   * @returns Bridge object with write(data) for stdin and resize(cols, rows).
    */
-  async createInteractiveTerminal(element: HTMLElement): Promise<void> {
+  async createInteractiveTerminal(options: {
+    cols: number;
+    rows: number;
+    onOutput: (data: Uint8Array) => void;
+  }): Promise<{
+    write: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+  }> {
     // Initial guard: pod must be ready
     if (!this.pod) {
       throw new Error("BrowserPod not initialized");
@@ -657,15 +666,11 @@ class BrowserPodManager {
     await this.disposeInteractiveTerminal();
 
     // ── Re-check after await ──
-    // The pod may have been disposed while we were awaiting disposeInteractiveTerminal.
-    // This can happen if the panel was closed during the async operation.
     if (!this.pod) {
       throw new Error("BrowserPod was disposed while initializing the interactive terminal");
     }
 
     // ── Health check: verify WebSocket is still alive ──
-    // isReady() may return true even when the underlying WebSocket has timed out.
-    // Pre-flight /bin/true catches stale connections before we create the xterm UI.
     const healthy = await this._healthCheck();
     if (!healthy) {
       throw new Error(
@@ -674,28 +679,28 @@ class BrowserPodManager {
       );
     }
 
-    // Step 1: Create the xterm.js UI (visual terminal)
-    // Per BrowserPod docs, createDefaultTerminal() always returns Promise<Terminal>.
-    // But if the DOM element was cleared (by cleanup running concurrently), it may
-    // return undefined or throw.
-    this.interactiveTerminal = await this.pod.createDefaultTerminal(element);
+    // Step 1: Create a headless custom terminal bridged to our xterm.js instance.
+    // TerminalPanel passes its xterm.write as the onOutput callback; we also
+    // slice() the ArrayBuffer for safety (SharedArrayBuffer compatibility).
+    this.interactiveTerminal = await this.pod.createCustomTerminal({
+      cols: options.cols,
+      rows: options.rows,
+      onOutput: (buffer: ArrayBuffer) => {
+        options.onOutput(new Uint8Array(buffer.slice(0)));
+      },
+    });
 
     // ── Re-check after await ──
-    // Pod could have been disposed while createDefaultTerminal was in-flight.
     if (!this.pod) {
       this.interactiveTerminal = null;
-      throw new Error("BrowserPod was disposed while creating the terminal UI");
+      throw new Error("BrowserPod was disposed while creating the terminal");
     }
 
-    // Guard: ensure createDefaultTerminal returned a valid terminal.
-    // An invalid/null DOM element (cleared by concurrent cleanup) can cause this.
     if (!this.interactiveTerminal) {
-      throw new Error("createDefaultTerminal returned no terminal — the DOM element may have been cleared");
+      throw new Error("createCustomTerminal returned no terminal handle");
     }
 
     // Step 2: Write a custom .bashrc for a colorful, informative prompt.
-    // Only written once per Pod session — the flag resets on dispose().
-    // Writes to /home/user/.bashrc (the Pod's project root) since /root may not exist.
     if (!this._bashrcWritten) {
       try {
         const bashrc = [
@@ -711,10 +716,7 @@ class BrowserPodManager {
           "alias grep='grep --color=auto'",
         ].join("\n");
 
-        // Ensure /home/user exists before creating the file.
-        // BrowserPod's createFile does not auto-create parent directories.
         await this.ensureDirectory("/home/user/.bashrc");
-
         const file = await this.pod.createFile("/home/user/.bashrc", "utf-8");
         await file.write(bashrc);
         await file.close();
@@ -722,19 +724,10 @@ class BrowserPodManager {
         console.log("[BrowserPod] Custom .bashrc written to /home/user/.bashrc");
       } catch (err) {
         console.warn("[BrowserPod] Failed to write .bashrc:", err);
-        // Non-fatal — terminal works with default bash prompt
       }
     }
 
-    // Step 3: Start a bash shell connected to that terminal.
-    // Set HOME=/home/user so bash reads /home/user/.bashrc (not /root/.bashrc).
-    // pod.run() with the interactive terminal as the terminal option connects
-    // stdin/stdout of the process to the xterm.js instance.
-    //
-    // WRAPPED in try/catch: BrowserPod's Proxy may THROW synchronously
-    // ("Cannot read properties of undefined (reading 'catch')") when the
-    // underlying WebSocket is dead, even though this.pod is still truthy.
-    // This converts the cryptic BrowserPod internal error into a clear message.
+    // Step 3: Start a bash shell connected to the custom terminal.
     let runPromise: Promise<unknown> | undefined;
     try {
       runPromise = this.pod.run("/bin/bash", [], {
@@ -753,7 +746,6 @@ class BrowserPodManager {
       );
     }
 
-    // Guard: ensure pod.run() returned a valid Promise/thenable before chaining.
     if (!runPromise || typeof (runPromise as any).then !== "function") {
       console.warn("[BrowserPod] Interactive shell run() did not return a thenable");
       this.interactiveTerminal = null;
@@ -761,7 +753,6 @@ class BrowserPodManager {
     }
 
     // Fire-and-forget: the shell runs until the xterm is destroyed or pod is disposed.
-    // Errors (e.g., bash binary not found) are logged for debugging.
     runPromise.then(() => {
       console.log("[BrowserPod] Interactive shell exited");
     }).catch((err) => {
@@ -769,19 +760,27 @@ class BrowserPodManager {
       console.warn("[BrowserPod] Interactive shell failed:", msg);
       this.interactiveTerminal = null;
     });
-  }
 
-  /**
-   * Dispose the interactive terminal and its shell process.
-   *
-   * The shell lifecycle is tied to the xterm instance created by
-   * createDefaultTerminal(). When the parent element's innerHTML is
-   * cleared (by TerminalPanel cleanup), the xterm is destroyed, which
-   * sends SIGHUP to the shell process, causing it to exit naturally.
-   * Safe to call even if no interactive terminal is active.
-   */
-  async disposeInteractiveTerminal(): Promise<void> {
-    this.interactiveTerminal = null;
+    // Return bridge object for TerminalPanel to wire up stdin and resize.
+    const self = this;
+    return {
+      write(data: string) {
+        const t = self.interactiveTerminal as any;
+        if (typeof t.write === "function") {
+          t.write(data);
+        } else if (typeof t.input === "function") {
+          t.input(data);
+        } else {
+          console.warn("[BrowserPod] Terminal handle has no .write() or .input() — stdin not bridged");
+        }
+      },
+      resize(cols: number, rows: number) {
+        const t = self.interactiveTerminal as any;
+        if (typeof t.resize === "function") {
+          t.resize(cols, rows);
+        }
+      },
+    };
   }
 
   /**
