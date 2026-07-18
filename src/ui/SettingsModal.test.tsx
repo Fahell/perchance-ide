@@ -117,10 +117,14 @@ function findRowByLabel(container: HTMLElement, labelText: string): HTMLElement 
 }
 
 async function flushPromises(): Promise<void> {
-  // Two ticks: one to drain microtasks, one to drain Preact's deferred state
-  // updates scheduled via Promise.resolve().
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
+  // Preact + jsdom pipeline: state updates flow through `Promise.resolve().then(...)`
+  // microtasks, and KeyRow's `handleTest` closure relies on a re-render having
+  // committed the new `value` from useState before the click. Two ticks is not
+  // enough — observed in CI 29626308307. Ten iterations draining both
+  // microtasks and macrotasks is reliably sufficient (and still fast).
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }
 
 async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
@@ -397,14 +401,17 @@ describe("SettingsModal — BrowserPod (Node tools) test flow", () => {
 // ─── Store subscription sanity ──────────────────────────────
 
 describe("SettingsModal — store subscription", () => {
-  it("subscribes to store changes when modal is open", () => {
+  it("subscribes to store changes when modal is open", async () => {
     renderModal();
+    // useEffect is deferred; flushPreact's render queue before asserting.
+    await flushPromises();
     expect(mockSubscribe).toHaveBeenCalled();
   });
 
-  it("propagates settings.browserPodApiKey changes from store into masked preview", () => {
+  it("propagates settings.browserPodApiKey changes from store into masked preview", async () => {
     mockSettings.browserPodApiKey = "initial_key_xyz";
     const { container } = renderModal();
+    await flushPromises();
     const row = findRowByLabel(container, "settings.browserPodApiKey")!;
     expect(row).not.toBeNull();
 
