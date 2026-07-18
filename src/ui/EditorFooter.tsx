@@ -44,18 +44,23 @@ export function EditorFooter({ terminalOpen, onToggleTerminal }: EditorFooterPro
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <button
           onClick={onToggleTerminal}
+          title={`${terminalOpen ? "Hide" : "Show"} terminal (Ctrl+\`)`}
           style={{
             color: terminalOpen ? colors.text : colors.textSecondary,
             cursor: "pointer",
             fontSize: "11px",
             fontFamily: fonts.mono,
-            padding: "2px 4px",
-            background: "none",
-            border: "none",
-            display: "inline",
+            padding: "2px 6px",
+            background: terminalOpen ? colors.surface2 : "none",
+            border: `1px solid ${terminalOpen ? colors.border : "transparent"}`,
+            borderRadius: "2px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            transition: "background 0.1s, border-color 0.1s",
           }}
         >
-          [terminal]{terminalOpen ? "▽" : "△"}
+          {terminalOpen ? "▼" : "▶"} Terminal
         </button>
       </div>
 

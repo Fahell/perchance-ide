@@ -34,6 +34,7 @@ export interface IdeSettings {
   toolTerminalEnabled: boolean;
   toolNodeEnabled: boolean;
   browserPodApiKey: string;
+  terminalFontSize: number;
 }
 
 export interface OutputEntry {
@@ -187,6 +188,7 @@ const DEFAULT_SETTINGS: IdeSettings = {
   toolTerminalEnabled: true,
   toolNodeEnabled: false,
   browserPodApiKey: "",
+  terminalFontSize: 13,
 };
 
 // ─── Store ───────────────────────────────────────────────────

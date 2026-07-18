@@ -241,6 +241,7 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
   const [toolTerm, setToolTerm] = useState(settings.toolTerminalEnabled);
   const [toolNode, setToolNode] = useState(settings.toolNodeEnabled);
   const [bpKey, setBpKey] = useState(settings.browserPodApiKey);
+  const [termFontSize, setTermFontSize] = useState(settings.terminalFontSize ?? 13);
 
   // Subscribe to store to stay in sync
   useEffect(() => {
@@ -257,6 +258,7 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
       setToolTerm(st.toolTerminalEnabled);
       setToolNode(st.toolNodeEnabled);
       setBpKey(st.browserPodApiKey);
+      setTermFontSize(st.terminalFontSize ?? 13);
     });
   }, [isOpen]);
 
@@ -475,6 +477,58 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         </div>
         <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
           {t("settings.tabSize.desc", locale)}
+        </div>
+      </div>
+
+      {/* Terminal font size (P8) */}
+      <div
+        style={{
+          marginBottom: "10px",
+          padding: "10px 12px",
+          background: colors.surface1,
+          border: `1px solid ${colors.border}`,
+          transition: "border-color 0.15s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.borderEmphasis)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border)}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ color: colors.textSecondary, fontSize: "11px", fontFamily: fonts.mono }}>
+            {t("settings.terminalFontSize", locale)}
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <input
+              type="number"
+              value={termFontSize}
+              min={10}
+              max={20}
+              step={1}
+              onInput={(e) => {
+                const v = Math.max(10, Math.min(20, parseInt((e.target as HTMLInputElement).value) || 13));
+                setTermFontSize(v);
+                updateSetting("terminalFontSize", v);
+              }}
+              aria-label={t("settings.terminalFontSize", locale)}
+              style={{
+                width: "48px",
+                padding: "3px 6px",
+                fontFamily: fonts.mono,
+                fontSize: "10px",
+                background: colors.surface2,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                outline: "none",
+                textAlign: "center",
+                transition: "border-color 0.15s",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = colors.textMuted)}
+              onBlur={(e) => (e.currentTarget.style.borderColor = colors.border)}
+            />
+            <span style={{ color: colors.textMuted, fontSize: "9px", fontFamily: fonts.mono }}>px</span>
+          </div>
+        </div>
+        <div style={{ color: colors.textMuted, fontSize: "9px", marginTop: "4px", fontFamily: fonts.mono }}>
+          {t("settings.terminalFontSize.desc", locale)}
         </div>
       </div>
 

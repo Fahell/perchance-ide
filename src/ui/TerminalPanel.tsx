@@ -30,21 +30,55 @@ interface TerminalPanelProps {
 
 const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 600;
+const DEFAULT_HEIGHT = 250;
 const STORAGE_KEY = "terminal:height";
+const BASH_HISTORY_KEY = "terminal:bash_history";
+const HISTORY_PATH = "/home/user/.bash_history";
 
 function loadSavedHeight(): number {
   const saved = storageGet<number>(STORAGE_KEY);
   if (saved && saved >= MIN_HEIGHT && saved <= MAX_HEIGHT) return saved;
-  return 250;
+  return DEFAULT_HEIGHT;
+}
+
+/** Best-effort save of bash history from Pod → localStorage. */
+async function saveBashHistory(): Promise<void> {
+  if (!browserPodManager.isReady()) return;
+  try {
+    const history = await browserPodManager.readFile(HISTORY_PATH);
+    if (history && history.trim()) {
+      storageSet(BASH_HISTORY_KEY, history);
+      console.log("[TerminalPanel] Bash history saved:", history.split("\n").length, "lines");
+    }
+  } catch (err) {
+    // Non-critical — history is best-effort
+  }
+}
+
+/** Restore bash history from localStorage → Pod filesystem. */
+async function loadBashHistory(): Promise<void> {
+  if (!browserPodManager.isReady()) return;
+  try {
+    const saved = storageGet<string>(BASH_HISTORY_KEY);
+    if (saved && saved.trim()) {
+      await browserPodManager.writeFile(HISTORY_PATH, saved);
+      console.log("[TerminalPanel] Bash history restored:", saved.split("\n").length, "lines");
+    }
+  } catch (err) {
+    console.warn("[TerminalPanel] Failed to restore bash history:", err);
+  }
 }
 
 export function TerminalPanel({ visible }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wasVisibleRef = useRef(false);
   const [height, setHeight] = useState(loadSavedHeight);
+  const [maximized, setMaximized] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const podReady = browserPodManager.isReady();
+  const terminalFontSize = ideStore.getState().settings.terminalFontSize ?? 13;
 
   // Persist height when it changes
   useEffect(() => {
@@ -73,10 +107,24 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
       // Connect to BrowserPod interactive terminal
       if (browserPodManager.isReady()) {
         try {
+          // Restore bash history before starting the shell (P10)
+          await loadBashHistory();
+
           await browserPodManager.createInteractiveTerminal(containerRef.current!);
           if (!disposed) {
             setConnecting(false);
             console.log("[TerminalPanel] Interactive terminal connected");
+
+            // Auto-focus the xterm textarea so the user can start typing immediately
+            setTimeout(() => {
+              if (!disposed && containerRef.current) {
+                const textarea = containerRef.current.querySelector("textarea");
+                if (textarea) {
+                  textarea.focus();
+                  console.log("[TerminalPanel] Auto-focused terminal");
+                }
+              }
+            }, 150); // Small delay to let xterm.js finish DOM setup
           }
         } catch (err) {
           if (!disposed) {
@@ -105,7 +153,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, [visible]);
+  }, [visible, retryKey]);
 
   // Trigger Pod→VFS sync when panel is hidden
   useEffect(() => {
@@ -122,15 +170,42 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
   }, []);
 
   function handleClose() {
+    // Save history before closing (P10)
+    saveBashHistory();
     ideStore.getState().setTerminalOpen(false);
   }
+
+  function handleMaximize() {
+    setMaximized((m) => {
+      if (m) {
+        // Restore: go back to saved height
+        setHeight(loadSavedHeight());
+      } else {
+        // Maximize: save current height, then go to max
+        storageSet(STORAGE_KEY, height);
+        setHeight(MAX_HEIGHT);
+      }
+      return !m;
+    });
+  }
+
+  function handleRestart() {
+    // Save history, then force re-initialization
+    saveBashHistory();
+    setRetryKey((k) => k + 1);
+  }
+
+  // Compute the effective display height
+  const displayHeight = maximized ? MAX_HEIGHT : height;
+  // CSS zoom for terminal font scaling (P8)
+  const zoom = Math.max(0.6, Math.min(2.0, terminalFontSize / 13));
 
   if (!visible) return null;
 
   return (
     <div style={{
       borderTop: `1px solid ${colors.border}`,
-      height: `${height}px`,
+      height: `${displayHeight}px`,
       minHeight: `${MIN_HEIGHT}px`,
       maxHeight: `${MAX_HEIGHT}px`,
       flexShrink: 0,
@@ -159,7 +234,49 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         }}>
           TERMINAL (Node.js / Bash)
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {/* Restart button (P9) */}
+          {!connecting && !error && (
+            <button
+              onClick={handleRestart}
+              title="Restart shell"
+              style={{
+                background: "none",
+                border: "none",
+                color: colors.textMuted,
+                fontSize: "10px",
+                cursor: "pointer",
+                padding: "1px 5px",
+                fontFamily: fonts.mono,
+                borderRadius: "2px",
+                transition: "background 0.1s, color 0.1s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface2; (e.currentTarget as HTMLElement).style.color = colors.text; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = colors.textMuted; }}
+            >
+              ↻
+            </button>
+          )}
+          {/* Maximize button (P7) */}
+          <button
+            onClick={handleMaximize}
+            title={maximized ? "Restore height" : "Maximize"}
+            style={{
+              background: "none",
+              border: "none",
+              color: colors.textMuted,
+              fontSize: "10px",
+              cursor: "pointer",
+              padding: "1px 5px",
+              fontFamily: fonts.mono,
+              borderRadius: "2px",
+              transition: "background 0.1s, color 0.1s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = colors.surface2; (e.currentTarget as HTMLElement).style.color = colors.text; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = colors.textMuted; }}
+          >
+            {maximized ? "⊟" : "⊞"}
+          </button>
           {/* Status indicator with colored dot */}
           <span style={{
             display: "flex",
@@ -254,15 +371,53 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
         {/* Error state */}
         {error && (
           <div style={{
-            padding: "12px",
+            padding: "16px 12px",
             color: "#e74c3c",
             fontSize: "11px",
             fontFamily: fonts.mono,
             display: "flex",
             flexDirection: "column",
-            gap: "8px",
+            gap: "10px",
           }}>
             <span>⚠ {error}</span>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => setRetryKey((k) => k + 1)}
+                style={{
+                  padding: "5px 14px",
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: "3px",
+                  background: colors.surface1,
+                  color: colors.text,
+                  fontSize: "10px",
+                  fontFamily: fonts.mono,
+                  cursor: "pointer",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = colors.surface1)}
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => ideStore.getState().setTerminalOpen(false)}
+                style={{
+                  padding: "5px 14px",
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: "3px",
+                  background: "transparent",
+                  color: colors.textMuted,
+                  fontSize: "10px",
+                  fontFamily: fonts.mono,
+                  cursor: "pointer",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface1)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                Close
+              </button>
+            </div>
           </div>
         )}
 
@@ -276,6 +431,7 @@ export function TerminalPanel({ visible }: TerminalPanelProps) {
             boxSizing: "border-box",
             overflow: "hidden",
             display: error || connecting ? "none" : "block",
+            zoom: zoom,
           }}
         />
       </div>

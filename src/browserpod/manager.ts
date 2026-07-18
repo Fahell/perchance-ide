@@ -84,6 +84,9 @@ class BrowserPodManager {
   /** Interactive terminal handle — separate from the headless terminal used by agent tools */
   private interactiveTerminal: Terminal | null = null;
 
+  /** Tracks whether .bashrc has been written to the Pod to avoid redundant writes. */
+  private _bashrcWritten: boolean = false;
+
   getStatus(): BrowserPodStatus {
     return this.status;
   }
@@ -103,6 +106,30 @@ class BrowserPodManager {
 
   isReady(): boolean {
     return this.status === "ready" && this.pod !== null;
+  }
+
+  /**
+   * Quick health check — runs /bin/true to verify the WebSocket is alive.
+   * Saves/restores outputBuffer to avoid interfering with concurrent agent tool runs.
+   * Returns true if the connection is healthy, false otherwise.
+   * Resets status to "ready" on success so a transient failure doesn't stick.
+   */
+  private async _healthCheck(): Promise<boolean> {
+    if (!this.pod || !this.terminal) return false;
+    try {
+      const savedBuffer = this.outputBuffer;
+      this.outputBuffer = [];
+      await this.pod.run("/bin/true", [], { terminal: this.terminal, cwd: "/home/user" });
+      this.outputBuffer = savedBuffer;
+      // Reset status — a transient WebSocket failure shouldn't permanently mark us as errored
+      if (this.status === "error") {
+        this.setStatus("ready");
+      }
+      return true;
+    } catch {
+      this.setStatus("error", "WebSocket connection lost");
+      return false;
+    }
   }
 
   onStatusChange(listener: (status: BrowserPodStatus, error: string | null) => void): () => void {
@@ -636,6 +663,17 @@ class BrowserPodManager {
       throw new Error("BrowserPod was disposed while initializing the interactive terminal");
     }
 
+    // ── Health check: verify WebSocket is still alive ──
+    // isReady() may return true even when the underlying WebSocket has timed out.
+    // Pre-flight /bin/true catches stale connections before we create the xterm UI.
+    const healthy = await this._healthCheck();
+    if (!healthy) {
+      throw new Error(
+        "BrowserPod connection lost — the WebSocket may have timed out. " +
+        "Close the terminal panel and reopen it, or disable/re-enable Node.js tools in Settings."
+      );
+    }
+
     // Step 1: Create the xterm.js UI (visual terminal)
     // Per BrowserPod docs, createDefaultTerminal() always returns Promise<Terminal>.
     // But if the DOM element was cleared (by cleanup running concurrently), it may
@@ -655,7 +693,35 @@ class BrowserPodManager {
       throw new Error("createDefaultTerminal returned no terminal — the DOM element may have been cleared");
     }
 
-    // Step 2: Start a bash shell connected to that terminal
+    // Step 2: Write a custom .bashrc for a colorful, informative prompt.
+    // Only written once per Pod session — the flag resets on dispose().
+    if (!this._bashrcWritten) {
+      try {
+        const bashrc = [
+          "# perchance-ide terminal config",
+          "export PS1='\\[\\e[1;32m\\]\\u@perchance\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '",
+          "export TERM=xterm-256color",
+          "export HISTFILE=/home/user/.bash_history",
+          "export HISTSIZE=1000",
+          "export HISTFILESIZE=2000",
+          "shopt -s histappend 2>/dev/null",
+          "alias ll='ls -la --color=auto'",
+          "alias ls='ls --color=auto'",
+          "alias grep='grep --color=auto'",
+        ].join("\n");
+
+        const file = await this.pod.createFile("/root/.bashrc", "utf-8");
+        await file.write(bashrc);
+        await file.close();
+        this._bashrcWritten = true;
+        console.log("[BrowserPod] Custom .bashrc written");
+      } catch (err) {
+        console.warn("[BrowserPod] Failed to write .bashrc:", err);
+        // Non-fatal — terminal works with default bash prompt
+      }
+    }
+
+    // Step 3: Start a bash shell connected to that terminal
     // pod.run() with the interactive terminal as the terminal option connects
     // stdin/stdout of the process to the xterm.js instance.
     // We use .catch() to avoid unhandled rejections since the shell process
@@ -745,6 +811,7 @@ class BrowserPodManager {
     this.setStatus("idle");
     this.config = null;
     this.interactiveTerminal = null;
+    this._bashrcWritten = false;
     console.log("[BrowserPod] Disposed");
   }
 
