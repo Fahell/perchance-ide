@@ -328,7 +328,11 @@ describe("SettingsModal — store subscription", () => {
     expect(row).not.toBeNull();
 
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
-    const subscriberCb = mockSubscribe.mock.calls[0][0];
+    // Cast through any[] because vi.fn() without an explicit generic infers
+    // mock.calls as a length-0 tuple, indexing into which fails typecheck.
+    const firstCallArgs = mockSubscribe.mock.calls[0] as unknown as Array<(s: { settings: typeof mockSettings }) => void> | undefined;
+    expect(firstCallArgs).toBeDefined();
+    const subscriberCb = firstCallArgs![0];
 
     // Simulate external settings update (e.g., from PR-1 reactive lifecycle persist)
     subscriberCb({
