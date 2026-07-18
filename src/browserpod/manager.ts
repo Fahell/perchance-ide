@@ -784,6 +784,17 @@ class BrowserPodManager {
   }
 
   /**
+   * Dispose the interactive terminal shell reference.
+   *
+   * Note: the xterm.js instance is owned and disposed by TerminalPanel.
+   * This only clears the BrowserPod Terminal handle so the next
+   * createInteractiveTerminal() call starts fresh.
+   */
+  async disposeInteractiveTerminal(): Promise<void> {
+    this.interactiveTerminal = null;
+  }
+
+  /**
    * Register a callback for HTTP portal events.
    * Uses the official pod.onPortal() API from BrowserPod 2.0.
    * The callback is invoked whenever a process inside the Pod calls listen() on a port.
