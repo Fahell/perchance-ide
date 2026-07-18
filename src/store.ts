@@ -504,3 +504,100 @@ ideStore.subscribe(
     }
   }
 );
+
+// ─── Reactive BrowserPod Lifecycle (PR-1) ──────────────────
+//
+// Reacts to runtime changes in `settings.toolNodeEnabled` and
+// `settings.browserPodApiKey`. Index.ts still handles the initial startup
+// boot; this subscriber covers runtime toggles + key changes without
+// requiring a page reload.
+//
+// The first subscribe fire (from loadSettings() during init) is consumed
+// by the `primed` flag below — index.ts boots BrowserPod there so this
+// subscriber does not double-fire during startup. All subsequent fires
+// (user toggles in SettingsModal) go through full reactive logic.
+let bpReactivePrimed = false;
+ideStore.subscribe(
+  (s: IdeState) => s.settings,
+  (curr: IdeSettings, prev: IdeSettings) => {
+    if (!bpReactivePrimed) {
+      bpReactivePrimed = true;
+      return;
+    }
+
+    const wasActive =
+      prev.toolNodeEnabled && prev.browserPodApiKey.length > 0;
+    const isActive =
+      curr.toolNodeEnabled && curr.browserPodApiKey.length > 0;
+    const keyChanged =
+      prev.browserPodApiKey !== curr.browserPodApiKey;
+
+    if (wasActive === isActive && !keyChanged) return;
+
+    // Dynamic import — store.ts → manager.ts is safe (manager does not
+    // import store) but dynamic form defers the cost past module init.
+    import("./browserpod/manager.js").then(async ({ browserPodManager }) => {
+      const status = browserPodManager.getStatus();
+
+      // ── TEAR DOWN: toggle off OR key cleared ──
+      if (!isActive) {
+        if (
+          status === "ready" ||
+          status === "loading" ||
+          status === "error"
+        ) {
+          console.log("[Store] BrowserPod: tearing down (toggle off or key cleared)");
+          await browserPodManager.dispose();
+          ideStore.getState().setBrowserPodStatus("idle");
+        }
+        return;
+      }
+
+      // ── ACTIVATE: status guards prevent re-boot during in-flight boot ──
+      if (status === "loading") return;
+
+      const cfg = browserPodManager.getConfig();
+      const sameKey = cfg?.apiKey === curr.browserPodApiKey;
+      const bootNeeded =
+        status === "idle" ||
+        status === "error" ||
+        (status === "ready" && !sameKey);
+
+      if (!bootNeeded) return;
+
+      // Deliberately do NOT log any API key prefix — secrets never reach DevTools logs.
+      console.log(
+        "[Store] BrowserPod: booting —",
+        status === "idle" ? "fresh initialization" :
+        status === "error" ? "retry after error" :
+        "API key change re-authentication"
+      );
+
+      const ok = await browserPodManager.boot({
+        apiKey: curr.browserPodApiKey,
+        nodeVersion: "22",
+        storageKey: "agent-perchance",
+      });
+
+      if (!ok) {
+        console.warn("[Store] BrowserPod boot returned false; status set by manager.");
+        return;
+      }
+
+      ideStore.getState().setBrowserPodStatus("ready");
+
+      // Real-time VFS → Pod sync (incremental).
+      browserPodManager.subscribeToVfsChanges();
+
+      // Bulk initial sync (Pod starts with empty FS).
+      try {
+        const { syncVfsToPod } = await import("./tools/sync-utils.js");
+        await syncVfsToPod(false);
+      } catch (err) {
+        console.warn("[Store] Initial VFS→Pod sync failed:", err);
+      }
+    }).catch((err) => {
+      console.error("[Store] Failed to handle BrowserPod lifecycle change:", err);
+    });
+  }
+);

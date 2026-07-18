@@ -88,6 +88,15 @@ class BrowserPodManager {
     return this.status;
   }
 
+  /**
+   * Return the BrowserPod configuration used for the current boot, or null
+   * if no boot is in progress / has completed. Used by reactive lifecycle
+   * subscribers (e.g., store.ts) to detect re-key scenarios.
+   */
+  getConfig(): BrowserPodConfig | null {
+    return this.config;
+  }
+
   getError(): string | null {
     return this.error;
   }
