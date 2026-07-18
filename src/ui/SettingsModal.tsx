@@ -479,17 +479,15 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         onChange={(v) => { setToolWeb(v); updateSetting("toolWebEnabled", v); }}
         locale={locale}
       />
-      {toolWeb && (
-        <KeyRow
-          label={t("settings.apiKey", locale)}
-          value={jinaKey}
-          placeholder={t("settings.apiKey.placeholder", locale)}
-          maskedPreview={maskedJinaKey}
-          onValueChange={(v) => { setJinaKey(v); }}
-          onTest={testJinaKey}
-          locale={locale}
-        />
-      )}
+      <KeyRow
+        label={t("settings.apiKey", locale)}
+        value={jinaKey}
+        placeholder={t("settings.apiKey.placeholder", locale)}
+        maskedPreview={maskedJinaKey}
+        onValueChange={(v) => { setJinaKey(v); }}
+        onTest={testJinaKey}
+        locale={locale}
+      />
 
       <ToggleRow
         label={t("settings.tools.context", locale)}
@@ -521,17 +519,15 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
         onChange={(v) => { setToolNode(v); updateSetting("toolNodeEnabled", v); }}
         locale={locale}
       />
-      {toolNode && (
-        <KeyRow
-          label={t("settings.browserPodApiKey", locale)}
-          value={bpKey}
-          placeholder={t("settings.browserPodApiKey.placeholder", locale)}
-          maskedPreview={maskedBpKey}
-          onValueChange={(v) => { setBpKey(v); updateSetting("browserPodApiKey", v); }}
-          onTest={testBrowserPodKey}
-          locale={locale}
-        />
-      )}
+      <KeyRow
+        label={t("settings.browserPodApiKey", locale)}
+        value={bpKey}
+        placeholder={t("settings.browserPodApiKey.placeholder", locale)}
+        maskedPreview={maskedBpKey}
+        onValueChange={(v) => { setBpKey(v); updateSetting("browserPodApiKey", v); }}
+        onTest={testBrowserPodKey}
+        locale={locale}
+      />
 
       {/* Close button */}
       <button

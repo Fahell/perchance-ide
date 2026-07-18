@@ -840,6 +840,27 @@ export interface ValidationResult {
 }
 
 /**
+ * Generate a randomized storage key for BrowserPod key validation.
+ *
+ * Each call produces a unique storageKey so concurrent validateBrowserPodKey()
+ * calls (e.g., user clicking "test" twice in rapid succession, or two tabs both
+ * running validation) don't collide on the same IndexedDB slot. Without this,
+ * a fixed key can cause one validation to overwrite another's session state.
+ *
+ * Exported for testability. Production callers should use validateBrowserPodKey().
+ */
+export function makeValidationStorageKey(): string {
+  // Use crypto.randomUUID when available (browsers, modern Node); fall back to Math.random
+  // for older environments. Either way, uniqueness per call is sufficient — collision would
+  // require ~2^53 concurrent calls in a single ms using Math.random.
+  const suffix =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `agent-perchance-validate-${suffix}`;
+}
+
+/**
  * Validate a BrowserPod API key by attempting to boot and immediately disposing.
  *
  * ⚠ NOTE: Each BrowserPod.boot() call costs 10 tokens from your account.
@@ -889,7 +910,7 @@ export async function validateBrowserPodKey(apiKey: string): Promise<ValidationR
     try {
       pod = await BrowserPodModule.BrowserPod.boot({
         apiKey,
-        storageKey: "agent-perchance-validate",
+        storageKey: makeValidationStorageKey(),
         nodeVersion: "22",
       });
     } catch (bootErr) {
