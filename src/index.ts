@@ -12,6 +12,7 @@ import { extractMemories, formatMemories } from "./memory.js";
 import { addMessage, initMessageStore } from "./message-store.js";
 import { storageGet, storageSet } from "./storage.js";
 import { loadSettings } from "./store.js";
+import { browserPodManager } from "./browserpod/manager.js";
 import { initContextTools, initNodeTools, initShellTools, initTerminalTools, initVfsTools, initWebTools } from "./tools/index.js";
 import { syncVfsToPod } from "./tools/sync-utils.js";
 import { getApiKey, setApiKey, validateApiKey } from "./tools/web-search.js";
@@ -341,6 +342,14 @@ function setupBeforeUnload(): void {
       flushVfsPersist(),
       new Promise((resolve) => setTimeout(resolve, 1000)),
     ]);
+
+    // Best-effort BrowserPod cleanup: release the IndexedDB lock so the
+    // next page load doesn't fail with "Device already opened in another tab".
+    // Fire-and-forget is intentional — beforeunload may terminate the page
+    // before the promise resolves. Only run if the pod was actually booted.
+    if (browserPodManager.isReady()) {
+      browserPodManager.dispose().catch(() => {});
+    }
   });
 }
 

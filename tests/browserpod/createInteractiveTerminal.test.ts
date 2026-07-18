@@ -241,3 +241,79 @@ describe("createInteractiveTerminal — on-interactive-terminal /bin/true crash 
     expect(bashrcWriteIdx).toBeLessThan(bashRunIdx);
   });
 });
+
+describe("BrowserPodManager.dispose — robust cleanup", () => {
+  let mockPod: MockPodFs;
+
+  beforeEach(async () => {
+    mockPod = new MockPodFs();
+    await browserPodManager.dispose();
+    browserPodManager.__setTestPod(mockPod);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await browserPodManager.dispose();
+    await mockPod.dispose();
+  });
+
+  it("does not throw when pod.dispose() rejects", async () => {
+    vi.spyOn(mockPod, "dispose").mockRejectedValue(new Error("SDK dispose failed"));
+
+    await expect(browserPodManager.dispose()).resolves.toBeUndefined();
+    expect((browserPodManager as any).pod).toBeNull();
+    expect((browserPodManager as any).status).toBe("idle");
+  });
+
+  it("attempts to release IndexedDB lock when pod.dispose() fails", async () => {
+    vi.spyOn(mockPod, "dispose").mockRejectedValue(new Error("SDK dispose failed"));
+    const deleteDatabaseCalls: string[] = [];
+    const originalIndexedDB = (globalThis as any).indexedDB;
+    (globalThis as any).indexedDB = {
+      deleteDatabase: (name: string) => {
+        deleteDatabaseCalls.push(name);
+        return {
+          onsuccess: null as any,
+          onerror: null as any,
+          onblocked: null as any,
+          set onsuccess(fn: any) { if (fn) setTimeout(fn, 0); },
+          set onerror(fn: any) { /* no-op */ },
+          set onblocked(fn: any) { /* no-op */ },
+        } as any;
+      },
+    };
+
+    try {
+      await browserPodManager.dispose();
+
+      expect(deleteDatabaseCalls).toContain("BrowserPod");
+      expect(deleteDatabaseCalls).toContain("browserpod");
+      expect(deleteDatabaseCalls).toContain("bp");
+    } finally {
+      (globalThis as any).indexedDB = originalIndexedDB;
+    }
+  });
+
+  it("disposeInteractiveTerminal calls dispose() on the terminal handle when available", async () => {
+    const disposeFn = vi.fn().mockResolvedValue(undefined);
+    (browserPodManager as any).interactiveTerminal = { dispose: disposeFn };
+
+    await browserPodManager.disposeInteractiveTerminal();
+
+    expect(disposeFn).toHaveBeenCalled();
+    expect((browserPodManager as any).interactiveTerminal).toBeNull();
+  });
+
+  it("disposeInteractiveTerminal swallows errors from terminal handle dispose()", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const disposeFn = vi.fn().mockRejectedValue(new Error("terminal dispose failed"));
+    (browserPodManager as any).interactiveTerminal = { dispose: disposeFn };
+
+    await expect(browserPodManager.disposeInteractiveTerminal()).resolves.toBeUndefined();
+    expect((browserPodManager as any).interactiveTerminal).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("disposeInteractiveTerminal ignored error"),
+      expect.any(Error)
+    );
+  });
+});

@@ -771,7 +771,14 @@ class BrowserPodManager {
   }
 
   /**
-   * Write a custom .bashrc (colorful prompt + history config) idempotently.
+   * Write a minimal, resilient .bashrc for the interactive shell.
+   *
+   * BrowserPod's environment is a stripped-down Linux container; some bash
+   * builtins (e.g. `shopt`) or color options may not behave exactly like a
+   * full desktop distro. A minimal .bashrc reduces the chance that bash
+   * exits immediately after printing the first prompt, which was one of the
+   * hypotheses in the dispose-loop investigation.
+   *
    * Best-effort: a failed write is logged but does not abort terminal open —
    * bash will simply fall back to defaults. The flag `_bashrcWritten` short-
    * circuits on subsequent createInteractiveTerminal() calls within the same
@@ -782,15 +789,11 @@ class BrowserPodManager {
     try {
       const bashrc = [
         "# perchance-ide terminal config",
-        "export PS1='\\[\\e[1;32m\\]\\u@perchance\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '",
+        "export PS1='\\u@perchance:\\w\\$ '",
         "export TERM=xterm-256color",
         "export HISTFILE=/home/user/.bash_history",
         "export HISTSIZE=1000",
         "export HISTFILESIZE=2000",
-        "shopt -s histappend 2>/dev/null",
-        "alias ll='ls -la --color=auto'",
-        "alias ls='ls --color=auto'",
-        "alias grep='grep --color=auto'",
       ].join("\n");
 
       await this.ensureDirectory("/home/user/.bashrc");
@@ -810,9 +813,25 @@ class BrowserPodManager {
    * Note: the xterm.js instance is owned and disposed by TerminalPanel.
    * This only clears the BrowserPod Terminal handle so the next
    * createInteractiveTerminal() call starts fresh.
+   *
+   * We best-effort call any SDK-provided dispose() on the terminal handle
+   * itself; BrowserPod 2.12.1 does not document one, but if it is ever added
+   * this prevents resource leaks. Any error is swallowed because the terminal
+   * may already be in a bad state (the root cause of the dispose-loop bug).
    */
   async disposeInteractiveTerminal(): Promise<void> {
+    const terminal = this.interactiveTerminal;
     this.interactiveTerminal = null;
+    if (terminal) {
+      try {
+        const maybeDispose = (terminal as any).dispose;
+        if (typeof maybeDispose === "function") {
+          await maybeDispose.call(terminal);
+        }
+      } catch (err) {
+        console.warn("[BrowserPod] disposeInteractiveTerminal ignored error:", err);
+      }
+    }
   }
 
   /**
@@ -844,25 +863,69 @@ class BrowserPodManager {
 
   /**
    * Terminate the pod and release resources.
+   *
+   * BrowserPod 2.12.1 can throw during `pod.dispose()` when it iterates over
+   * child handles and the custom terminal handle does not implement a
+   * `.dispose()` method (see interactive-terminal-dispose-loop-spec.md). When
+   * that happens the IndexedDB lock may survive, so we swallow the SDK error
+   * and attempt to release the lock ourselves.
    */
   async dispose(): Promise<void> {
-    if (this.pod) {
-      try {
-        await this.pod.dispose();
-      } catch (err) {
-        console.error("[BrowserPod] dispose failed:", err);
-      }
-      this.pod = null;
-      this.terminal = null;
-    }
+    const podToDispose = this.pod;
+    // Clear local state immediately so subsequent calls see an idle manager
+    // even if the SDK dispose hangs or throws.
+    this.pod = null;
+    this.terminal = null;
+    this.interactiveTerminal = null;
+    this._bashrcWritten = false;
     this.outputBuffer = [];
     this.lastSyncedFiles = [];
     this.portalCallbacks.clear();
     this.setStatus("idle");
     this.config = null;
-    this.interactiveTerminal = null;
-    this._bashrcWritten = false;
+
+    if (podToDispose) {
+      try {
+        await podToDispose.dispose();
+      } catch (err) {
+        console.warn("[BrowserPod] pod.dispose() failed; will attempt to release IndexedDB lock:", err);
+        await this._releaseIndexedDbLock();
+      }
+    }
+
     console.log("[BrowserPod] Disposed");
+  }
+
+  /**
+   * Best-effort release of the BrowserPod IndexedDB lock.
+   *
+   * BrowserPod uses IndexedDB to persist the pod disk slot identified by
+   * storageKey. If pod.dispose() throws, the lock can be left behind and
+   * subsequent boots fail with "Device already opened in another tab". We
+   * attempt to delete the known database names. This is destructive but
+   * acceptable because the pod is unusable anyway and VFS can be re-synced.
+   *
+   * The exact database names are not documented; the list below comes from
+   * observed SDK behaviour and the spec. We try each one and swallow errors.
+   */
+  private async _releaseIndexedDbLock(): Promise<void> {
+    if (typeof indexedDB === "undefined") return;
+    const dbNames = ["BrowserPod", "browserpod", "bp"];
+    for (const name of dbNames) {
+      try {
+        await new Promise<void>((resolve) => {
+          const req = indexedDB.deleteDatabase(name);
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+          // Fallback for very old browsers that don't fire events
+          setTimeout(() => resolve(), 500);
+        });
+        console.log(`[BrowserPod] Released IndexedDB lock for database "${name}"`);
+      } catch (err) {
+        console.warn(`[BrowserPod] Failed to release IndexedDB lock for "${name}":`, err);
+      }
+    }
   }
 
   private setStatus(status: BrowserPodStatus, error: string | null = null): void {
