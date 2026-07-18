@@ -190,7 +190,7 @@ describe("PR-2: KeyRow visibility (always visible regardless of toggle)", () => 
 
 describe("SettingsModal — Jina (web search) test flow", () => {
   it("calls validateApiKey on test click and persists via onSave on success", async () => {
-    mockValidateApiKey.mockResolvedValue(true);
+    mockValidateApiKey.mockResolvedValue({ ok: true });
     const { container, onSave } = renderModal();
     const row = findRowByLabel(container, "settings.apiKey")!;
     const input = row.querySelector("input[type='password']") as HTMLInputElement;
@@ -206,7 +206,7 @@ describe("SettingsModal — Jina (web search) test flow", () => {
   });
 
   it("does NOT call onSave when validateApiKey returns false", async () => {
-    mockValidateApiKey.mockResolvedValue(false);
+    mockValidateApiKey.mockResolvedValue({ ok: false, code: "invalid_key", message: "HTTP 401 Unauthorized" });
     const { container, onSave } = renderModal();
     const row = findRowByLabel(container, "settings.apiKey")!;
     const input = row.querySelector("input[type='password']") as HTMLInputElement;
@@ -221,7 +221,7 @@ describe("SettingsModal — Jina (web search) test flow", () => {
   });
 
   it("shows generic error label when validateApiKey fails", async () => {
-    mockValidateApiKey.mockResolvedValue(false);
+    mockValidateApiKey.mockResolvedValue({ ok: false, code: "invalid_key", message: "HTTP 401 Unauthorized" });
     const { container } = renderModal();
     const row = findRowByLabel(container, "settings.apiKey")!;
     const input = row.querySelector("input[type='password']") as HTMLInputElement;
@@ -231,9 +231,90 @@ describe("SettingsModal — Jina (web search) test flow", () => {
     button.click();
     await flushPromises();
 
-    // Generic error label is rendered as text via i18n proxy
+    // Invalid-key code maps to settings.validate.invalidKey via i18n proxy
     const rowText = row.textContent || "";
-    expect(rowText).toContain("settings.validate.error");
+    expect(rowText).toContain("settings.validate.invalidKey");
+  });
+});
+
+// ─── PR-3 — Jina error code rendering ──────────────────────
+
+describe("SettingsModal — PR-3 Jina error code rendering", () => {
+  it("renders settings.validate.invalidKey when code is 'invalid_key'", async () => {
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "invalid_key",
+      message: "HTTP 401 Unauthorized",
+    });
+    const { container } = renderModal();
+    const row = findRowByLabel(container, "settings.apiKey")!;
+    const input = row.querySelector("input[type='password']") as HTMLInputElement;
+    const button = row.querySelector("button") as HTMLButtonElement;
+
+    await typeInto(input, "bad_key");
+    button.click();
+    await flushPromises();
+
+    const rowText = row.textContent || "";
+    expect(rowText).toContain("settings.validate.invalidKey");
+    expect(rowText).not.toContain("settings.validate.error"); // generic fallback gone
+  });
+
+  it("renders settings.validate.noCredit when code is 'no_credit'", async () => {
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "no_credit",
+      message: "HTTP 402 Payment Required",
+    });
+    const { container } = renderModal();
+    const row = findRowByLabel(container, "settings.apiKey")!;
+    const input = row.querySelector("input[type='password']") as HTMLInputElement;
+    const button = row.querySelector("button") as HTMLButtonElement;
+
+    await typeInto(input, "exhausted_key");
+    button.click();
+    await flushPromises();
+
+    const rowText = row.textContent || "";
+    expect(rowText).toContain("settings.validate.noCredit");
+  });
+
+  it("renders settings.validate.rateLimited when code is 'rate_limited'", async () => {
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "rate_limited",
+      message: "HTTP 429 Too Many Requests",
+    });
+    const { container } = renderModal();
+    const row = findRowByLabel(container, "settings.apiKey")!;
+    const input = row.querySelector("input[type='password']") as HTMLInputElement;
+    const button = row.querySelector("button") as HTMLButtonElement;
+
+    await typeInto(input, "rate_limited_key");
+    button.click();
+    await flushPromises();
+
+    const rowText = row.textContent || "";
+    expect(rowText).toContain("settings.validate.rateLimited");
+  });
+
+  it("renders settings.validate.network when code is 'network'", async () => {
+    mockValidateApiKey.mockResolvedValue({
+      ok: false,
+      code: "network",
+      message: "Failed to fetch",
+    });
+    const { container } = renderModal();
+    const row = findRowByLabel(container, "settings.apiKey")!;
+    const input = row.querySelector("input[type='password']") as HTMLInputElement;
+    const button = row.querySelector("button") as HTMLButtonElement;
+
+    await typeInto(input, "any_key");
+    button.click();
+    await flushPromises();
+
+    const rowText = row.textContent || "";
+    expect(rowText).toContain("settings.validate.network");
   });
 });
 

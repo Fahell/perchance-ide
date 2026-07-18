@@ -111,25 +111,89 @@ export function hasApiKey(): boolean {
   return currentApiKey.length > 0;
 }
 
-export async function validateApiKey(key: string): Promise<boolean> {
+/**
+ * Result of validating a Jina API key.
+ *
+ * Discriminated by `ok`:
+ * - `{ ok: true }` — key is valid, request returned 2xx
+ * - `{ ok: false; code; message }` — validation failed, classified by HTTP status
+ *
+ * The `code` is machine-readable; callers should map to localized user-facing
+ * copy via i18n. The `message` is a short English fallback carrying the
+ * underlying cause for logs / non-localized surfaces.
+ */
+export type JinaValidationResult =
+  | { ok: true }
+  | { ok: false; code: JinaValidationErrorCode; message: string };
+
+/** Machine-readable classification of Jina validation failure. */
+export type JinaValidationErrorCode =
+  /** 401 / 403 / unknown 4xx — key invalid, revoked, or rejected */
+  | "invalid_key"
+  /** 402 — Jina account out of credits or subscription lapsed */
+  | "no_credit"
+  /** 429 — request rate-limited or quota reached for this period */
+  | "rate_limited"
+  /** 5xx / timeout / abort / DNS / network failure */
+  | "network";
+
+/**
+ * Validate a Jina API key by issuing a single lightweight search probe.
+ *
+ * Unlike webSearch / scrapeUrl which use `retryWithBackoff` for real workloads,
+ * validation deliberately issues ONE request without retries:
+ * - 401/403/402/429 never succeed on retry (key still bad, credits still empty,
+ *   rate still exceeded) — retrying just spends quota and delays user feedback.
+ * - 5xx and network errors are passed through as `network` so the user sees
+ *   a clear "retry" affordance rather than a confusing auto-retry blister.
+ *
+ * Returns a discriminated union carrying the HTTP classification.
+ */
+export async function validateApiKey(key: string): Promise<JinaValidationResult> {
+  let res: Response;
   try {
-    const res = await retryWithBackoff(async () => {
-      const r = await fetch("https://s.jina.ai/", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ q: "test" }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      return r;
-    }, { maxRetries: 2 });
-    return res.ok;
-  } catch {
-    return false;
+    res = await fetch("https://s.jina.ai/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ q: "test" }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    // Network failure, DNS, AbortError (timeout), etc.
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, code: "network", message: reason || "fetch failed" };
   }
+
+  if (res.ok) return { ok: true };
+
+  const status = res.status;
+  const statusText = res.statusText || "";
+  const httpLine = `HTTP ${status}${statusText ? ` ${statusText}` : ""}`.trim();
+
+  if (status === 402) {
+    return { ok: false, code: "no_credit", message: httpLine };
+  }
+  if (status === 429) {
+    return { ok: false, code: "rate_limited", message: httpLine };
+  }
+  if (status === 401 || status === 403) {
+    return { ok: false, code: "invalid_key", message: httpLine };
+  }
+  if (status >= 400 && status < 500) {
+    // Conservative: any other 4xx is treated as the key being invalid
+    // (the client did something the server rejected, not a network problem).
+    return { ok: false, code: "invalid_key", message: httpLine };
+  }
+  if (status >= 500) {
+    return { ok: false, code: "network", message: httpLine };
+  }
+  // Unknown status (1xx, 3xx edge cases) — surface as network so the user
+  // sees a retry hint rather than blaming the key.
+  return { ok: false, code: "network", message: httpLine };
 }
 
 function jinaHeaders(extra?: Record<string, string>): Record<string, string> {

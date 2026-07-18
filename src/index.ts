@@ -178,12 +178,15 @@ async function startAgent() {
     currentApiKey: getApiKey(),
     locale: loadLocale(),
     onSettingsSave: async (key: string) => {
-      const valid = await validateApiKey(key);
-      if (valid) {
+      const result = await validateApiKey(key);
+      if (result.ok) {
         saveApiKey(key);
         setApiKey(key);
         return true;
       }
+      // Failed: code/message discarded at this layer. The SettingsModal layer
+      // surfaces the localized message via testJinaKey's i18n mapping; this
+      // adapter keeps the boolean contract AgentPanel expects.
       return false;
     },
     onLocaleChange: (locale) => {

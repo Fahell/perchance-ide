@@ -271,16 +271,26 @@ export function SettingsModal({ isOpen, currentKey, locale, onClose, onSave, onL
     ideStore.getState().updateSettings({ [field]: value } as any);
   }
 
+  /** Localized label for each Jina validation error code. */
+  const jinaErrorI18nKey: Record<string, string> = {
+    invalid_key: "settings.validate.invalidKey",
+    no_credit: "settings.validate.noCredit",
+    rate_limited: "settings.validate.rateLimited",
+    network: "settings.validate.network",
+  };
+
   /** Test Jina key — validate and persist only on success */
   async function testJinaKey(key: string): Promise<boolean | string> {
-    const ok = await validateApiKey(key);
-    if (ok) {
+    const result = await validateApiKey(key);
+    if (result.ok) {
       await onSave(key);
       setJinaKey(key);
       return true;
     }
-    // Key is invalid or API unreachable; return generic failure
-    return false;
+    // Map machine-readable code → localized message; fall back to result.message
+    // (short English with HTTP status) if i18n fails for the active locale.
+    const i18nKey = jinaErrorI18nKey[result.code];
+    return (i18nKey && t(i18nKey, locale)) || result.message;
   }
 
   /** Test BrowserPod key — validate and persist only on success */
