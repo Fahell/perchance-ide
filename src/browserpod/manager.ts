@@ -695,6 +695,7 @@ class BrowserPodManager {
 
     // Step 2: Write a custom .bashrc for a colorful, informative prompt.
     // Only written once per Pod session — the flag resets on dispose().
+    // Writes to /home/user/.bashrc (the Pod's project root) since /root may not exist.
     if (!this._bashrcWritten) {
       try {
         const bashrc = [
@@ -710,31 +711,49 @@ class BrowserPodManager {
           "alias grep='grep --color=auto'",
         ].join("\n");
 
-        const file = await this.pod.createFile("/root/.bashrc", "utf-8");
+        // Ensure /home/user exists before creating the file.
+        // BrowserPod's createFile does not auto-create parent directories.
+        await this.ensureDirectory("/home/user/.bashrc");
+
+        const file = await this.pod.createFile("/home/user/.bashrc", "utf-8");
         await file.write(bashrc);
         await file.close();
         this._bashrcWritten = true;
-        console.log("[BrowserPod] Custom .bashrc written");
+        console.log("[BrowserPod] Custom .bashrc written to /home/user/.bashrc");
       } catch (err) {
         console.warn("[BrowserPod] Failed to write .bashrc:", err);
         // Non-fatal — terminal works with default bash prompt
       }
     }
 
-    // Step 3: Start a bash shell connected to that terminal
+    // Step 3: Start a bash shell connected to that terminal.
+    // Set HOME=/home/user so bash reads /home/user/.bashrc (not /root/.bashrc).
     // pod.run() with the interactive terminal as the terminal option connects
     // stdin/stdout of the process to the xterm.js instance.
-    // We use .catch() to avoid unhandled rejections since the shell process
-    // runs indefinitely until the pod is disposed or the user closes the terminal.
-    const runPromise = this.pod.run("/bin/bash", [], {
-      terminal: this.interactiveTerminal,
-      cwd: "/home/user",
-    });
+    //
+    // WRAPPED in try/catch: BrowserPod's Proxy may THROW synchronously
+    // ("Cannot read properties of undefined (reading 'catch')") when the
+    // underlying WebSocket is dead, even though this.pod is still truthy.
+    // This converts the cryptic BrowserPod internal error into a clear message.
+    let runPromise: Promise<unknown> | undefined;
+    try {
+      runPromise = this.pod.run("/bin/bash", [], {
+        terminal: this.interactiveTerminal,
+        cwd: "/home/user",
+        env: ["HOME=/home/user"],
+      }) as Promise<unknown>;
+    } catch (syncErr) {
+      const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+      console.warn("[BrowserPod] Interactive shell pod.run() threw synchronously:", msg);
+      this.interactiveTerminal = null;
+      throw new Error(
+        "BrowserPod WebSocket connection dropped unexpectedly. " +
+        "The runtime may have timed out. Close the terminal and reopen it, " +
+        "or disable/re-enable Node.js tools in Settings to force a fresh connection."
+      );
+    }
 
     // Guard: ensure pod.run() returned a valid Promise/thenable before chaining.
-    // Per BrowserPod types, run() always returns Promise<Process>. But if the pod
-    // is in a partially-disposed state (this.pod truthy but underlying runtime gone),
-    // the Proxy may return undefined or a non-thenable instead of a proper Promise.
     if (!runPromise || typeof (runPromise as any).then !== "function") {
       console.warn("[BrowserPod] Interactive shell run() did not return a thenable");
       this.interactiveTerminal = null;
@@ -743,7 +762,7 @@ class BrowserPodManager {
 
     // Fire-and-forget: the shell runs until the xterm is destroyed or pod is disposed.
     // Errors (e.g., bash binary not found) are logged for debugging.
-    (runPromise as Promise<unknown>).then(() => {
+    runPromise.then(() => {
       console.log("[BrowserPod] Interactive shell exited");
     }).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
